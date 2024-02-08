@@ -32,7 +32,17 @@ With a Python backend, it's simple to create powerful component libraries that a
 
   
 ## Getting Started
+### Setup
+Add `python-gerber` as a submodule and install the dependencies
+```
+git submodule add https://github.com/esophagoose/python-gerber.git pygerber/
+git submodule init
+git submodule update
+
+pip3 install -r requirements.txt
+```
 To get started with the project, clone the repository and install the required dependencies listed in `requirements.txt`. Explore the example projects and the documentation provided in `examples/README.md` for guidance on using the libraries and tools.
+```python3 -m examples.io_expander_example```
 
 ## State of the Project
 This an actively worked on project. Currently there's no way to finish layout. I'm working on a KiCAD exporter so you can import the netlist and footprints to KiCAD and do layout there. The final goal is to incorporate a layout editor into the project.

@@ -1,0 +1,36 @@
+C3:
+  description: CAP_1.0uF_10.0V
+  layer: TOP
+  x: 10
+  y: 14
+  rotation: 0
+C4:
+  description: CAP_1.0uF_10.0V
+  layer: TOP
+  x: 10
+  y: 34
+  rotation: 0
+J1:
+  description: CONNECTOR_20x2
+  layer: TOP
+  x: 25
+  y: 25
+  rotation: 0
+J2:
+  description: QWIIC CONNECTOR SMD 4-PIN
+  layer: TOP
+  x: 0
+  y: 30
+  rotation: 90
+U1:
+  description: IC XPND 400KHZ I2C SMBUS 24TSSOP
+  layer: TOP
+  x: 10
+  y: 20
+  rotation: 0
+U2:
+  description: IC XPND 400KHZ I2C SMBUS 24TSSOP
+  layer: TOP
+  x: 10
+  y: 40
+  rotation: 0
