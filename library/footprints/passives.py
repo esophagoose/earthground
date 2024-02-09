@@ -1,7 +1,7 @@
 import enum
 from collections import namedtuple
 
-import pygerber.layers.aperture as aperture
+import pygerber.aperture as aperture
 
 import common.footprint_types as ft
 

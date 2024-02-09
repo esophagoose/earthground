@@ -4,18 +4,12 @@ import common.standard_values as sv
 
 
 class AP7330(cmp.Component):
-
     def __init__(self):
         super().__init__()
         self.name = "AP7330"
         self.pins = cmp.PinContainer.from_dict(
-            {
-                1: "VIN",
-                2: "GND",
-                3: "EN",
-                4: "ADJ",
-                5: "VOUT"
-            }, self)
+            {1: "VIN", 2: "GND", 3: "EN", 4: "ADJ", 5: "VOUT"}, self
+        )
         self._output_voltage = None
 
     def get_adj_resistors(self, output_voltage):
@@ -32,15 +26,11 @@ class AP7330(cmp.Component):
             assert 1 <= self._output_voltage <= 4.5, "Vout test failed"
 
     @classmethod
-    def reference_design(cls,
-                         output_voltage,
-                         schematic_name="AP7330_Reference"):
+    def reference_design(cls, output_voltage, schematic_name="AP7330_Reference"):
         design = schematic.Design(schematic_name)
         ldo = cls()
-        design.add_decoupling_cap(ldo.pins.by_name("VIN"),
-                                  cmp.Capacitor("1u", 10))
-        design.add_decoupling_cap(ldo.pins.by_name("VOUT"),
-                                  cmp.Capacitor("1u", 10))
+        design.add_decoupling_cap(ldo.pins.by_name("VIN"), cmp.Capacitor("1u", 10))
+        design.add_decoupling_cap(ldo.pins.by_name("VOUT"), cmp.Capacitor("1u", 10))
         r1, r2 = ldo.get_adj_resistors(output_voltage)
         design.connect(ldo.pins.by_name("VOUT"), r1.pins.by_name(1))
         design.connect(ldo.pins.by_name("ADJ"), r1.pins.by_name(2))

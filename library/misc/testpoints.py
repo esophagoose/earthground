@@ -1,4 +1,4 @@
-import pygerber.layers.aperture as ap_lib
+import pygerber.aperture as ap_lib
 
 import common.components as components
 from library.footprints import generics

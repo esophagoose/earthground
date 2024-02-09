@@ -1,7 +1,7 @@
 import enum
 from typing import Tuple
 
-import pygerber.layers.aperture as ap_lib
+import pygerber.aperture as ap_lib
 
 import common.components as cmp
 import common.footprint_types as ft

@@ -1,5 +1,5 @@
 import common.components as cmp
-import common.footprints.tssop as tssop
+import library.footprints.tssop as tssop
 from library.protocols.serial import I2C
 
 GPIO_COUNT = 16

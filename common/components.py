@@ -8,6 +8,7 @@ class Pin:
     name: str
     index: str
     parent: "Component"
+    net: str = None
 
     def __str__(self):
         return f"{self.parent}.{self.index} ({self.name})"

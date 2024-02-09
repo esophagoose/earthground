@@ -1,6 +1,6 @@
 import enum
 
-import pygerber.layers.aperture as ap_lib
+import pygerber.aperture as ap_lib
 
 import common.footprint_types as ft
 

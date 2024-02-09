@@ -3,14 +3,14 @@ import os
 import random
 from typing import Dict, Tuple
 
-import pygerber.layers.aperture as aperture_lib
-import pygerber.layers.gerber_layer as gl
+import pygerber.aperture as aperture_lib
+import pygerber.gerber_layer as gl
 import svgwrite as svg
-import utils.tuples as tu
 import yaml
 
 import common.schematic as sch_lib
 import common.stackup as su_lib
+import common.utils as tu
 
 
 class ComponentLayer(enum.Enum):

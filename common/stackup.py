@@ -1,6 +1,6 @@
 import enum
 
-import pygerber.layers.gerber_layer as gl
+import pygerber.gerber_layer as gl
 
 
 class LayerType(enum.Enum):

@@ -1,7 +1,7 @@
 import math
 from typing import Dict, NamedTuple
 
-import pygerber.layers.aperture as ap_lib
+import pygerber.aperture as ap_lib
 
 
 class Pad(NamedTuple):

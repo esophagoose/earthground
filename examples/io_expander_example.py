@@ -45,4 +45,4 @@ two_layers = stackup.Stackup(stackup.TWO_LAYER_STACKUP)
 layout = layout_lib.Layout(schematic, two_layers)
 
 layout.generate_layout("examples/io_expander_example.yaml")
-layout.to_svg("./outputs/io_expander_example.svg")
+layout.to_svg("io_expander_example.svg")
