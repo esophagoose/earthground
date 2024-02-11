@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html style="height: 100%">
+<head>
+    <title>SVG Example</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/svg.js/3.0.16/svg.min.js"></script>
+    <script src="svg.draggable.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Asap:wght@100;400;600&display=swap" rel="stylesheet">
+</head>
+<body class="bg-neutral-800" style="height: 100%">
+    <div class="fixed top-0 left-0 w-full bg-neutral-900 text-white border-b border-neutral-700" style="font-family: 'Asap', sans-serif;">
+        <nav class="flex justify-between items-center px-4 py-3">
+            <div class="flex text-lg">
+                <span style="font-size:1.2em;font-weight:600">EARTHGROUND</span>
+                <p style="margin:1px 1em;font-size:0.8em;font-weight:100">LAYOUT EDITOR</p>
+            </div>
+            <div>
+                <button onclick="selectMode(1)" class="bg-yellow-600 hover:bg-rose-700 text-sm py-1 px-3 rounded mr-2">PLACEMENT</button>
+                <button onclick="selectMode(2)" class="bg-stone-500 hover:bg-rose-700 text-sm py-1 px-3 rounded mr-2">ROUTING</button>
+                <button onclick="selectMode(3)" class="bg-stone-500 hover:bg-rose-700 text-sm py-1 px-3 rounded mr-2">REGIONS</button>
+            </div>
+        </nav>
+    <div class="fixed top-40 left-5 flex flex-col justify-center items-center text-neutral-400 border border-neutral-500 rounded-xl">
+        <button class="mt-3 -ml-px border-l border-amber-300 text-white text-xl py-2 px-4  mb-2"><i class="bi-cursor"></i></button>
+        <button class="hover:text-amber-200 text-xl py-2 px-4 rounded mb-2"><i class="bi-align-middle"></i></button>
+        <button class="hover:text-amber-200 text-xl py-2 px-4 rounded mb-2"><i class="bi-record-circle"></i></button>
+        <button class="hover:text-amber-200 text-xl py-2 px-4 rounded mb-2"><i class="bi-image"></i></button>
+        <button class="hover:text-amber-200 text-xl py-2 px-4 rounded mb-3"><i class="bi-cloud-download"></i></button>
+    </div>
+    <footer class="fixed bottom-0 left-0 w-full bg-neutral-900 text-neutral-200 border-t border-neutral-700">
+        <div class="flex justify-around items-center p-2">
+            <button onclick="setLayer(1)" class="border border-stone-500 hover:bg-stone-600 text-xs py-1 px-2 rounded">
+                <i class="bi-square text-yellow-400 mr-1.5"></i>
+                TOP SILK
+            </button>
+            <button onclick="setLayer(2)" class="border border-stone-500 bg-stone-500 hover:bg-stone-600 text-xs py-1 px-2 rounded">
+                <i class="bi-square-fill text-red-500 mr-1.5"></i>
+                TOP COPPER
+            </button>
+            <button onclick="setLayer(3)" class="border border-stone-500 hover:bg-stone-600 text-xs py-1 px-2 rounded">
+                <i class="bi-square text-sky-500 mr-1.5"></i>
+                BOTTOM COPPER
+            </button>
+            <button onclick="setLayer(4)" class="border border-stone-500 hover:bg-stone-600 text-xs py-1 px-2 rounded">
+                <i class="bi-square text-yellow-200 mr-1.5"></i>
+                BOTTOM SILK
+            </button>
+        </div>
+    </footer>
+    </div>
+    <div id="drawing" style="display: none;">
+        <?xml version="1.0" encoding="utf-8" ?>
+        <svg id="svg-layout" baseProfile="tiny" height="100%" version="1.2" viewBox="0,0,50,50" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:ev="http://www.w3.org/2001/xml-events" xmlns:xlink="http://www.w3.org/1999/xlink"><defs /><g><g><rect fill="red" fill-opacity="0" height="7.550000000000001" width="7.199999999999999" x="6.4" y="16.225" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="16.225" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="16.875" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="17.525000000000002" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="18.175" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="18.825" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="19.475" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="20.125" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="20.775000000000002" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="21.425" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="22.075" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="22.725" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="23.375" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="23.375" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="22.725" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="22.075" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="21.425" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="20.775000000000002" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="20.125" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="19.475" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="18.825" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="18.175" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="17.525000000000002" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="16.875" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="16.225" /></g><g><rect fill="red" height="0.95" rx="0.25" ry="0.25" width="0.9" x="8.775" y="13.525" /><rect fill="red" height="0.95" rx="0.25" ry="0.25" width="0.9" x="10.325000000000001" y="13.525" /></g><g><rect fill="red" fill-opacity="0" height="7.550000000000001" width="7.199999999999999" x="6.4" y="36.225" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="36.224999999999994" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="36.875" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="37.525" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="38.175" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="38.824999999999996" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="39.474999999999994" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="40.125" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="40.775" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="41.425" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="42.074999999999996" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="42.724999999999994" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="6.4" y="43.375" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="43.375" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="42.724999999999994" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="42.074999999999996" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="41.425" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="40.775" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="40.125" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="39.474999999999994" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="38.824999999999996" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="38.175" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="37.525" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="36.875" /><rect fill="red" height="0.4" rx="0.1" ry="0.1" width="1.475" x="12.125" y="36.224999999999994" /></g><g><rect fill="red" height="0.95" rx="0.25" ry="0.25" width="0.9" x="8.775" y="33.525" /><rect fill="red" height="0.95" rx="0.25" ry="0.25" width="0.9" x="10.325000000000001" y="33.525" /></g><g><rect fill="red" height="1.55" rx="0" ry="0" width="0.6" x="-1.8" y="24.450000000000003" /><rect fill="red" height="1.55" rx="0" ry="0" width="0.6" x="-0.8" y="24.450000000000003" /><rect fill="red" height="1.55" rx="0" ry="0" width="0.6" x="0.2" y="24.450000000000003" /><rect fill="red" height="1.55" rx="0" ry="0" width="0.6" x="1.2" y="24.450000000000003" /><rect fill="red" height="1.8" rx="0" ry="0" width="1.2" x="-3.4" y="30.0" /><rect fill="red" height="1.8" rx="0" ry="0" width="1.2" x="2.1999999999999997" y="30.0" /></g><g><circle cx="23.73" cy="0.870000000000001" fill="red" r="0.7" /><circle cx="26.27" cy="0.870000000000001" fill="red" r="0.7" /><circle cx="23.73" cy="3.41" fill="red" r="0.7" /><circle cx="26.27" cy="3.41" fill="red" r="0.7" /><circle cx="23.73" cy="5.950000000000003" fill="red" r="0.7" /><circle cx="26.27" cy="5.950000000000003" fill="red" r="0.7" /><circle cx="23.73" cy="8.490000000000002" fill="red" r="0.7" /><circle cx="26.27" cy="8.490000000000002" fill="red" r="0.7" /><circle cx="23.73" cy="11.030000000000001" fill="red" r="0.7" /><circle cx="26.27" cy="11.030000000000001" fill="red" r="0.7" /><circle cx="23.73" cy="13.57" fill="red" r="0.7" /><circle cx="26.27" cy="13.57" fill="red" r="0.7" /><circle cx="23.73" cy="16.11" fill="red" r="0.7" /><circle cx="26.27" cy="16.11" fill="red" r="0.7" /><circle cx="23.73" cy="18.650000000000002" fill="red" r="0.7" /><circle cx="26.27" cy="18.650000000000002" fill="red" r="0.7" /><circle id="the-circle" cx="23.73" cy="21.19" fill="red" r="0.7" /><circle cx="26.27" cy="21.19" fill="red" r="0.7" /><circle cx="23.73" cy="23.73" fill="red" r="0.7" /><circle cx="26.27" cy="23.73" fill="red" r="0.7" /><circle cx="23.73" cy="26.27" fill="red" r="0.7" /><circle cx="26.27" cy="26.27" fill="red" r="0.7" /><circle cx="23.73" cy="28.810000000000002" fill="red" r="0.7" /><circle cx="26.27" cy="28.810000000000002" fill="red" r="0.7" /><circle cx="23.73" cy="31.35" fill="red" r="0.7" /><circle cx="26.27" cy="31.35" fill="red" r="0.7" /><circle cx="23.73" cy="33.89" fill="red" r="0.7" /><circle cx="26.27" cy="33.89" fill="red" r="0.7" /><circle cx="23.73" cy="36.43000000000001" fill="red" r="0.7" /><circle cx="26.27" cy="36.43000000000001" fill="red" r="0.7" /><circle cx="23.73" cy="38.97" fill="red" r="0.7" /><circle cx="26.27" cy="38.97" fill="red" r="0.7" /><circle cx="23.73" cy="41.510000000000005" fill="red" r="0.7" /><circle cx="26.27" cy="41.510000000000005" fill="red" r="0.7" /><circle cx="23.73" cy="44.05" fill="red" r="0.7" /><circle cx="26.27" cy="44.05" fill="red" r="0.7" /><circle cx="23.73" cy="46.59" fill="red" r="0.7" /><circle cx="26.27" cy="46.59" fill="red" r="0.7" /><circle cx="23.73" cy="49.129999999999995" fill="red" r="0.7" /><circle cx="26.27" cy="49.129999999999995" fill="red" r="0.7" /></g></g></svg>
+    </div>
+    <script>
+        const body = document.getElementsByTagName("body")[0];
+        var configuration = {
+            mode: 1,
+            action: 1,
+            layer: 2
+        }
+
+        body.addEventListener('keydown', function(event) {
+            console.log(event)
+            if (event.code.startsWith('Digit')) {
+                const index = parseInt(event.code.slice(-1));
+                if (index > 3 || index == 0) {
+                    return;
+                }
+                selectMode(index);
+            } else if (event.code === 'KeyW') {
+                
+            } else if (event.code === 'KeyS') {
+                
+            } else if (event.code === 'KeyA') {
+                setLayer(configuration.layer - 1);
+            } else if (event.code === 'KeyD') {
+                setLayer(configuration.layer + 1);
+            } else if (event.code === 'KeyD') {
+                setLayer(configuration.layer + 1);
+            }
+        });
+
+        function selectMode(i) {
+            $("nav button").removeClass("bg-yellow-600").addClass("bg-stone-500");
+            $(`nav button:nth-child(${i})`).removeClass("bg-stone-500").addClass("bg-yellow-600");
+            configuration.mode = i
+        }
+
+        function setLayer(i) {
+            $("footer button").removeClass("bg-stone-500");
+            $("footer button i").removeClass("bi-square-fill").addClass("bi-square");
+            $(`footer button:nth-child(${i})`).addClass("bg-stone-500");
+            $(`footer button:nth-child(${i}) i`).removeClass("bi-square").addClass("bi-square-fill");
+            configuration.layer = i
+        }
+        var drawing = document.getElementById('drawing');
+        var layout = SVG().addTo('body').size("100%", "100%")
+        layout.svg(drawing.innerHTML)
+        layout.find('g').each(group => {
+            group.draggable();
+            group.on('dragmove.namespace', e => {
+                const { handler, box } = e.detail
+                group.addEventListener('keydown', function(event) {
+                    if (event.code === 'Space') {
+                        console.warn("meow");
+                    }
+                });
+            })
+        })
+        const snapPoints = getAllShapeCoordinates()
+        let line;
+        let mode = "DRAG";
+        layout.on('mousedown', function(event) {
+            const point = [event.clientX, event.clientY];
+            let orientation = false
+            line = layout.polyline([point, point]).stroke({ width: 8, color: '#e82038', linecap: "round" }).fill('none');
+            layout.on('mousemove', function(event) {
+                console.log(`mousemove: ${[event.clientX, event.clientY]}`)
+                const snappedPoint = snapToTarget([event.clientX, event.clientY]);
+                const movePoint = layout.point(snappedPoint);
+                let points = [point]
+                let dx = movePoint.x - point[0];
+                let dy = movePoint.y - point[1];
+                let sign = Math.sign(dx) * Math.sign(dy)
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    if (orientation) {
+                        points.push([point[0] + sign * dy, movePoint.y])
+                        points.push([movePoint.x, movePoint.y])
+                    } else {
+                        points.push([movePoint.x - sign * dy, point[1]])
+                        points.push([movePoint.x, movePoint.y])
+                    }
+                } else {
+                    if (orientation) {
+                        points.push([movePoint.x, point[1] + sign * dx])
+                        points.push([movePoint.x, movePoint.y])
+                    } else {
+                        points.push([point[0], movePoint.y - sign * dx])
+                        points.push([movePoint.x, movePoint.y])
+                    }
+                }
+                line.plot(points);
+            });
+            document.addEventListener('keydown', function(event) {
+                if (event.code === 'Space') {
+                    orientation = !orientation;
+                }
+            });
+        });
+
+        layout.on('mouseup', function() {
+            layout.off('mousemove');
+        });
+
+        function snapToTarget(point) {
+            let distance = 20;
+            let currentPoint = point;
+            snapPoints.forEach(snapPoint => {
+                const dx = point[0] - snapPoint[0];
+                const dy = point[1] - snapPoint[1];
+                const newDistance = Math.sqrt(dx * dx + dy * dy);
+                if (newDistance < distance) {
+                    distance = newDistance;
+                    currentPoint = snapPoint;
+                }
+            });
+            return currentPoint;
+        }
+
+        function generateGrid(targetValue) {
+            const grid = [];
+            for (let i = 0; i <= targetValue; i += 20) {
+                grid.push(i);
+            }
+            return grid;
+        }
+        function getAllShapeCoordinates() {
+            const shapes = layout.find('circle, rect, polygon, line, polyline, path');
+            const coordinates = [];
+
+            shapes.each(function(i, children) {
+                const shape = this;
+                switch (shape.type) {
+                    case 'circle':
+                        coordinates.push([shape.cx(),shape.cy()]);
+                        break;
+                    case 'rect':
+                        coordinates.push([
+                            shape.x(),
+                            shape.y()
+                        ]);
+                        coordinates.push([
+                            (shape.x() + shape.width()),
+                            (shape.y() + shape.height())
+                        ]);
+                        break;
+                    case 'polygon':
+                    case 'polyline':
+                        const points = shape.array().valueOf().map(point => [point[0], point[1]]);
+                        coordinates.push(points);
+                        break;
+                    case 'line':
+                        coordinates.push([
+                            shape.attr('x1'),
+                            shape.attr('y1')
+                        ]);
+                        coordinates.push([
+                            shape.attr('x2'),
+                            shape.attr('y2')
+                        ]);
+                        break;
+                    case 'path':
+                        const pathD = shape.attr('d').match(/[MmLlHhVvZz][^MmLlHhVvZz]*/g);
+                        pathD.forEach(command => {
+                            const values = command.substring(1).split(/[ ,]+/).map(Number);
+                            if (command.startsWith('M') || command.startsWith('L')) {
+                                coordinates.push([values[0], values[1]]);
+                            } else if (command.startsWith('H')) {
+                                coordinates.push([values[0]]);
+                            } else if (command.startsWith('V')) {
+                                coordinates.push([values[0]]);
+                            }
+                        });
+                        break;
+                }
+            });
+
+            const viewbox = layout.children()[0].viewbox() 
+            console.log(coordinates[0])
+            const c = coordinates.map(pt => {
+                return [layout.bbox().w * pt[0] / viewbox.w, layout.bbox().h * pt[1] / viewbox.h]
+            });
+            console.log(c[0])
+            return c;
+        }
+    </script>
+</body>
+</html>
