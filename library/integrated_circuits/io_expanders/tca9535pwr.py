@@ -1,4 +1,6 @@
 import common.components as cmp
+import common.schematic as sch
+import common.utils as utils
 import library.footprints.tssop as tssop
 from library.protocols.serial import I2C
 
@@ -68,18 +70,48 @@ class TCA9535PWR(cmp.Component):
 
     @property
     def address(self):
+        converter = utils.ElectricalBool(self.pins.by_name("VCC").net)
         address = 1 << 6
-        address |= int(self.pins.by_name("A0"))
-        address |= int(self.pins.by_name("A1")) << 1
-        address |= int(self.pins.by_name("A2")) << 2
+        address |= converter.to_int(self.pins.by_name("A0"))
+        address |= converter.to_int(self.pins.by_name("A1")) << 1
+        address |= converter.to_int(self.pins.by_name("A2")) << 2
         return address
 
-    @address.setter
-    def address(self, value):
-        assert 0 <= value <= 7, f"Invalid address {value}"
-        a0 = "VCC" if value & 1 else "GND"
-        a1 = "VCC" if (value >> 1) & 1 else "GND"
-        a2 = "VCC" if (value >> 2) & 1 else "GND"
-        self.pins.by_name("A0").net = a0
-        self.pins.by_name("A1").net = a1
-        self.pins.by_name("A2").ndt = a2
+
+def generate_design(
+    address=0, interrupt_pullup="10k", decoupling_cap=cmp.Capacitor("1u", 10)
+):
+    if not (0 <= address <= 7):
+        raise ValueError(f"Invalid address {address}; range 0-7")
+    ports = [f"IO{i}" for i in range(GPIO_COUNT)] + ["VCC", "GND", "I2C", "INT"]
+    design = sch.Design("Tca9535Design", "EXPANDER", ports)
+    expander = design.add_component(TCA9535PWR())
+    design.join_net(expander.pins.by_name("VCC"), "VCC")
+    design.join_net(expander.pins.by_name("GND"), "GND")
+
+    # Set address pins
+    converter = utils.ElectricalBool("VCC", "GND")
+    a0 = converter.to_net(address & 1)
+    a1 = converter.to_net((address >> 1) & 1)
+    a2 = converter.to_net((address >> 2) & 1)
+    design.join_net(expander.pins.by_name("A0"), a0)
+    design.join_net(expander.pins.by_name("A1"), a1)
+    design.join_net(expander.pins.by_name("A2"), a2)
+
+    # Add decoupling cap and interrupt pull-up
+    design.add_decoupling_cap(expander.pins.by_name("VCC"), decoupling_cap)
+    if interrupt_pullup:
+        design.add_series_res(
+            pin1=expander.pins.by_name("INT"),
+            ohms=interrupt_pullup,
+            pin2=expander.pins.by_name("VCC"),
+            net_name="I2C_INT",
+        )
+
+    # Assign ports
+    for name in ["VCC", "GND", "INT"]:
+        design.port[name] = expander.pins.by_name(name)
+    for i in range(GPIO_COUNT):
+        design.port[f"IO{i}"] = expander.gpio(i)
+    design.port.i2c = expander.i2c
+    return design

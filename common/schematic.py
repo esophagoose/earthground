@@ -6,44 +6,40 @@ import common.components as cmp
 import library.footprints.passives as passives
 
 
-class Net:
-    def __init__(self, name) -> None:
-        self.name = name
-        self.connections = []
+class Ports:
+    def __init__(self, ports: List[str]):
+        self.names = ports
+        for port in ports:
+            setattr(self, port, None)
 
-    def __repr__(self) -> str:
-        return f"Net<{self.name}>"
+    def __getitem__(self, port):
+        port = port.lower()
+        if port not in self.names:
+            raise ValueError(f"Unknown port: {port}. Options {self.names}")
+        return getattr(self, port)
 
-    def __str__(self) -> str:
-        return f"Net<{self.name}>"
-
-    def add(self, pin: cmp.Pin):
-        if pin.net == self:
-            return
-        if pin.net and not pin.net.name.startswith("AutoNet"):
-            logging.warning(f"Overwriting net! {pin.net} -> {self}")
-        pin.net = self
-        self.connections.append(pin)
-
-    def extend(self, pins: List[cmp.Pin]):
-        for pin in pins:
-            self.connections.append(pin)
+    def __setitem__(self, port, value):
+        port = port.lower()
+        if port not in self.names:
+            raise ValueError(f"Unknown port: {port}. Options {self.names}")
+        return setattr(self, port, value)
 
 
 class Design:
-    def __init__(self, name, short_name=None):
+    def __init__(self, name, short_name=None, ports=[]):
         self.name = name
         self.short_name = short_name
         if not short_name:
             self.short_name = self.name
-        self.components = {}
+        self.components: Dict[str, cmp.Component] = {}
         self.modules: List[Design] = []
         self._module_names: Dict[str, int] = {}
         self.designator_map = defaultdict(lambda: 0)
-        self.nets: Dict[str, Net] = {}
+        self.nets: Dict[str, cmp.Net] = {}
         self.busses = {}
-        self._pin_to_net = {}
         self.default_passive_size = None
+        self.port = Ports([p.lower() for p in ports])
+        self.add_net("GND")
 
     def add_module(self, module: "Design"):
         if not isinstance(module, Design):
@@ -53,13 +49,11 @@ class Design:
         prefix = module.short_name + str(self._module_names[module.short_name])
         self._module_names[module.short_name] += 1
         module.short_name = prefix
-        nets = {}
-        for name, net in module.nets.items():
-            net.name = "_".join([prefix, net.name])
-            nets["_".join([prefix, name])] = net
-        module.nets = nets
+        net_names = [net.name for net in module.nets.values()]
+        for net_name in net_names:
+            # net.name = "_".join([prefix, net.name])
+            module.change_net_name(net_name, "_".join([prefix, net_name]))
         self.modules.append(module)
-        self.nets.update(module.nets)
         return module
 
     def add_component(self, component):
@@ -68,34 +62,38 @@ class Design:
             package = passives.PassivePackage[name]
             component.footprint = passives.PassiveSmd(package)
         self.components[hash(component)] = component
+        component.parent = self
         return component
 
     def add_net(self, name):
-        net = Net(name)
+        net = cmp.Net(name)
         self.nets[name] = net
         return net
 
-    def join_net(self, pin: cmp.Pin, net):
-        if net not in self.nets:
-            self.nets[net] = Net(net)
-        self.nets[net].add(pin)
-        self._pin_to_net[pin] = net
-        if hash(pin.parent) not in self.components:
-            self.add_component(pin.parent)
-        return self.nets[net]
+    def join_net(self, pin: cmp.Pin, net: str):
+        schematic = pin.parent.parent
+        assert schematic, f"Floating part {pin.parent}! Did you forget to add it?"
+        if net not in schematic.nets:
+            schematic.nets[net] = cmp.Net(net)
+        if pin.net and pin.net.name in schematic.nets:
+            schematic.change_net_name(pin.net.name, net)
+        else:
+            schematic.nets[net].add(pin)
+        return schematic.nets[net]
 
     def change_net_name(self, old_net_name: str, new_net_name: str):
-        old_net = self.nets[old_net_name]
-        old_net.name = new_net_name
-        self.nets[new_net_name] = self.nets[old_net_name]
-        del self.nets[old_net_name]
+        print(f"Changing from {old_net_name} to {new_net_name}")
+        self.nets[new_net_name] = self.nets.pop(old_net_name)
+        self.nets[new_net_name].name = new_net_name
 
-    def connect(self, pin1, pin2, net_name=None):
+    def connect(self, list_of_pins: List[cmp.Pin], net_name=None):
         if not net_name:
-            net_name = self._pin_to_net.get(pin1)
-            net_name = net_name or self._pin_to_net.get(pin2, f"AutoNet{pin1.name}")
-        self.join_net(pin1, net_name)
-        self.join_net(pin2, net_name)
+            if not any([p for p in list_of_pins if p.assigned]):
+                net_name = f"AutoNet<{list_of_pins[0].name}>"
+            else:
+                net_name = next([p for p in list_of_pins if p.assigned]).net.name
+        for pin in list_of_pins:
+            self.join_net(pin, net_name)
 
     def connect_bus(self, bus1, bus2, net_name=None):
         assert isinstance(
@@ -103,24 +101,18 @@ class Design:
         ), f"Type mismatch! {type(bus1)} != {type(bus2)}"
         if not net_name:
             bus_type = type(bus1).__name__
-            i = len(self.busses)
+            i = self.busses.get(bus_type, 0)
             net_name = f"{bus_type}{i}"
+            self.busses[bus_type] = i + 1
         for name, pin in bus1._asdict().items():
             self.join_net(pin, "_".join([net_name, name.upper()]))
         for name, pin in bus2._asdict().items():
             self.join_net(pin, "_".join([net_name, name.upper()]))
 
-    def connect_all(self, net_name):
-        for module in self.modules:
-            full_name = "_".join([module.short_name, net_name])
-            if full_name in module.nets:
-                self.nets[net_name].extend(module.nets[full_name].connections)
-        return self.nets[net_name]
-
     def add_decoupling_cap(self, pin, capacitor):
-        net_name = self._pin_to_net.get(pin, f"AutoNet{pin.name}")
-        self.join_net(pin, net_name)
-        self.join_net(capacitor.pins[1], net_name)
+        self.add_component(capacitor)
+        self.join_net(pin, pin.net.name)
+        self.join_net(capacitor.pins[1], pin.net.name)
         self.join_net(capacitor.pins[2], "GND")
 
     def add_series_res(self, pin1, ohms, pin2, net_name=None):
@@ -151,3 +143,31 @@ class Design:
             logging.error("")
             assert not errors
         return components
+
+    def print_design_symbol(self):
+        pad = max([len(n) for n in self.port.names]) + 2
+        print(f"{self.short_name} ({self.name})")
+        print("." + "-" * pad + ".")
+        for name in self.port.names:
+            connection = "<NO CONNECTION>"
+            if self.port[name] and isinstance(self.port[name], cmp.Pin):
+                if self.port[name].net:
+                    connection = self.port[name].net
+            elif self.port[name]:
+                c = [p.net.name for p in self.port[name]._asdict().values()]
+                name = type(self.port[name]).__name__
+                connection = f"{name} [{', '.join(c)}]"
+            print(f"|{name.rjust(pad).upper()}|-- {connection}")
+        print("'" + "-" * pad + "'\n")
+
+    def print_design(self):
+        for component in self.components.values():
+            pad = max([len(p.name) for p in component.pins]) + 2
+            print(f"{component.refdes} ({component.name})")
+            print("." + "-" * pad + ".")
+            for pin in sorted(component.pins, key=lambda p: p.name):
+                connection = pin.net if pin.net else "<NO CONNECTION>"
+                print(f"|{pin.name.rjust(pad)}|-- {connection}")
+            print("'" + "-" * pad + "'\n")
+        for module in self.modules:
+            module.print_design_symbol()

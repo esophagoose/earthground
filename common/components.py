@@ -1,16 +1,49 @@
-import dataclasses
+from typing import List, Union
 
 import common.standard_values as sv
 
 
-@dataclasses.dataclass
+class Net:
+    def __init__(self, name) -> None:
+        self.name = name
+        self.connections = set()
+
+    def __repr__(self) -> str:
+        return f"Net<{self.name}>"
+
+    def __str__(self) -> str:
+        return f"Net<{self.name}>"
+
+    def add(self, pin: "Pin"):
+        if pin.net == self:
+            return
+        if pin.net and not pin.net.name.startswith("AutoNet"):
+            print(f"Merging nets: {pin.net} + {self} --> {self}")
+            self.extend(pin.net.connections)
+        pin.net = self
+        self.connections.add(pin)
+
+    def extend(self, pins: List["Pin"]):
+        for pin in pins:
+            self.connections.add(pin)
+            print(pin, self.name)
+            pin.net = self
+
+
 class Pin:
-    name: str
-    index: str
-    parent: "Component"
-    net: str = None
+    def __init__(
+        self, name: str, index: str, parent: "Component", net: Union[Net, None] = None
+    ):
+        self.name = name
+        self.index = index
+        self.parent = parent
+        self.net = net
+        self.assigned = False
 
     def __str__(self):
+        return f"{self.parent}.{self.index} ({self.name})"
+
+    def __repr__(self):
         return f"{self.parent}.{self.index} ({self.name})"
 
     def __hash__(self):
@@ -33,7 +66,8 @@ class Component:
         self.mpn = ""
         self.type = self.__class__.__name__
         self.parameters = {}
-        self.pins = []
+        self.pins = PinContainer([])
+        self.parent = None
         self.footprint = None
         if self.refdes_prefix not in Component.REFDES_MAP:
             Component.REFDES_MAP[self.refdes_prefix] = 0
@@ -83,7 +117,7 @@ PASSIVE_TYPES = (Resistor, Capacitor)
 
 
 class PinContainer:
-    def __init__(self, pins):
+    def __init__(self, pins: List[Pin]):
         self._pins = frozenset(pins)
         self.names = {p.name: p for p in pins}
         self.indicies = {p.index: p for p in pins}
@@ -115,3 +149,12 @@ class PinContainer:
         if index in self.indicies:
             return self.indicies[index]
         raise ValueError(f"Unknown index: {index} in {self.indicies}")
+
+    def all_with_name(self, name: Union[str, List[str]]):
+        if not isinstance(name, (str, list)):
+            raise ValueError("'name' must be a str or list of str!")
+        for pin in self._pins:
+            if isinstance(name, str) and pin.name == name:
+                yield pin
+            elif isinstance(name, list) and pin.name in name:
+                yield pin

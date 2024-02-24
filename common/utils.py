@@ -1,6 +1,23 @@
 import math
 
 
+class ElectricalBool:
+    def __init__(self, logic_high_name="VCC", logic_low_name="GND"):
+        self.high = logic_high_name
+        self.low = logic_low_name
+
+    def to_int(self, net_name: str) -> bool:
+        if self.high == net_name:
+            return 1
+        elif self.low == net_name:
+            return 0
+        else:
+            raise ValueError(f"Undefined value for net: {net_name}")
+
+    def to_net(self, value: bool) -> str:
+        return self.high if value else self.low
+
+
 def add(tuple1, tuple2):
     assert len(tuple1) == len(tuple2), "Mismatched sized tuples!"
     return tuple([t + tuple2[i] for i, t in enumerate(tuple1)])
