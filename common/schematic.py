@@ -106,15 +106,30 @@ class Design:
         for pin in list_of_pins:
             self.join_net(pin, net_name)
 
-    def connect_bus(self, bus1, bus2, net_name=None):
+    def _get_bus_index(self, bus):
+        bus_type = type(bus).__name__
+        name, pin = next(iter(bus._asdict().items()))
+        if pin in self.pin_to_net:
+            net_name = self.pin_to_net[pin].name
+            if net_name.startswith(bus_type) and net_name.endswith(name.upper()):
+                return int(net_name[len(bus_type)])
+
+    def connect_bus(self, bus1, bus2, bus_index=None):
         assert isinstance(
             bus1, type(bus2)
         ), f"Type mismatch! {type(bus1)} != {type(bus2)}"
-        if not net_name:
-            bus_type = type(bus1).__name__
-            i = self.busses.get(bus_type, 0)
-            net_name = f"{bus_type}{i}"
-            self.busses[bus_type] = i + 1
+        bus_type = type(bus1).__name__
+        if bus_index is None:
+            # Check if either bus is already connected to a bus
+            if self._get_bus_index(bus1) is not None:
+                bus_index = self._get_bus_index(bus1)
+            elif self._get_bus_index(bus2) is not None:
+                bus_index = self._get_bus_index(bus2)
+            else:
+                # Else assign a bus name
+                bus_index = self.busses.get(bus_type, 0)
+                self.busses[bus_type] = bus_index + 1
+        net_name = f"{bus_type}{bus_index}"
         for name, pin in bus1._asdict().items():
             self.join_net(pin, "_".join([net_name, name.upper()]))
         for name, pin in bus2._asdict().items():
