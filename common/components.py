@@ -31,14 +31,11 @@ class Net:
 
 
 class Pin:
-    def __init__(
-        self, name: str, index: str, parent: "Component", net: Union[Net, None] = None
-    ):
+    def __init__(self, name: str, index: str, parent: "Component"):
         self.name = name
         self.index = index
         self.parent = parent
-        self.net = net
-        self.assigned = False
+        self.net = Net()
 
     def __str__(self):
         return f"{self.parent}.{self.index} ({self.name})"
@@ -93,17 +90,20 @@ class Component:
 
 
 class Resistor(Component):
-    def __init__(self, value):
+    def __init__(self, value, **parameters):
         super().__init__()
-        self.value = sv.SiNumber(value, "Ω")
+        self.value = value
+        if not isinstance(value, sv.SiNumber):
+            self.value = sv.SiNumber(value, "Ω")
         self.name = f"RES_{self.value}"
         self.description = self.name
         self.pins = PinContainer.from_count(2, self)
         self.refdes_prefix = "R"
+        self.parameters = parameters
 
 
 class Capacitor(Component):
-    def __init__(self, value, voltage):
+    def __init__(self, value, voltage, **parameters):
         super().__init__()
         self.value = sv.SiNumber(value, "F")
         self.voltage = sv.SiNumber(voltage, "V")
@@ -111,6 +111,7 @@ class Capacitor(Component):
         self.description = self.name
         self.pins = PinContainer.from_count(2, self)
         self.refdes_prefix = "C"
+        self.parameters = parameters
 
 
 PASSIVE_TYPES = (Resistor, Capacitor)
@@ -139,6 +140,9 @@ class PinContainer:
 
     def __iter__(self) -> Pin:
         return iter(self._pins)
+
+    def __len__(self):
+        return len(self._pins)
 
     def by_name(self, name):
         if name in self.names:

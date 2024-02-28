@@ -20,6 +20,7 @@ MICROSTEPS = [1, 2, 4, 16]
 class TMC2100_LA_T(cmp.Component):
     def __init__(self):
         super().__init__()
+        self.name = "TMC2100"
         self.detailed_description = (
             "Bipolar Motor Driver Power MOSFET Logic 36-QFN (5x6)"
         )
@@ -154,6 +155,13 @@ class ChopperBlankTime(enum.Enum):
 
 
 class CurrentSetting(enum.Enum):
+    """
+    Two options exists for current sensing
+
+    Adding an external AIN reference can scale the motor current
+    Using external sense resistors on the motor phase outputs
+    """
+
     INT_AIN_REF__EXT_RES = "GND"
     INT_AIN_REF__INT_RES = "VCC_IO"
     EXT_AIN_REF__EXT_RES = None
@@ -165,7 +173,6 @@ class CurrentSetting(enum.Enum):
 
 def generate_design(
     driver=TMC2100_LA_T(),
-    clock=None,
     current_limit=None,
     sense_resistor=None,
     use_internal_5v=True,
@@ -174,55 +181,67 @@ def generate_design(
     chopper_hysteresis=ChopperHysteresis.LOW,
     current_setting=CurrentSetting.INT_AIN_REF__INT_RES,
 ):
+    """
+    Generates a schematic design for the TMC2100 motor driver with configurable parameters.
+
+    Parameters:
+    - driver (TMC2100_LA_T): The TMC2100 motor driver instance
+    - current_limit (float, optional): The current limit for the motor driver
+    - sense_resistor (Resistor, optional): The value of the sense resistor in ohms
+    - use_internal_5v (bool): Use internal 5V LDO to power 5VOUT;
+    - blank_time (ChopperBlankTime): The blank time setting for the chopper
+    - slow_decay_duration (ChopperOffTime): The slow decay duration setting for the chopper
+    - chopper_hysteresis (ChopperHysteresis): The chopper hysteresis setting
+    - current_setting (CurrentSetting): Current sensing method for the driver
+
+    Returns:
+    - schematic (Design): The generated schematic design object.
+    """
     ports = ["vmotor", "vio", "gnd", "enable", "cfg1", "cfg2"]
+    ports += ["oa1", "oa2", "ob2", "ob1", "step", "index"]
     schematic = sch.Design("TMC2100Design", "MOTOR", ports)
-    grounded_pins = ["EP", "GNDP", "GNDD", "GNDA", "NC", "TST_MODE"]
+    grounded_pins = ["EP", "GNDP", "GNDD", "GNDA", "N.C.", "TST_MODE", "CLK"]
+    schematic.add_component(driver)
     vio = driver.pins.by_name("VCC_IO")
-    if not clock:
-        grounded_pins.append("CLK")
-    else:
-        raise NotImplementedError("External clock not supported")
     schematic.add_series_res(vio, "47k", driver.pins.by_name("ERROR"))
     schematic.add_series_res(vio, "10k", driver.pins.by_name("INDEX"))
-    schematic.add_decoupling_cap(driver.pins.by_name("5VOUT"),
-                                 cmp.Capacitor("10u", 10))
+    schematic.add_decoupling_cap(driver.pins.by_name("5VOUT"), cmp.Capacitor("10u", 10))
+
     # Charge pumps
-    charge_pump = cmp.Capacitor("22n", 50)
+    charge_pump = schematic.add_component(cmp.Capacitor("22n", 50))
     schematic.connect([driver.pins.by_name("CPI"), charge_pump.pins[1]])
     schematic.connect([driver.pins.by_name("CPO"), charge_pump.pins[2]])
-    motor_cp = cmp.Capacitor("100n", 50)
+    motor_cp = schematic.add_component(cmp.Capacitor("100n", 50))
     schematic.connect([driver.pins.by_name("VCP"), motor_cp.pins[1]])
     schematic.connect([driver.pins.by_name("VS"), motor_cp.pins[2]])
+
     # Decoupling capacitor
-    schematic.add_decoupling_cap(driver.pins.by_name("VSA"),
-                                 cmp.Capacitor("100n", 10))
+    schematic.join_net(driver.pins.by_name("VSA"), "VMOTOR")
+    schematic.add_decoupling_cap(driver.pins.by_name("VSA"), cmp.Capacitor("100n", 10))
     for pin in driver.pins.all_with_name("VS"):
+        schematic.join_net(pin, "VMOTOR")
         schematic.add_decoupling_cap(pin, cmp.Capacitor("1u", 50))
-    schematic.add_decoupling_cap(driver.pins.by_name("VS"),
-                                 cmp.Capacitor("47u", 50))
-    schematic.add_decoupling_cap(driver.pins.by_name("VCC"),
-                                 cmp.Capacitor("47u", 50))
+    schematic.add_decoupling_cap(driver.pins.by_name("VS"), cmp.Capacitor("47u", 50))
+    schematic.add_decoupling_cap(driver.pins.by_name("VCC"), cmp.Capacitor("47u", 50))
+
     # Set configuration pins
     #   CFG0, CFG3, CFG4, CFG5
     for config in [
-            slow_decay_duration,
-            blank_time,
-            chopper_hysteresis,
-            current_setting,
+        slow_decay_duration,
+        blank_time,
+        chopper_hysteresis,
+        current_setting,
     ]:
         if config.value:
             pin = driver.pins.by_name(blank_time.value)
             schematic.connect([pin, driver.pins.by_name(config.pin)])
-    #  CFG1, CFG2, CFG6
-    schematic.port.cfg1 = driver.pins.by_name("CFG1")
-    schematic.port.cfg2 = driver.pins.by_name("CFG2")
-    schematic.port.enable = driver.pins.by_name("CFG6_ENN")
 
     if sense_resistor:
-        schematic.add_series_res(driver.pins.by_name("BRA"), sense_resistor,
-                                 driver.pins.by_name("GNDP"))
-        schematic.add_series_res(driver.pins.by_name("BRB"), sense_resistor,
-                                 driver.pins.by_name("GNDP"))
+        gndp = driver.pins.by_name("GNDP")
+        sr1 = sense_resistor
+        sr2 = cmp.Resistor(sense_resistor.value, **sense_resistor.parameters)
+        schematic.add_series_res(driver.pins.by_name("BRA"), sr1, gndp)
+        schematic.add_series_res(driver.pins.by_name("BRB"), sr2, gndp)
     else:
         grounded_pins.append("BRA")
         grounded_pins.append("BRB")
@@ -230,7 +249,16 @@ def generate_design(
     if current_limit:
         driver.pins.by_name("AIN_IREF")
     if use_internal_5v:
-        schematic.add_series_res(driver.pins.by_name("5VOUT"), 2.2,
-                                 driver.pins.by_name("VCC"))
+        schematic.add_series_res(
+            driver.pins.by_name("5VOUT"), 2.2, driver.pins.by_name("VCC")
+        )
     for grounded_pin in driver.pins.all_with_name(grounded_pins):
         schematic.join_net(grounded_pin, "GND")
+
+    schematic.port.vmotor = driver.pins.by_name("VS")
+    schematic.port.vio = driver.pins.by_name("VCC_IO")
+    schematic.port.enable = driver.pins.by_name("CFG6_ENN")
+    schematic.port.gnd = driver.pins.by_name("GNDP")
+    for name in ["cfg1", "cfg2", "oa1", "oa2", "ob2", "ob1", "step", "index"]:
+        schematic.port[name] = driver.pins.by_name(name.upper())
+    return schematic

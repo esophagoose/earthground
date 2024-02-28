@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Union
 
 import common.components as cmp
 import library.footprints.passives as passives
@@ -51,7 +51,6 @@ class Design:
         module.short_name = prefix
         net_names = [net.name for net in module.nets.values()]
         for net_name in net_names:
-            # net.name = "_".join([prefix, net.name])
             module.change_net_name(net_name, "_".join([prefix, net_name]))
         self.modules.append(module)
         return module
@@ -111,17 +110,29 @@ class Design:
 
     def add_decoupling_cap(self, pin, capacitor):
         self.add_component(capacitor)
-        self.join_net(pin, pin.net.name)
-        self.join_net(capacitor.pins[1], pin.net.name)
+        net_name = f"AutoNet{pin.name}"
+        if pin.net:
+            net_name = pin.net.name
+        self.join_net(pin, net_name)
+        self.join_net(capacitor.pins[1], net_name)
         self.join_net(capacitor.pins[2], "GND")
 
-    def add_series_res(self, pin1, ohms, pin2, net_name=None):
+    def add_series_res(
+        self,
+        pin1: cmp.Pin,
+        ohms: Union[cmp.Resistor | int | str],
+        pin2: cmp.Pin,
+        net_name: str = None,
+    ):
         if not net_name:
             net_name = pin1.net.name if pin1.net else f"AutoNet{pin1.name}"
-        res = cmp.Resistor(ohms)
+        res = ohms
+        if not isinstance(ohms, cmp.Resistor):
+            res = cmp.Resistor(ohms)
         self.add_component(res)
         self.join_net(pin1, net_name)
         self.join_net(res.pins[1], net_name)
+        print("series_resistor ", pin2.name, pin2.net)
         next_name = pin2.net.name if pin2.net else net_name + "_R"
         self.join_net(res.pins[2], next_name)
         self.join_net(pin2, next_name)
@@ -144,7 +155,7 @@ class Design:
             assert not errors
         return components
 
-    def print_design_symbol(self):
+    def print_symbol(self):
         pad = max([len(n) for n in self.port.names]) + 2
         print(f"{self.short_name} ({self.name})")
         print("." + "-" * pad + ".")
@@ -152,7 +163,7 @@ class Design:
             connection = "<NO CONNECTION>"
             if self.port[name] and isinstance(self.port[name], cmp.Pin):
                 if self.port[name].net:
-                    connection = self.port[name].net
+                    connection = self.port[name].net.name
             elif self.port[name]:
                 c = [p.net.name for p in self.port[name]._asdict().values()]
                 name = type(self.port[name]).__name__
@@ -160,14 +171,14 @@ class Design:
             print(f"|{name.rjust(pad).upper()}|-- {connection}")
         print("'" + "-" * pad + "'\n")
 
-    def print_design(self):
+    def print(self):
         for component in self.components.values():
             pad = max([len(p.name) for p in component.pins]) + 2
             print(f"{component.refdes} ({component.name})")
             print("." + "-" * pad + ".")
             for pin in sorted(component.pins, key=lambda p: p.name):
-                connection = pin.net if pin.net else "<NO CONNECTION>"
+                connection = pin.net.name if pin.net else "<NO CONNECTION>"
                 print(f"|{pin.name.rjust(pad)}|-- {connection}")
             print("'" + "-" * pad + "'\n")
         for module in self.modules:
-            module.print_design_symbol()
+            module.print_symbol()

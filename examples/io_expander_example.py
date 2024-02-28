@@ -40,4 +40,4 @@ for ground_pin in range(4):
     schematic.join_net(gpio_connector.pins[start], "GND")
     schematic.join_net(gpio_connector.pins[end], "GND")
 
-schematic.print_design()
+schematic.print()
