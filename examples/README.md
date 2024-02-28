@@ -190,8 +190,8 @@ J2 (PRT-14417)
 |        GND|-- Net<GND>
 |  MOUNTING1|-- <NO CONNECTION>
 |  MOUNTING2|-- <NO CONNECTION>
-|        SCL|-- Net<I2C1_SCL>
-|        SDA|-- Net<I2C1_SDA>
+|        SCL|-- Net<I2C0_SCL>
+|        SDA|-- Net<I2C0_SDA>
 |        VCC|-- Net<P3V3>
 '-----------'
 
@@ -239,7 +239,7 @@ EXPANDER1 (Tca9535Design)
 |  IO15|-- Net<IO2_P36_OUT>
 |   VCC|-- Net<P3V3>
 |   GND|-- Net<GND>
-|   I2C|-- I2C [I2C1_SDA, I2C1_SCL]
+|   I2C|-- I2C [I2C0_SDA, I2C0_SCL]
 |   INT|-- <NO CONNECTION>
 '------'
 ```
