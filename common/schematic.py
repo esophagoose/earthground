@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from typing import Dict, List, Union
+from typing import Dict, List, Union, cast
 
 import common.components as cmp
 import library.footprints.passives as passives
@@ -10,7 +10,7 @@ class Ports:
     def __init__(self, ports: List[str]):
         self.names = ports
         for port in ports:
-            setattr(self, port, None)
+            setattr(self, port.lower(), None)
 
     def __getitem__(self, port):
         port = port.lower()
@@ -36,6 +36,7 @@ class Design:
         self._module_names: Dict[str, int] = {}
         self.designator_map = defaultdict(lambda: 0)
         self.nets: Dict[str, cmp.Net] = {}
+        self.pin_to_net: Dict[cmp.Pin, cmp.Net] = {}
         self.busses = {}
         self.default_passive_size = None
         self.port = Ports([p.lower() for p in ports])
@@ -69,28 +70,39 @@ class Design:
         self.nets[name] = net
         return net
 
-    def join_net(self, pin: cmp.Pin, net: str):
-        schematic = pin.parent.parent
+    def add_to_net(self, pin: cmp.Pin, net: cmp.Net):
+        if pin in self.pin_to_net:
+            old_net = self.pin_to_net[pin]
+            if old_net == net:
+                return
+            return self.change_net_name(old_net.name, net.name)
+        self.nets[net.name].add(pin)
+        self.pin_to_net[pin] = net
+
+    def join_net(self, pin: cmp.Pin, net_name: str):
+        schematic = cast(Design, pin.parent.parent)
         assert schematic, f"Floating part {pin.parent}! Did you forget to add it?"
-        if net not in schematic.nets:
-            schematic.nets[net] = cmp.Net(net)
-        if pin.net and pin.net.name in schematic.nets:
-            schematic.change_net_name(pin.net.name, net)
-        else:
-            schematic.nets[net].add(pin)
-        return schematic.nets[net]
+        if net_name not in schematic.nets:
+            schematic.nets[net_name] = cmp.Net(net_name)
+        net = schematic.nets[net_name]
+        schematic.add_to_net(pin, net)
+        return schematic.nets[net_name]
 
     def change_net_name(self, old_net_name: str, new_net_name: str):
-        print(f"Changing from {old_net_name} to {new_net_name}")
+        logging.warning(f"Overwriting net {old_net_name} to {new_net_name}")
         self.nets[new_net_name] = self.nets.pop(old_net_name)
         self.nets[new_net_name].name = new_net_name
 
     def connect(self, list_of_pins: List[cmp.Pin], net_name=None):
         if not net_name:
-            if not any([p for p in list_of_pins if p.assigned]):
+            nets = [self.pin_to_net.get(p) for p in list_of_pins]
+            if not any(nets):
+                # All pins don't have a net associated with them
                 net_name = f"AutoNet<{list_of_pins[0].name}>"
             else:
-                net_name = next([p for p in list_of_pins if p.assigned]).net.name
+                # Some pins have nets associated with them
+                #  First valid net set as net for all pins
+                net_name = next([net for net in nets if net])
         for pin in list_of_pins:
             self.join_net(pin, net_name)
 
@@ -111,8 +123,8 @@ class Design:
     def add_decoupling_cap(self, pin, capacitor):
         self.add_component(capacitor)
         net_name = f"AutoNet{pin.name}"
-        if pin.net:
-            net_name = pin.net.name
+        if pin in self.pin_to_net:
+            net_name = self.pin_to_net[pin].name
         self.join_net(pin, net_name)
         self.join_net(capacitor.pins[1], net_name)
         self.join_net(capacitor.pins[2], "GND")
@@ -120,20 +132,23 @@ class Design:
     def add_series_res(
         self,
         pin1: cmp.Pin,
-        ohms: Union[cmp.Resistor | int | str],
+        ohms: Union[cmp.Resistor, int, str],
         pin2: cmp.Pin,
         net_name: str = None,
     ):
         if not net_name:
-            net_name = pin1.net.name if pin1.net else f"AutoNet{pin1.name}"
+            net_name = f"AutoNet{pin1.name}"
+            if pin1 in self.pin_to_net:
+                net_name = self.pin_to_net[pin1]
         res = ohms
         if not isinstance(ohms, cmp.Resistor):
             res = cmp.Resistor(ohms)
         self.add_component(res)
         self.join_net(pin1, net_name)
         self.join_net(res.pins[1], net_name)
-        print("series_resistor ", pin2.name, pin2.net)
-        next_name = pin2.net.name if pin2.net else net_name + "_R"
+        next_name = net_name + "_R"
+        if pin2 in self.pin_to_net:
+            next_name = self.pin_to_net[pin2]
         self.join_net(res.pins[2], next_name)
         self.join_net(pin2, next_name)
         return res
@@ -162,12 +177,13 @@ class Design:
         for name in self.port.names:
             connection = "<NO CONNECTION>"
             if self.port[name] and isinstance(self.port[name], cmp.Pin):
-                if self.port[name].net:
-                    connection = self.port[name].net.name
+                if self.port[name] in self.pin_to_net:
+                    connection = self.pin_to_net[self.port[name]].name
             elif self.port[name]:
-                c = [p.net.name for p in self.port[name]._asdict().values()]
+                pins = [p for p in self.port[name]._asdict().values()]
+                pin_names = [self.pin_to_net[p].name for p in pins]
                 name = type(self.port[name]).__name__
-                connection = f"{name} [{', '.join(c)}]"
+                connection = f"{name} [{', '.join(pin_names)}]"
             print(f"|{name.rjust(pad).upper()}|-- {connection}")
         print("'" + "-" * pad + "'\n")
 
@@ -177,7 +193,9 @@ class Design:
             print(f"{component.refdes} ({component.name})")
             print("." + "-" * pad + ".")
             for pin in sorted(component.pins, key=lambda p: p.name):
-                connection = pin.net.name if pin.net else "<NO CONNECTION>"
+                connection = "<NO CONNECTION>"
+                if pin in self.pin_to_net:
+                    connection = self.pin_to_net[pin].name
                 print(f"|{pin.name.rjust(pad)}|-- {connection}")
             print("'" + "-" * pad + "'\n")
         for module in self.modules:

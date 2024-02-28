@@ -4,7 +4,7 @@ import common.standard_values as sv
 
 
 class Net:
-    def __init__(self, name) -> None:
+    def __init__(self, name="UNASSIGNED") -> None:
         self.name = name
         self.connections = set()
 
@@ -15,19 +15,11 @@ class Net:
         return f"Net<{self.name}>"
 
     def add(self, pin: "Pin"):
-        if pin.net == self:
-            return
-        if pin.net and not pin.net.name.startswith("AutoNet"):
-            print(f"Merging nets: {pin.net} + {self} --> {self}")
-            self.extend(pin.net.connections)
-        pin.net = self
         self.connections.add(pin)
 
     def extend(self, pins: List["Pin"]):
         for pin in pins:
             self.connections.add(pin)
-            print(pin, self.name)
-            pin.net = self
 
 
 class Pin:
@@ -35,7 +27,6 @@ class Pin:
         self.name = name
         self.index = index
         self.parent = parent
-        self.net = Net()
 
     def __str__(self):
         return f"{self.parent}.{self.index} ({self.name})"
@@ -44,7 +35,7 @@ class Pin:
         return f"{self.parent}.{self.index} ({self.name})"
 
     def __hash__(self):
-        return hash((self.name, self.parent))
+        return hash((self.name, self.index, self.parent))
 
     def __eq__(self, other):
         if not isinstance(other, Pin):
