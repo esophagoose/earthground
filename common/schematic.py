@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from typing import Dict, List, Union, cast
+from typing import Dict, List, Optional, Union, cast
 
 import common.components as cmp
 import library.footprints.passives as passives
@@ -57,6 +57,7 @@ class Design:
         return module
 
     def add_component(self, component):
+        logging.info(f"Adding component {component}")
         if isinstance(component, cmp.PASSIVE_TYPES) and self.default_passive_size:
             name = type(component).__name__[0] + self.default_passive_size
             package = passives.PassivePackage[name]
@@ -79,6 +80,11 @@ class Design:
         self.nets[net.name].add(pin)
         self.pin_to_net[pin] = net
 
+    def _get_net_name_from_pin(self, pin: cmp.Pin):
+        if pin in self.pin_to_net:
+            return self.pin_to_net[pin].name
+        return f"AutoNet_{pin.name}"
+
     def join_net(self, pin: cmp.Pin, net_name: str):
         schematic = cast(Design, pin.parent.parent)
         assert schematic, f"Floating part {pin.parent}! Did you forget to add it?"
@@ -98,11 +104,11 @@ class Design:
             nets = [self.pin_to_net.get(p) for p in list_of_pins]
             if not any(nets):
                 # All pins don't have a net associated with them
-                net_name = f"AutoNet<{list_of_pins[0].name}>"
+                net_name = f"AutoNet_{list_of_pins[0].name}"
             else:
                 # Some pins have nets associated with them
                 #  First valid net set as net for all pins
-                net_name = next([net for net in nets if net])
+                net_name = [net.name for net in nets if net][0]
         for pin in list_of_pins:
             self.join_net(pin, net_name)
 
@@ -149,12 +155,9 @@ class Design:
         pin1: cmp.Pin,
         ohms: Union[cmp.Resistor, int, str],
         pin2: cmp.Pin,
-        net_name: str = None,
+        net_name: Optional[str] = None,
     ):
-        if not net_name:
-            net_name = f"AutoNet{pin1.name}"
-            if pin1 in self.pin_to_net:
-                net_name = self.pin_to_net[pin1]
+        net_name = net_name or self._get_net_name_from_pin(pin1)
         res = ohms
         if not isinstance(ohms, cmp.Resistor):
             res = cmp.Resistor(ohms)
@@ -163,7 +166,7 @@ class Design:
         self.join_net(res.pins[1], net_name)
         next_name = net_name + "_R"
         if pin2 in self.pin_to_net:
-            next_name = self.pin_to_net[pin2]
+            next_name = self.pin_to_net[pin2].name
         self.join_net(res.pins[2], next_name)
         self.join_net(pin2, next_name)
         return res

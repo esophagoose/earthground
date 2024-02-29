@@ -48,6 +48,30 @@ def test_connect():
     assert pin2 in design.nets["VCC"].connections
 
 
+def test_connect_auto_assigned():
+    design = Design("TestDesign")
+    component = design.add_component(Component())
+    pin1 = Pin("TEST1", 1, component)
+    pin2 = Pin("TEST2", 2, component)
+    design.connect([pin1, pin2])
+    net = design.pin_to_net[pin2].name
+    assert net.startswith("AutoNet_"), "Failed to auto-assign name"
+    assert pin1 in design.nets[net].connections
+    assert pin2 in design.nets[net].connections
+
+
+def test_connect_assigned_net():
+    net = "TEST_NET"
+    design = Design("TestDesign")
+    component = design.add_component(Component())
+    pin1 = Pin("TEST1", 1, component)
+    pin2 = Pin("TEST2", 2, component)
+    design.join_net(pin2, net)
+    design.connect([pin1, pin2])
+    assert pin1 in design.nets[net].connections
+    assert pin2 in design.nets[net].connections
+
+
 def test_add_module():
     parent_design = Design("ParentDesign")
     child_design = Design("ChildDesign")
@@ -80,3 +104,34 @@ def test_add_series_res():
     assert res.pins[1] in design.nets[net].connections
     assert pin2 in design.nets[f"{net}_R"].connections
     assert res.pins[2] in design.nets[f"{net}_R"].connections
+
+
+def test_add_series_res_assigned_pin2():
+    net = "TEST_NET"
+    assigned_net = "DIFFERENT_NET"
+    design = Design("TestDesign")
+    component = design.add_component(Component())
+    pin1 = Pin("1", 1, component)
+    pin2 = Pin("2", 2, component)
+    design.join_net(pin2, assigned_net)
+    res = design.add_series_res(pin1, 1000, pin2, net)
+    assert isinstance(res, Resistor)
+    assert res in design.components.values()
+    assert pin1 in design.nets[net].connections
+    assert res.pins[1] in design.nets[net].connections
+    assert pin2 in design.nets[assigned_net].connections
+    assert res.pins[2] in design.nets[assigned_net].connections
+
+
+def test_get_net_from_pin():
+    design = Design("TestDesign")
+    resistor = design.add_component(Resistor(1000))
+    pin1, pin2 = resistor.pins[1], resistor.pins[2]
+    design.join_net(pin1, "CustomNet")
+    result = design._get_net_name_from_pin(pin1)
+    assert result == "CustomNet", "The net name should be 'CustomNet'"
+
+    # Testing with auto-generated net name
+    pin2 = resistor.pins[2]
+    auto_net_name = design._get_net_name_from_pin(pin2)
+    assert auto_net_name == "AutoNet_2", "Auto-generated net name didn't match"
