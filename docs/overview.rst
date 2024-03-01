@@ -29,6 +29,7 @@ With a Python backend, it's simple to create powerful component libraries that a
 - Rather than noting the position of every configuration on a microcontroller and matching it to the datasheet for every design review you do. You could review your component definition once then in every design do readable things like `mcu.set_boot_location(mcu.EXTERNAL_FLASH)` to easily catch issues
 - Quickly set addresses are know they are right:
 .. code-block:: python
+    
     for i, device in enumerate(i2c_devices):
         device.set_i2c_address(i)
     
