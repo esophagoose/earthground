@@ -54,7 +54,7 @@ Exporting the Schematic
 Once your schematic is complete, you can export it to various formats, such as JSON or XML, for further processing or visualization:
 
 
-.. autofunction:: common.schematic.Design.connect
+.. autofunction:: common.schematic.Design
 
 .. autoexception:: ValueError
 
@@ -72,6 +72,12 @@ Advanced Features
    :toctree: generated
 
    common.schematic
+
+
+.. autosummary::
+   :toctree: generated
+
+   common.schematic.Design
 
 Support and Contribution
 ------------------------
