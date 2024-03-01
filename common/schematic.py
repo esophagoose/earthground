@@ -27,6 +27,15 @@ class Ports:
 
 class Design:
     def __init__(self, name, short_name=None, ports=[]):
+        """
+        A design is equivalent to a schematic page. It's function is to hold the relationships
+        between objects in the design (components, other designs).
+
+        Parameters:
+        - name (str): The name of the design - schematic title
+        - short_name (str, optional): Short name for the design used as a refdes prefix
+        - ports (List[str], optional): List of port names for connecting this design in other designs
+        """
         self.name = name
         self.short_name = short_name
         if not short_name:
@@ -40,9 +49,28 @@ class Design:
         self.busses = {}
         self.default_passive_size = None
         self.port = Ports([p.lower() for p in ports])
+        self.ground = "GND"
         self.add_net("GND")
 
     def add_module(self, module: "Design"):
+        """
+        Adds a module (sub-design) to the current design.
+
+        This method allows for hierarchical designs by adding a module (another Design instance) as a sub-design
+        to the current design. It automatically prefixes the module's short name with a unique identifier based
+        on the number of times this module's short name has been used. This ensures that net names within the module
+        are unique when integrated into the larger design. It also updates the net names within the module to reflect
+        this new unique prefix.
+
+        Parameters:
+        - module (Design): The module to be added as a sub-design.
+
+        Raises:
+        - ValueError: If the provided module is not an instance of Design.
+
+        Returns:
+        - Design: The module that was added; with updated short name and net names.
+        """
         if not isinstance(module, Design):
             raise ValueError("Invalid module! Must be schematic.Design type")
         if module.short_name not in self._module_names:
@@ -57,6 +85,16 @@ class Design:
         return module
 
     def add_component(self, component):
+        """
+        Adds a component to the current design.
+
+        Parameters:
+        - component (Component): The component to be added to the design.
+
+        Returns:
+        - Component: The component that was added, with updated footprint if applicable.
+        """
+
         logging.info(f"Adding component {component}")
         if isinstance(component, cmp.PASSIVE_TYPES) and self.default_passive_size:
             name = type(component).__name__[0] + self.default_passive_size
@@ -66,7 +104,7 @@ class Design:
         component.parent = self
         return component
 
-    def add_net(self, name):
+    def add_net(self, name) -> cmp.Net:
         net = cmp.Net(name)
         self.nets[name] = net
         return net
@@ -80,12 +118,22 @@ class Design:
         self.nets[net.name].add(pin)
         self.pin_to_net[pin] = net
 
-    def _get_net_name_from_pin(self, pin: cmp.Pin):
+    def _get_net_name_from_pin(self, pin: cmp.Pin) -> str:
         if pin in self.pin_to_net:
             return self.pin_to_net[pin].name
         return f"AutoNet_{pin.name}"
 
-    def join_net(self, pin: cmp.Pin, net_name: str):
+    def join_net(self, pin: cmp.Pin, net_name: str) -> cmp.Net:
+        """
+        Joins a pin to a specified net by name. If the net does not exist, it is created.
+
+        Parameters:
+        - pin (cmp.Pin): The pin to be joined to the net.
+        - net_name (str): The name of the net to join the pin to.
+
+        Returns:
+        - cmp.Net: The net to which the pin was joined.
+        """
         schematic = cast(Design, pin.parent.parent)
         assert schematic, f"Floating part {pin.parent}! Did you forget to add it?"
         if net_name not in schematic.nets:
@@ -94,12 +142,26 @@ class Design:
         schematic.add_to_net(pin, net)
         return schematic.nets[net_name]
 
-    def change_net_name(self, old_net_name: str, new_net_name: str):
+    def change_net_name(self, old_net_name: str, new_net_name: str) -> None:
         logging.warning(f"Overwriting net {old_net_name} to {new_net_name}")
         self.nets[new_net_name] = self.nets.pop(old_net_name)
         self.nets[new_net_name].name = new_net_name
 
     def connect(self, list_of_pins: List[cmp.Pin], net_name=None):
+        """
+        Connects a list of pins to a specified net. If no net name is provided, it automatically generates a net name.
+
+        This method connects all provided pins to the same net. If the pins are already part of a net,
+        it will merge these nets into one. If no net name is provided and the pins are not part of any existing net,
+        it generates a new net name based on the first pin's name.
+
+        Parameters:
+        - list_of_pins (List[cmp.Pin]): The list of pins to be connected.
+        - net_name (Optional[str]): The name of the net to connect the pins to. If None, a net name will be generated or chosen based on existing connections.
+
+        Returns: None
+        """
+
         if not net_name:
             nets = [self.pin_to_net.get(p) for p in list_of_pins]
             if not any(nets):
@@ -121,6 +183,23 @@ class Design:
                 return int(net_name[len(bus_type)])
 
     def connect_bus(self, bus1, bus2, bus_index=None):
+        """
+        Connects two buses of the same type, optionally mergig with an existing bus via an index.
+
+        This method connects all pins of two buses, ensuring they are of the same type. If a bus index is not provided, it will first check if either bus is already connected to a bus and merge them. Else
+        it will auto-increment the index creating a new bus.
+
+        Parameters:
+        - bus1: The first bus to connect.
+        - bus2: The second bus to connect, must be of the same type as bus1.
+        - bus_index (Optional[int]): The index of the bus to use. Use to merge with existing net
+
+        Raises:
+        - AssertionError: If the types of bus1 and bus2 do not match.
+
+        Returns: None
+        """
+
         assert isinstance(
             bus1, type(bus2)
         ), f"Type mismatch! {type(bus1)} != {type(bus2)}"
@@ -141,14 +220,15 @@ class Design:
         for name, pin in bus2._asdict().items():
             self.join_net(pin, "_".join([net_name, name.upper()]))
 
-    def add_decoupling_cap(self, pin, capacitor):
+    def add_decoupling_cap(self, pin, capacitor, net_name=None):
+        """
+        Helper function to automatically add a decoupling cap to a pin
+        """
+        net_name = net_name or self._get_net_name_from_pin(pin)
         self.add_component(capacitor)
-        net_name = f"AutoNet{pin.name}"
-        if pin in self.pin_to_net:
-            net_name = self.pin_to_net[pin].name
         self.join_net(pin, net_name)
         self.join_net(capacitor.pins[1], net_name)
-        self.join_net(capacitor.pins[2], "GND")
+        self.join_net(capacitor.pins[2], self.ground)
 
     def add_series_res(
         self,
@@ -157,6 +237,9 @@ class Design:
         pin2: cmp.Pin,
         net_name: Optional[str] = None,
     ):
+        """
+        Helper function to automatically add a series resistor in between two pins
+        """
         net_name = net_name or self._get_net_name_from_pin(pin1)
         res = ohms
         if not isinstance(ohms, cmp.Resistor):
@@ -189,6 +272,11 @@ class Design:
         return components
 
     def print_symbol(self):
+        """
+        Prints visual representation of the symbol of the design to the stdout
+
+        Symbol is the design and all it's ports
+        """
         pad = max([len(n) for n in self.port.names]) + 2
         print(f"{self.short_name} ({self.name})")
         print("." + "-" * pad + ".")
@@ -206,6 +294,9 @@ class Design:
         print("'" + "-" * pad + "'\n")
 
     def print(self):
+        """
+        Prints visual representation of a design to the stdout
+        """
         for component in self.components.values():
             pad = max([len(p.name) for p in component.pins]) + 2
             print(f"{component.refdes} ({component.name})")
