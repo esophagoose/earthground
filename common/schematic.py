@@ -28,13 +28,15 @@ class Ports:
 class Design:
     def __init__(self, name, short_name=None, ports=[]):
         """
-        A design is equivalent to a schematic page. It's function is to hold the relationships
-        between objects in the design (components, other designs).
+        A design is equivalent to a schematic page. Its function is to hold the relationships
+        between objects in the design, such as components and other designs.
 
-        Parameters:
-        - name (str): The name of the design - schematic title
-        - short_name (str, optional): Short name for the design used as a refdes prefix
-        - ports (List[str], optional): List of port names for connecting this design in other designs
+        :param name: The name of the design, serving as the schematic title.
+        :type name: str
+        :param short_name: Short name for the design used as a refdes prefix, optional.
+        :type short_name: str, optional
+        :param ports: List of port names for connecting this design in other designs, optional.
+        :type ports: List[str], optional
         """
         self.name = name
         self.short_name = short_name
@@ -62,14 +64,11 @@ class Design:
         are unique when integrated into the larger design. It also updates the net names within the module to reflect
         this new unique prefix.
 
-        Parameters:
-        - module (Design): The module to be added as a sub-design.
-
-        Raises:
-        - ValueError: If the provided module is not an instance of Design.
-
-        Returns:
-        - Design: The module that was added; with updated short name and net names.
+        :param module: The module to be added as a sub-design.
+        :type module: Design
+        :raises ValueError: If the provided module is not an instance of Design.
+        :return: The module that was added; with updated short name and net names.
+        :rtype: Design
         """
         if not isinstance(module, Design):
             raise ValueError("Invalid module! Must be schematic.Design type")
@@ -155,11 +154,12 @@ class Design:
         it will merge these nets into one. If no net name is provided and the pins are not part of any existing net,
         it generates a new net name based on the first pin's name.
 
-        Parameters:
-        - list_of_pins (List[cmp.Pin]): The list of pins to be connected.
-        - net_name (Optional[str]): The name of the net to connect the pins to. If None, a net name will be generated or chosen based on existing connections.
+        :param list_of_pins: The list of pins to be connected.
+        :type list_of_pins: List[cmp.Pin]
+        :param net_name: The name of the net to connect the pins to. If None, a net name will be generated or chosen based on existing connections.
+        :type net_name: Optional[str]
 
-        Returns: None
+        :returns: None
         """
 
         if not net_name:
@@ -189,15 +189,12 @@ class Design:
         This method connects all pins of two buses, ensuring they are of the same type. If a bus index is not provided, it will first check if either bus is already connected to a bus and merge them. Else
         it will auto-increment the index creating a new bus.
 
-        Parameters:
-        - bus1: The first bus to connect.
-        - bus2: The second bus to connect, must be of the same type as bus1.
-        - bus_index (Optional[int]): The index of the bus to use. Use to merge with existing net
-
-        Raises:
-        - AssertionError: If the types of bus1 and bus2 do not match.
-
-        Returns: None
+        :param bus1: The first bus to connect.
+        :param bus2: The second bus to connect, must be of the same type as bus1.
+        :param bus_index: (Optional[int]) The index of the bus to use. Use to merge with existing net.
+        :type bus_index: Optional[int]
+        :raises AssertionError: If the types of bus1 and bus2 do not match.
+        :return: None
         """
 
         assert isinstance(

@@ -54,7 +54,14 @@ Exporting the Schematic
 Once your schematic is complete, you can export it to various formats, such as JSON or XML, for further processing or visualization:
 
 
-.. autofunction:: common.schematic.Design
+.. autofunction:: common.schematic.Design.connect
+
+.. autofunction:: common.schematic.Design.connect_bus
+
+.. autofunction:: common.schematic.Design.add_module
+
+.. autofunction:: common.schematic.Design.print_symbol
+
 
 .. autoexception:: ValueError
 

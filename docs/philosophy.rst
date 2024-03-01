@@ -17,6 +17,7 @@ Components are the cornerstone of Earthground. Most the modularity and time-savi
 - Use enums to switch between options
 - Writing component functions and enums from the viewpoint of using the part not the IC
 Bad:
+
 .. code-block:: python
 
    class CfgPin1(enum.Enum):
@@ -24,6 +25,7 @@ Bad:
        HIGH = "VCC
 
 Good:
+
 .. code-block:: python
 
    class BootConfig(enum.Enum):
