@@ -87,7 +87,7 @@ def test_add_decoupling_cap():
     capacitor = Capacitor(1e-6, 50)
     design.add_decoupling_cap(pin, capacitor)
     assert capacitor in design.components.values()
-    assert pin in design.nets[f"AutoNet{pin.name}"].connections
+    assert pin in design.nets[f"AutoNet_{pin.name}"].connections
     assert capacitor.pins[2] in design.nets["GND"].connections
 
 
