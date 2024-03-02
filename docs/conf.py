@@ -27,4 +27,4 @@ intersphinx_disabled_domains = ["std"]
 autodoc_mock_imports = ["pygerber"]
 templates_path = ["_templates"]
 html_theme = "sphinx_rtd_theme"
-source_suffix = [".md"]
+source_suffix = [".rst", ".md"]
