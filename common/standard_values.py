@@ -52,7 +52,7 @@ def find_closest_ratio(ratio, E=24):
             if current_diff < diff:
                 diff = current_diff
                 closest = (value1, value2)
-    return closest
+    return sorted(closest, reverse=(ratio < 1))
 
 
 class SiNumber:
