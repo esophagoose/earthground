@@ -39,29 +39,29 @@ Simple Example - Resistor Divider
 
 This design will print to console:
 ::
-    R1 (RES_1.0kΩ)
-    .---.
-    |  1|-- SIG_5V0
-    |  2|-- SIG_3V3
-    '---'
+R1 (RES_1.0kΩ)
+.---.
+|  1|-- SIG_5V0
+|  2|-- SIG_3V3
+'---'
 
-    R2 (RES_1.5kΩ)
-    .---.
-    |  1|-- SIG_3V3
-    |  2|-- GND
-    '---'
+R2 (RES_1.5kΩ)
+.---.
+|  1|-- SIG_3V3
+|  2|-- GND
+'---'
 
-    J1 (CONNECTOR_2x1)
-    .---.
-    |  1|-- SIG_5V0
-    |  2|-- GND
-    '---'
+J1 (CONNECTOR_2x1)
+.---.
+|  1|-- SIG_5V0
+|  2|-- GND
+'---'
 
-    J2 (CONNECTOR_2x1)
-    .---.
-    |  1|-- SIG_3V3
-    |  2|-- GND
-    '---'
+J2 (CONNECTOR_2x1)
+.---.
+|  1|-- SIG_3V3
+|  2|-- GND
+'---'
 
 
 Example Project
