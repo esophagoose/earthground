@@ -69,5 +69,4 @@ Example Project
 To get started with the project, clone the repository and install the required dependencies listed in ``requirements.txt``. Explore the example projects and the documentation provided in `examples/README.md` for guidance on using the libraries and tools.
 ``python3 -m examples.io_expander_example``
 
-.. include:: examples/README.md
-   :parser: myst_parser.sphinx_
+.. mdinclude:: examples/README.md
