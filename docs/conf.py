@@ -1,6 +1,7 @@
 import os
 import sys
-sys.path.insert(0, os.path.abspath('..'))
+
+sys.path.insert(0, os.path.abspath(".."))
 
 project = "earthground"
 copyright = "2024"
@@ -15,6 +16,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
     "sphinx.ext.intersphinx",
+    "myst_parser",
 ]
 
 intersphinx_mapping = {
@@ -24,4 +26,4 @@ intersphinx_mapping = {
 intersphinx_disabled_domains = ["std"]
 autodoc_mock_imports = ["pygerber"]
 templates_path = ["_templates"]
-html_theme = 'sphinx_rtd_theme'
+html_theme = "sphinx_rtd_theme"

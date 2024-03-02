@@ -13,5 +13,6 @@ Contents
 .. toctree::
 
    overview
+   quickstart
    philosophy
    schematic
