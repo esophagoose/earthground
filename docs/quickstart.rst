@@ -6,6 +6,7 @@ Setup
 Installing the dependencies
 
 .. code-block:: python
+
     pip3 install -r requirements.txt
 
 
@@ -13,6 +14,7 @@ Simple Example - Resistor Divider
 ---------------------------------
 
 .. code-block:: python
+
     import common.components as cmp
     import common.schematic as sch_lib
     import common.standard_values as sv
@@ -62,5 +64,4 @@ Example Project
 To get started with the project, clone the repository and install the required dependencies listed in ``requirements.txt``. Explore the example projects and the documentation provided in `examples/README.md` for guidance on using the libraries and tools.
 ``python3 -m examples.io_expander_example``
 
-```{include} ../../examples/README.md
-```
+{include} ../../examples/README.md
