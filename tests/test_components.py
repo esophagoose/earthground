@@ -26,4 +26,3 @@ def test_net_initialization():
     net = Net("VCC")
     assert net.name == "VCC"
     assert len(net.connections) == 0
-

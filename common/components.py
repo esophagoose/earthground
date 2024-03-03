@@ -4,7 +4,6 @@ import common.standard_values as sv
 
 
 class Net:
-
     def __init__(self, name="UNASSIGNED") -> None:
         """
          Net represents an electrical connection between pins in a circuit
@@ -24,7 +23,6 @@ class Net:
 
 
 class Pin:
-
     def __init__(self, name: str, index: str, parent: "Component"):
         """
         Initializes a new Pin for a component
@@ -53,8 +51,7 @@ class Pin:
     def __eq__(self, other):
         if not isinstance(other, Pin):
             return False
-        return self.name == other.name and (hash(self.parent) == hash(
-            other.parent))
+        return self.name == other.name and (hash(self.parent) == hash(other.parent))
 
 
 class Component:
