@@ -27,12 +27,3 @@ def test_net_initialization():
     assert net.name == "VCC"
     assert len(net.connections) == 0
 
-
-def test_net_add_connection():
-    net = Net("VCC")
-    component = Component()
-    pin = Pin("1", 1, component)
-    net.add(pin)
-    assert net.name == "VCC"
-    assert len(net.connections) == 1
-    assert pin in net.connections

@@ -39,34 +39,37 @@ Simple Example - Resistor Divider
 
 This design will print to console:
 ::
-R1 (RES_1.0kΩ)
-.---.
-|  1|-- SIG_5V0
-|  2|-- SIG_3V3
-'---'
 
-R2 (RES_1.5kΩ)
-.---.
-|  1|-- SIG_3V3
-|  2|-- GND
-'---'
+    R1 (RES_1.0kΩ)
+    .---.
+    |  1|-- SIG_5V0
+    |  2|-- SIG_3V3
+    '---'
 
-J1 (CONNECTOR_2x1)
-.---.
-|  1|-- SIG_5V0
-|  2|-- GND
-'---'
+    R2 (RES_1.5kΩ)
+    .---.
+    |  1|-- SIG_3V3
+    |  2|-- GND
+    '---'
 
-J2 (CONNECTOR_2x1)
-.---.
-|  1|-- SIG_3V3
-|  2|-- GND
-'---'
+    J1 (CONNECTOR_2x1)
+    .---.
+    |  1|-- SIG_5V0
+    |  2|-- GND
+    '---'
+
+    J2 (CONNECTOR_2x1)
+    .---.
+    |  1|-- SIG_3V3
+    |  2|-- GND
+    '---'
 
 
-Example Project
----------------
-To get started with the project, clone the repository and install the required dependencies listed in ``requirements.txt``. Explore the example projects and the documentation provided in `examples/README.md` for guidance on using the libraries and tools.
-``python3 -m examples.io_expander_example``
+Project Walkthrough - 32 Port I/O Expander
+--------------------------------------------------
+- Located in ``examples/io_expander_example.py``
+- Run using: ``python3 -m examples.io_expander_example``
 
-.. mdinclude:: examples/README.md
+.. include:: ../examples/README.md
+   :parser: myst_parser.sphinx_
+

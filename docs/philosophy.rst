@@ -16,6 +16,7 @@ Components are the cornerstone of Earthground. Most the modularity and time-savi
 - Create a reference design using a component with all available options from the datasheet
 - Use enums to switch between options
 - Writing component functions and enums from the viewpoint of using the part not the IC
+
 Bad:
 
 .. code-block:: python

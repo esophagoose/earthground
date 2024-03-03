@@ -87,11 +87,11 @@ class Design:
         """
         Adds a component to the current design.
 
-        Parameters:
-        - component (Component): The component to be added to the design.
+        :param component: The component to be added to the design.
+        :type component: Component
 
-        Returns:
-        - Component: The component that was added, with updated footprint if applicable.
+        :return: The component that was added, with updated footprint if applicable.
+        :rtype: Component
         """
 
         logging.info(f"Adding component {component}")
@@ -104,17 +104,25 @@ class Design:
         return component
 
     def add_net(self, name) -> cmp.Net:
+        """
+        Creates a net in the design and returns it.
+
+        :param name: The name of the net to be created.
+        :type name: str
+        :return: The newly created net.
+        :rtype: common.components.Net
+        """
         net = cmp.Net(name)
         self.nets[name] = net
         return net
 
-    def add_to_net(self, pin: cmp.Pin, net: cmp.Net):
+    def _add_to_net(self, pin: cmp.Pin, net: cmp.Net):
         if pin in self.pin_to_net:
             old_net = self.pin_to_net[pin]
             if old_net == net:
                 return
             return self.change_net_name(old_net.name, net.name)
-        self.nets[net.name].add(pin)
+        self.nets[net.name].connections.add(pin)
         self.pin_to_net[pin] = net
 
     def _get_net_name_from_pin(self, pin: cmp.Pin) -> str:
@@ -124,24 +132,33 @@ class Design:
 
     def join_net(self, pin: cmp.Pin, net_name: str) -> cmp.Net:
         """
-        Joins a pin to a specified net by name. If the net does not exist, it is created.
+        Joins a pin to a specified net by its name. If the net does not exist, it is created.
 
-        Parameters:
-        - pin (cmp.Pin): The pin to be joined to the net.
-        - net_name (str): The name of the net to join the pin to.
-
-        Returns:
-        - cmp.Net: The net to which the pin was joined.
+        :param pin: The pin that needs to be joined to the net.
+        :type pin: common.components.Pin
+        :param net_name: The name of the net to which the pin will be joined.
+        :type net_name: str
+        :return: The net to which the pin was successfully joined.
+        :rtype: common.components.Net
         """
         schematic = cast(Design, pin.parent.parent)
         assert schematic, f"Floating part {pin.parent}! Did you forget to add it?"
         if net_name not in schematic.nets:
             schematic.nets[net_name] = cmp.Net(net_name)
         net = schematic.nets[net_name]
-        schematic.add_to_net(pin, net)
+        schematic._add_to_net(pin, net)
         return schematic.nets[net_name]
 
     def change_net_name(self, old_net_name: str, new_net_name: str) -> None:
+        """
+        Renames an existing net in a design
+
+        :param old_net_name: The current name of the net to be renamed.
+        :type old_net_name: str
+        :param new_net_name: The new name for the net.
+        :type new_net_name: str
+        :return: None
+        """
         logging.warning(f"Overwriting net {old_net_name} to {new_net_name}")
         self.nets[new_net_name] = self.nets.pop(old_net_name)
         self.nets[new_net_name].name = new_net_name
@@ -217,9 +234,17 @@ class Design:
         for name, pin in bus2._asdict().items():
             self.join_net(pin, "_".join([net_name, name.upper()]))
 
-    def add_decoupling_cap(self, pin, capacitor, net_name=None):
+    def add_decoupling_cap(self, pin, capacitor: cmp.Capacitor, net_name=None):
         """
         Helper function to automatically add a decoupling cap to a pin
+
+        :param pin: The pin to which the decoupling capacitor will be added.
+        :param capacitor: The decoupling capacitor to add.
+        :param net_name: (Optional) The name of the net to which the capacitor will be connected. If not provided, it will be determined based on the pin.
+        :type pin: common.components.Pin
+        :type capacitor: common.components.Capacitor
+        :type net_name: Optional[str]
+        :return: None
         """
         net_name = net_name or self._get_net_name_from_pin(pin)
         self.add_component(capacitor)
@@ -236,6 +261,17 @@ class Design:
     ):
         """
         Helper function to automatically add a series resistor in between two pins
+
+        :param pin1: The first pin to connect the series resistor to.
+        :param ohms: The resistance value or resistor component to be added in series.
+        :param pin2: The second pin to connect the series resistor to.
+        :param net_name: (Optional) The name of the net to which the series resistor will be connected. If not provided, it will be determined based on pin1.
+        :type pin1: common.components.Pin
+        :type ohms: Union[cmp.Resistor, int, str]
+        :type pin2: common.components.Pin
+        :type net_name: Optional[str]
+        :return: The resistor component added in series.
+        :rtype: common.components.Resistor
         """
         net_name = net_name or self._get_net_name_from_pin(pin1)
         res = ohms
