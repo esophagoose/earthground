@@ -23,6 +23,12 @@ def aperture_to_shape_size(aperture):
 
 class KicadExporter:
     def __init__(self, schematic: sch_lib.Design):
+        """
+        A class to export schematic designs to KiCad format.
+
+        :param schematic: The schematic design to be exported.
+        :type schematic: sch_lib.Design
+        """
         self.board = kiutils.board.Board.create_new()
         self.schematic = schematic
         self.net_index = 0
@@ -63,5 +69,12 @@ class KicadExporter:
         return footprint
 
     def save(self, output_folder="."):
+        """
+        Saves design as `kicad_pcb` file
+
+        :param output_folder: Folder to export the KiCad layout to
+        :type output_folder: str
+        :return: None
+        """
         path = pathlib.Path(output_folder) / f"{self.schematic.name}.kicad_pcb"
         self.board.to_file(path)
