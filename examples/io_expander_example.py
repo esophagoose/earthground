@@ -1,4 +1,5 @@
 import common.schematic as sch_lib
+import exporters.kicad
 import library.headers.connectors as conn_lib
 import library.headers.jst as jst
 from library.integrated_circuits.io_expanders import tca9535pwr
@@ -41,3 +42,6 @@ for ground_pin in range(4):
     schematic.join_net(gpio_connector.pins[end], "GND")
 
 schematic.print()
+
+# Export the layout to KiCad
+exporters.kicad.KicadExporter(schematic).save()
