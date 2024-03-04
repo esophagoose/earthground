@@ -80,6 +80,10 @@ class Design:
         net_names = [net.name for net in module.nets.values()]
         for net_name in net_names:
             module.change_net_name(net_name, "_".join([prefix, net_name]))
+        if self.default_passive_size:
+            for component in module.components.values():
+                if isinstance(component, cmp.PASSIVE_TYPES):
+                    self.set_passive_footprint(component)
         self.modules.append(module)
         return module
 
@@ -96,9 +100,7 @@ class Design:
 
         logging.info(f"Adding component {component}")
         if isinstance(component, cmp.PASSIVE_TYPES) and self.default_passive_size:
-            name = type(component).__name__[0] + self.default_passive_size
-            package = passives.PassivePackage[name]
-            component.footprint = passives.PassiveSmd(package)
+            self.set_passive_footprint(component)
         self.components[hash(component)] = component
         component.parent = self
         return component
@@ -198,6 +200,11 @@ class Design:
             net_name = self.pin_to_net[pin].name
             if net_name.startswith(bus_type) and net_name.endswith(name.upper()):
                 return int(net_name[len(bus_type)])
+
+    def set_passive_footprint(self, component):
+        name = type(component).__name__[0] + self.default_passive_size
+        package = passives.PassivePackage[name]
+        component.footprint = passives.PassiveSmd(package)
 
     def connect_bus(self, bus1, bus2, bus_index=None):
         """

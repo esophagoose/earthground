@@ -44,6 +44,7 @@ class JstType(enum.Enum):
 
 class JstShFootprint:
     def __init__(self, pin_count: int, style: JstType) -> None:
+        self.name = f"JST_SH_Connector_{pin_count}pin_{style.name}"
         self.count = pin_count
         self.style = style
         self.spacing = 1  # mm
