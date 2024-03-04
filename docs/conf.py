@@ -24,7 +24,7 @@ intersphinx_mapping = {
     "sphinx": ("https://www.sphinx-doc.org/en/master/", None),
 }
 intersphinx_disabled_domains = ["std"]
-autodoc_mock_imports = ["pygerber"]
+autodoc_mock_imports = ["pygerber", "kiutils"]
 templates_path = ["_templates"]
 html_theme = "sphinx_rtd_theme"
 source_suffix = [".rst", ".md"]
