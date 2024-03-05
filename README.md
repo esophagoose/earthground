@@ -5,7 +5,7 @@ Earthground encompasses a comprehensive suite of tools and libraries aimed at fa
 
 [Documentation](https://earthground.readthedocs.io/en/latest/)
 
-## Usage
+## Getting Started
 ### Setup
 ```
 pip install -r requirements.txt
@@ -71,15 +71,6 @@ With a Python backend, it's simple to create powerful component libraries that a
 - For buck converters, Earthground can automatically size inductors based on datasheet parameters
 - For LDOs, given an output voltage, Earthground will select the feedback resistors, round them to E24 values, and warn you if the result output voltage is beyond a specified percentage
 
-  
-## Getting Started
-### Setup
-Installing the dependencies
-```
-pip3 install -r requirements.txt
-```
-To get started with the project, clone the repository and install the required dependencies listed in `requirements.txt`. Explore the example projects and the documentation provided in `examples/README.md` for guidance on using the libraries and tools.
-```python3 -m examples.io_expander_example```
 
 ## State of the Project
 This an actively worked on project. Currently there's no way to finish layout. I'm working on a KiCAD exporter so you can import the netlist and footprints to KiCAD and do layout there. The final goal is to incorporate a layout editor into the project.
