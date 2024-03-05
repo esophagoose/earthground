@@ -37,7 +37,7 @@ schematic.connect([input_connector.pins[2], r_bottom.pins[2], output_connector.p
 schematic.print()
 ```
 
-## Project Walkthrough - 32 Port I/O Expander
+### Project Walkthrough - 32 Port I/O Expander
 
 [Read the example](https://github.com/esophagoose/earthground/tree/main/examples)
 - Located in ``examples/io_expander_example.py``
