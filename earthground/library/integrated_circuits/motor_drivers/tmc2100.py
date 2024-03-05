@@ -1,7 +1,7 @@
 import enum
 
-import common.components as cmp
-import common.schematic as sch
+import earthground.components as cmp
+import earthground.schematic as sch
 
 
 class ChopperMode(enum.Enum):

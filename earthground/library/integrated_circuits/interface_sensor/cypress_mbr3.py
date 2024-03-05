@@ -1,6 +1,6 @@
-import common.components as cmp
-import library.protocols.serial as serial
-from library.footprints import qfn
+import earthground.components as cmp
+import earthground.library.protocols.serial as serial
+from earthground.library.footprints import qfn
 
 
 class CY8CMBR3116(cmp.Component):

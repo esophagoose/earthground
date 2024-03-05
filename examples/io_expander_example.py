@@ -1,8 +1,8 @@
-import common.schematic as sch_lib
-import exporters.kicad
-import library.headers.connectors as conn_lib
-import library.headers.jst as jst
-from library.integrated_circuits.io_expanders import tca9535pwr
+import earthground.exporters.kicad
+import earthground.library.headers.connectors as conn_lib
+import earthground.library.headers.jst as jst
+import earthground.schematic as sch_lib
+from earthground.library.integrated_circuits.io_expanders import tca9535pwr
 
 # Schematic definition
 schematic = sch_lib.Design("IO Expander Example")
@@ -44,4 +44,4 @@ for ground_pin in range(4):
 schematic.print()
 
 # Export the layout to KiCad
-exporters.kicad.KicadExporter(schematic).save()
+earthground.exporters.kicad.KicadExporter(schematic).save()

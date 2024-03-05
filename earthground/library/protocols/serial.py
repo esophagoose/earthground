@@ -1,6 +1,6 @@
 from typing import NamedTuple
 
-import common.components as cmp
+import earthground.components as cmp
 
 
 class I2C(NamedTuple):

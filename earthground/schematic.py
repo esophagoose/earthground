@@ -3,7 +3,7 @@ from collections import defaultdict
 from typing import Dict, List, Optional, Union, cast
 
 import earthground.components as cmp
-import library.footprints.passives as passives
+import earthground.library.footprints.passives as passives
 
 
 class Ports:

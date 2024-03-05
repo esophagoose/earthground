@@ -1,7 +1,7 @@
 import pygerber.aperture as ap_lib
 
-import common.components as components
-from library.footprints import generics
+import earthground.components as components
+from earthground.library.footprints import generics
 
 
 class ObroundTestpoint(components.Component):

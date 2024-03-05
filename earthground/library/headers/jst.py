@@ -2,9 +2,9 @@ import enum
 
 import pygerber.aperture as ap_lib
 
-import common.components as cmp
-import common.footprint_types as ft
-from library.protocols.serial import I2C
+import earthground.components as cmp
+import earthground.footprint_types as ft
+from earthground.library.protocols.serial import I2C
 
 
 class PRT_14417(cmp.Component):

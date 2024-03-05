@@ -3,6 +3,47 @@
 ## Overview
 Earthground encompasses a comprehensive suite of tools and libraries aimed at facilitating software-defined electronic schematics.
 
+[Documentation](https://earthground.readthedocs.io/en/latest/)
+
+## Usage
+### Setup
+```
+pip install -r requirements.txt
+```
+
+### Simple Example - Resistor Divider
+
+```
+import common.components as cmp
+import common.schematic as sch_lib
+import common.standard_values as sv
+import library.headers.connectors as conn_lib
+
+# Setup the schematic page
+schematic = sch_lib.Design("Resistor Divider Example")
+schematic.default_passive_size = "0603"
+
+# Create the components
+r1, r2 = sv.find_closest_ratio(5 / 3.3)  # finds closest values in E24
+r_top = schematic.add_component(cmp.Resistor(f"{r1}k"))
+r_bottom = schematic.add_component(cmp.Resistor(f"{r2}k"))
+input_connector = schematic.add_component(conn_lib.standard_0_1_inch_header(pin_count=2))
+output_connector = schematic.add_component(conn_lib.standard_0_1_inch_header(pin_count=2))
+
+# Connect them and print schematic to console
+schematic.connect([r_top.pins[1], input_connector.pins[1]], "SIG_5V0")
+schematic.connect([r_top.pins[2], r_bottom.pins[1], output_connector.pins[1]], "SIG_3V3")
+schematic.connect([input_connector.pins[2], r_bottom.pins[2], output_connector.pins[2]], "GND")
+schematic.print()
+```
+
+## Project Walkthrough - 32 Port I/O Expander
+
+[Read the example](https://github.com/esophagoose/earthground/tree/main/examples)
+- Located in ``examples/io_expander_example.py``
+- Run using: ``python3 -m examples.io_expander_example``
+
+
 ## Advantages of Software-Defined Circuits
 ### Extensive Tooling
 Text-based schematics means engineers can leverage existing software engineering tooling to create error-free designs faster

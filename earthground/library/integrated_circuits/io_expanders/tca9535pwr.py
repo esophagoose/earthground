@@ -1,8 +1,8 @@
-import common.components as cmp
-import common.schematic as sch
-import common.utils as utils
-import library.footprints.tssop as tssop
-from library.protocols.serial import I2C
+import earthground.components as cmp
+import earthground.library.footprints.tssop as tssop
+import earthground.schematic as sch
+import earthground.utils as utils
+from earthground.library.protocols.serial import I2C
 
 GPIO_COUNT = 16
 

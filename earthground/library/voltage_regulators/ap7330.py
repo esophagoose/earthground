@@ -1,6 +1,6 @@
-import common.components as cmp
-import common.schematic as schematic
-import common.standard_values as sv
+import earthground.components as cmp
+import earthground.schematic as schematic
+import earthground.standard_values as sv
 
 
 class AP7330(cmp.Component):

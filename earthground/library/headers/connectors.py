@@ -3,8 +3,8 @@ from typing import Tuple
 
 import pygerber.aperture as ap_lib
 
-import common.components as cmp
-import common.footprint_types as ft
+import earthground.components as cmp
+import earthground.footprint_types as ft
 
 
 class PinLayout(enum.Enum):
