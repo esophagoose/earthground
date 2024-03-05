@@ -2,7 +2,7 @@ import pathlib
 
 import kiutils.board
 import kiutils.footprint as fp
-import kiutils.items.common as base
+import kiutils.items.earthground.as base
 import pygerber.aperture as ap_lib
 
 import earthground.components as cmp
