@@ -2,11 +2,11 @@ import pathlib
 
 import kiutils.board
 import kiutils.footprint as fp
-import kiutils.items.common as base
+import kiutils.items.earthground.as base
 import pygerber.aperture as ap_lib
 
-import common.components as cmp
-import common.schematic as sch_lib
+import earthground.components as cmp
+import earthground.schematic as sch_lib
 
 
 def to_position(coordinates):
