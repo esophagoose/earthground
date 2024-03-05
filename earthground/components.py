@@ -1,6 +1,6 @@
 from typing import List, Union
 
-import common.standard_values as sv
+import earthground.standard_values as sv
 
 
 class Net:

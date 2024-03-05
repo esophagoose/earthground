@@ -8,9 +8,9 @@ import pygerber.gerber_layer as gl
 import svgwrite as svg
 import yaml
 
-import common.schematic as sch_lib
-import common.stackup as su_lib
-import common.utils as tu
+import earthground.schematic as sch_lib
+import earthground.stackup as su_lib
+import earthground.utils as tu
 
 
 class ComponentLayer(enum.Enum):

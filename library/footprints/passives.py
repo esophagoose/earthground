@@ -3,7 +3,7 @@ from collections import namedtuple
 
 import pygerber.aperture as aperture
 
-import common.footprint_types as ft
+import earthground.footprint_types as ft
 
 SIZES = [
     "0402",

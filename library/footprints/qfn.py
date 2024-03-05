@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 
 import pygerber.aperture as ap_lib
 
-import common.footprint_types as ft
+import earthground.footprint_types as ft
 
 VALID_PITCHES = [0.4, 0.5]
 VALID_EP_SIZES = [1.45, (2.65, 2.65)]

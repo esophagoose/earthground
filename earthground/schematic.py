@@ -2,7 +2,7 @@ import logging
 from collections import defaultdict
 from typing import Dict, List, Optional, Union, cast
 
-import common.components as cmp
+import earthground.components as cmp
 import library.footprints.passives as passives
 
 
@@ -112,7 +112,7 @@ class Design:
         :param name: The name of the net to be created.
         :type name: str
         :return: The newly created net.
-        :rtype: common.components.Net
+        :rtype: earthground.components.Net
         """
         net = cmp.Net(name)
         self.nets[name] = net
@@ -137,11 +137,11 @@ class Design:
         Joins a pin to a specified net by its name. If the net does not exist, it is created.
 
         :param pin: The pin that needs to be joined to the net.
-        :type pin: common.components.Pin
+        :type pin: earthground.components.Pin
         :param net_name: The name of the net to which the pin will be joined.
         :type net_name: str
         :return: The net to which the pin was successfully joined.
-        :rtype: common.components.Net
+        :rtype: earthground.components.Net
         """
         schematic = cast(Design, pin.parent.parent)
         assert schematic, f"Floating part {pin.parent}! Did you forget to add it?"
@@ -248,8 +248,8 @@ class Design:
         :param pin: The pin to which the decoupling capacitor will be added.
         :param capacitor: The decoupling capacitor to add.
         :param net_name: (Optional) The name of the net to which the capacitor will be connected. If not provided, it will be determined based on the pin.
-        :type pin: common.components.Pin
-        :type capacitor: common.components.Capacitor
+        :type pin: earthground.components.Pin
+        :type capacitor: earthground.components.Capacitor
         :type net_name: Optional[str]
         :return: None
         """
@@ -273,12 +273,12 @@ class Design:
         :param ohms: The resistance value or resistor component to be added in series.
         :param pin2: The second pin to connect the series resistor to.
         :param net_name: (Optional) The name of the net to which the series resistor will be connected. If not provided, it will be determined based on pin1.
-        :type pin1: common.components.Pin
+        :type pin1: earthground.components.Pin
         :type ohms: Union[cmp.Resistor, int, str]
-        :type pin2: common.components.Pin
+        :type pin2: earthground.components.Pin
         :type net_name: Optional[str]
         :return: The resistor component added in series.
-        :rtype: common.components.Resistor
+        :rtype: earthground.components.Resistor
         """
         net_name = net_name or self._get_net_name_from_pin(pin1)
         res = ohms

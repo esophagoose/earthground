@@ -2,7 +2,7 @@ import enum
 
 import pygerber.aperture as ap_lib
 
-import common.footprint_types as ft
+import earthground.footprint_types as ft
 
 
 class Pitch(enum.Enum):

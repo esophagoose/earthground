@@ -1,6 +1,6 @@
 import pytest
 
-from common.components import Capacitor, Component, Net, Pin, Resistor
+from earthground.components import Capacitor, Component, Net, Pin, Resistor
 
 
 def test_resistor_initialization():

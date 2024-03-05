@@ -1,6 +1,6 @@
 import pytest
 
-import common.utils as utils
+import earthground.utils as utils
 
 
 def test_electrical_bool_to_int():

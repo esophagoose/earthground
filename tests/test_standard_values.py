@@ -1,6 +1,6 @@
 import pytest
 
-from common.standard_values import (SiNumber, find_closest_ratio,
+from earthground.standard_values import (SiNumber, find_closest_ratio,
                                     get_standard_values)
 
 

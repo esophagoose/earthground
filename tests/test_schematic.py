@@ -1,7 +1,7 @@
 import pytest
 
-from common.components import Capacitor, Component, Net, Pin, Resistor
-from common.schematic import Design, Ports
+from earthground.components import Capacitor, Component, Net, Pin, Resistor
+from earthground.schematic import Design, Ports
 
 
 def test_ports_initialization():
