@@ -85,8 +85,8 @@ def get_quad_side_locations(count, width, pitch):
     wcount = math.ceil(count / 4)
     assert 2 * hcount + 2 * wcount == count
     constant = abs(width) / 2
+    i = 1
     for sign in [-1, 1]:
-        i = 0
         for index in range(hcount):
             x = sign * constant
             start = -pitch * (hcount - 1) / 2
