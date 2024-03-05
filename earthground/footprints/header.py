@@ -22,7 +22,7 @@ class PointOneInchHeader:
         self.name = f'0.1" Header, {count} Position, {spacing} Spacing'
         self.description = self.name
         start = -1 * spacing * ((count - 1) / 2)
-        aperture = ap_lib.Rectangle(2.54, 2.54)  # TODO: make this generic
+        aperture = ap_lib.ApertureRectangle(2.54, 2.54)  # TODO: make this generic
         self.pads = {
             i: ft.Pad((0, i * spacing + start), aperture) for i in range(1, count + 1)
         }

@@ -54,7 +54,6 @@ class Qfn:
         if ep:
             self.name += f"_EP{'x'.join([f'{i}mm' for i in ep])}"
         pitch = validate(pitch, VALID_PITCHES)
-        ep = validate(ep, VALID_EP_SIZES)
         rotated = ap_lib.ApertureRectangle(
             width=package.aperture.width,
             height=package.aperture.height,
@@ -69,7 +68,9 @@ class Qfn:
             )
         }
         self.count = pin_count
-        self.pads.update({"EP": ft.Pad([0, 0], ap_lib.ApertureRectangle(*ep))})
+        if ep:
+            ep = validate(ep, VALID_EP_SIZES)
+            self.pads.update({"EP": ft.Pad([0, 0], ap_lib.ApertureRectangle(*ep))})
 
     def __str__(self) -> str:
         return f"QFN<{self.count}>"
