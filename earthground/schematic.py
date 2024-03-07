@@ -8,9 +8,9 @@ import earthground.library.footprints.passives as passives
 
 class Ports:
     def __init__(self, ports: List[str]):
-        self.names = ports
-        for port in ports:
-            setattr(self, port.lower(), None)
+        self.names = [p.lower() for p in ports]
+        for port in self.names:
+            setattr(self, port, None)
 
     def __getitem__(self, port):
         port = port.lower()
@@ -317,6 +317,8 @@ class Design:
 
         Symbol is the design and all it's ports
         """
+        if not self.port.names:
+            return
         pad = max([len(n) for n in self.port.names]) + 2
         print(f"{self.short_name} ({self.name})")
         print("." + "-" * pad + ".")
