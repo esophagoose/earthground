@@ -1,0 +1,28 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "earthground"
+version = "0.1.0"
+description = "A Python Library for Creating Software-Defined Electrical Designs"
+dependencies = [
+    "kiutils==1.4.8",
+    "python-gerber>=0.1.0",
+    "pytest>=7.4.2"
+]
+readme = "README.md"
+authors = [{name = "esophagoose"}]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent"
+]
+
+[project.optional-dependencies]
+test = ["pytest>6"]
+
+[project.urls]
+Source = "https://github.com/esophagoose/earthground"
+
+[tool.flit.module]
+name = "earthground"
