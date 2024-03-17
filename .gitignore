@@ -162,5 +162,3 @@ cython_debug/
 
 .DS_Store
 
-# Earthground Files
-library/
