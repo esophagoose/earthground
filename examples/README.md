@@ -44,7 +44,7 @@ for i in range(expander_count):
     schematic.add_module(expander)
     schematic.join_net(expander.port.vcc, "P3V3")
     schematic.join_net(expander.port.gnd, "GND")
-    schematic.connect_bus(expander.port.i2c, qwiic.i2c)
+    schematic.connect_bus([expander.port.i2c, qwiic.i2c])
     expanders.append(expander)
 ```        
 This small code snippet shows some powerful concepts of this library. First is the simplicity of reuse. Changing this code to five IO expanders would be a one line code change. Second is how the context of the part is found entirely in that part's definition. All datasheet quirks and information can be found and abstracted there so that when it comes to the design phase we know this part is correct. Gone are the days of checking datasheets for every part in the schematic review. Abstraction is wonderful. Let's look a bit deeper:

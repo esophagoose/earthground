@@ -21,7 +21,7 @@ for i in range(expander_count):
     schematic.add_module(expander)
     schematic.join_net(expander.port.vcc, "P3V3")
     schematic.join_net(expander.port.gnd, "GND")
-    schematic.connect_bus(expander.port.i2c, qwiic.i2c)
+    schematic.connect_bus([expander.port.i2c, qwiic.i2c])
     expanders.append(expander)
 
 schematic.join_net(qwiic.pins.by_name("VCC"), "P3V3")

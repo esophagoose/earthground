@@ -1,16 +1,18 @@
 import logging
-from collections import defaultdict
-from typing import Dict, List, Optional, Union, cast
+from typing import Dict, List, Optional, Union
 
 import earthground.components as cmp
 import earthground.library.footprints.passives as passives
 
 
 class Ports:
-    def __init__(self, ports: List[str]):
+    def __init__(self, ports: List[str], parent: "Design"):
         self.names = [p.lower() for p in ports]
+        self.symbol = cmp.Component("SYMBOL")
+        self.symbol.name = parent.name
+        self.symbol.pins = cmp.PinContainer.from_list(ports, self)
         for port in self.names:
-            setattr(self, port, None)
+            setattr(self, port, cmp.Pin(port, 0, parent))
 
     def __getitem__(self, port):
         port = port.lower()
@@ -19,13 +21,11 @@ class Ports:
         return getattr(self, port)
 
     def __setitem__(self, port, value):
-        port = port.lower()
-        if port not in self.names:
-            raise ValueError(f"Unknown port: {port}. Options {self.names}")
-        return setattr(self, port, value)
+        raise RuntimeError("Can't direct set ports! Connect in schematic")
 
 
 class Design:
+
     def __init__(self, name, short_name=None, ports=[]):
         """
         A design is equivalent to a schematic page. Its function is to hold the relationships
@@ -44,15 +44,14 @@ class Design:
             self.short_name = self.name
         self.components: Dict[str, cmp.Component] = {}
         self.modules: List[Design] = []
-        self._module_names: Dict[str, int] = {}
-        self.designator_map = defaultdict(lambda: 0)
         self.nets: Dict[str, cmp.Net] = {}
         self.pin_to_net: Dict[cmp.Pin, cmp.Net] = {}
         self.busses = {}
         self.default_passive_size = None
-        self.port = Ports([p.lower() for p in ports])
-        self.ground = "GND"
-        self.add_net("GND")
+        self.port = Ports([p.lower() for p in ports], self)
+        self.ground = self.add_net("GND").name
+        self._ports = [p.lower() for p in ports]
+        self._module_names: Dict[str, int] = {}
 
     def add_module(self, module: "Design"):
         """
@@ -99,7 +98,8 @@ class Design:
         """
 
         logging.info(f"Adding component {component}")
-        if isinstance(component, cmp.PASSIVE_TYPES) and self.default_passive_size:
+        if isinstance(component,
+                      cmp.PASSIVE_TYPES) and self.default_passive_size:
             self.set_passive_footprint(component)
         self.components[hash(component)] = component
         component.parent = self
@@ -143,13 +143,22 @@ class Design:
         :return: The net to which the pin was successfully joined.
         :rtype: earthground.components.Net
         """
-        schematic = cast(Design, pin.parent.parent)
-        assert schematic, f"Floating part {pin.parent}! Did you forget to add it?"
-        if net_name not in schematic.nets:
-            schematic.nets[net_name] = cmp.Net(net_name)
-        net = schematic.nets[net_name]
-        schematic._add_to_net(pin, net)
-        return schematic.nets[net_name]
+        # schematic = pin.parent
+        # if not isinstance(schematic, Design):
+        #     schematic = cast(Design, pin.parent.parent)
+        # assert schematic, f"Floating part {pin.parent}! Did you forget to add it?"
+        # if net_name not in schematic.nets:
+        #     schematic.nets[net_name] = cmp.Net(net_name)
+        # net = schematic.nets[net_name]
+        # schematic._add_to_net(pin, net)
+        # return schematic.nets[net_name]
+        # error = f"Floating part {pin.parent}! Did you forget to add it?"
+        # assert pin.parent in self.components.values(), error
+        if net_name not in self.nets:
+            self.nets[net_name] = cmp.Net(net_name)
+        net = self.nets[net_name]
+        self._add_to_net(pin, net)
+        return self.nets[net_name]
 
     def change_net_name(self, old_net_name: str, new_net_name: str) -> None:
         """
@@ -198,7 +207,8 @@ class Design:
         name, pin = next(iter(bus._asdict().items()))
         if pin in self.pin_to_net:
             net_name = self.pin_to_net[pin].name
-            if net_name.startswith(bus_type) and net_name.endswith(name.upper()):
+            if net_name.startswith(bus_type) and net_name.endswith(
+                    name.upper()):
                 return int(net_name[len(bus_type)])
 
     def set_passive_footprint(self, component):
@@ -206,7 +216,7 @@ class Design:
         package = passives.PassivePackage[name]
         component.footprint = passives.PassiveSmd(package)
 
-    def connect_bus(self, bus1, bus2, bus_index=None):
+    def connect_bus(self, busses: list, bus_index=None):
         """
         Connects two buses of the same type, optionally mergig with an existing bus via an index.
 
@@ -221,25 +231,25 @@ class Design:
         :return: None
         """
 
-        assert isinstance(
-            bus1, type(bus2)
-        ), f"Type mismatch! {type(bus1)} != {type(bus2)}"
-        bus_type = type(bus1).__name__
+        bus_types = [type(bus) for bus in busses]
+        bus_type = bus_types[0].__name__
+        assert all(t == type(busses[0])
+                   for t in bus_types), f"Mismatch busses! {bus_types}"
         if bus_index is None:
             # Check if either bus is already connected to a bus
-            if self._get_bus_index(bus1) is not None:
-                bus_index = self._get_bus_index(bus1)
-            elif self._get_bus_index(bus2) is not None:
-                bus_index = self._get_bus_index(bus2)
+            for bus in busses:
+                if self._get_bus_index(bus) is not None:
+                    bus_index = self._get_bus_index(bus)
+                    if bus_index is not None:
+                        break
             else:
                 # Else assign a bus name
                 bus_index = self.busses.get(bus_type, 0)
                 self.busses[bus_type] = bus_index + 1
         net_name = f"{bus_type}{bus_index}"
-        for name, pin in bus1._asdict().items():
-            self.join_net(pin, "_".join([net_name, name.upper()]))
-        for name, pin in bus2._asdict().items():
-            self.join_net(pin, "_".join([net_name, name.upper()]))
+        for bus in busses:
+            for name, pin in bus._asdict().items():
+                self.join_net(pin, "_".join([net_name, name.upper()]))
 
     def add_decoupling_cap(self, pin, capacitor: cmp.Capacitor, net_name=None):
         """
@@ -294,22 +304,40 @@ class Design:
         self.join_net(pin2, next_name)
         return res
 
-    def validate(self):
+    def validate(self,
+                 skip_footprints=False,
+                 check_no_single_connections=False):
         errors = []
         components = list(self.components.values())
         for module in self.modules:
-            components.extend(list(module.values()))
+            components.extend(list(module.components.values()))
         for component in components:
             logging.debug(f"Validated: {component}")
-            if not component.footprint:
+            if not component.footprint and not skip_footprints:
                 errors.append(f"No footprint: {component.name}")
+        errors.extend(self._validate_design(check_no_single_connections))
         if errors:
-            logging.error(f" {self.name.upper()} VALIDATION FAILED ".center(60, "="))
+            header = f" {self.name.upper()} VALIDATION FAILED "
+            logging.error("")
+            logging.error(header.center(60, "="))
             for e in errors:
                 logging.error(f" - {e}")
             logging.error("")
             assert not errors
         return components
+
+    def _validate_design(self, check_no_single_connections: bool):
+        errors = []
+        default = set(vars(Ports([], self)))
+        port_diff = set(vars(self.port).keys()) - set(self._ports) - default
+        if port_diff:
+            errors.append(f"Ports changed after initialization! {port_diff}")
+        if check_no_single_connections:
+            for net in self.nets.values():
+                if len(net.connections) == 1:
+                    errors.append(
+                        f"Single connection! {net} - {net.connections}")
+        return errors
 
     def print_symbol(self):
         """

@@ -57,7 +57,7 @@ def test_connect_bus():
     design = Design("TestDesign")
     u1 = design.add_component(tca9535pwr.TCA9535PWR())
     u2 = design.add_component(tca9535pwr.TCA9535PWR())
-    design.connect_bus(u1.i2c, u2.i2c)
+    design.connect_bus([u1.i2c, u2.i2c])
     assert u1.pins.by_name("SDA") in design.nets["I2C0_SDA"].connections
     assert u2.pins.by_name("SDA") in design.nets["I2C0_SDA"].connections
 
@@ -67,8 +67,8 @@ def test_connect_bus_with_name():
     u1 = design.add_component(tca9535pwr.TCA9535PWR())
     u2 = design.add_component(tca9535pwr.TCA9535PWR())
     u3 = design.add_component(tca9535pwr.TCA9535PWR())
-    design.connect_bus(u1.i2c, u2.i2c)
-    design.connect_bus(u1.i2c, u3.i2c)
+    design.connect_bus([u1.i2c, u2.i2c])
+    design.connect_bus([u1.i2c, u3.i2c])
     assert u2.pins.by_name("SDA") in design.nets["I2C0_SDA"].connections
     assert u3.pins.by_name("SDA") in design.nets["I2C0_SDA"].connections
 

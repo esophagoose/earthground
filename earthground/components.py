@@ -75,6 +75,7 @@ class Component:
         self.pins = PinContainer([])
         self.parent = None
         self.footprint = None
+        self.dnp = False  # Do not populate
         if self.refdes_prefix not in Component.REFDES_MAP:
             Component.REFDES_MAP[self.refdes_prefix] = 0
         Component.REFDES_MAP[self.refdes_prefix] += 1
