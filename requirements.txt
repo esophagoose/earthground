@@ -1,3 +1,6 @@
+digikey-api==1.0.0
+inquirerpy==0.3.4
 kiutils==1.4.8
+openai==1.2.2
 python-gerber>=0.1.0
 pytest>=7.4.2
