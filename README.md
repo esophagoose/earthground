@@ -8,16 +8,17 @@ Earthground encompasses a comprehensive suite of tools and libraries aimed at fa
 ## Getting Started
 ### Setup
 ```
-pip install -r requirements.txt
+pip install earthground
 ```
 
 ### Simple Example - Resistor Divider
 
 ```
-import common.components as cmp
-import common.schematic as sch_lib
-import common.standard_values as sv
-import library.headers.connectors as conn_lib
+import earthground.exporters.kicad
+import earthground.components as cmp
+import earthground.library.headers.connectors as conn_lib
+import earthground.schematic as sch_lib
+import earthground.standard_values as sv
 
 # Setup the schematic page
 schematic = sch_lib.Design("Resistor Divider Example")
@@ -35,6 +36,9 @@ schematic.connect([r_top.pins[1], input_connector.pins[1]], "SIG_5V0")
 schematic.connect([r_top.pins[2], r_bottom.pins[1], output_connector.pins[1]], "SIG_3V3")
 schematic.connect([input_connector.pins[2], r_bottom.pins[2], output_connector.pins[2]], "GND")
 schematic.print()
+
+# Export the layout to KiCad
+earthground.exporters.kicad.KicadExporter(schematic).save()
 ```
 
 ### Project Walkthrough - 32 Port I/O Expander
@@ -64,13 +68,10 @@ With a Python backend, it's simple to create powerful component libraries that a
 - Quickly set addresses are know they are right:
     ```
     for i, device in enumerate(i2c_devices):
-    device.set_i2c_address(i)
+        device.set_i2c_address(i)
     ```
 - Add validators for datasheet errata and buried issues so if anyone uses a component in a nonrecommended way on the current design or any future design, Earthground will flag it.
 - Parameterize passive component selection for ICs
 - For buck converters, Earthground can automatically size inductors based on datasheet parameters
 - For LDOs, given an output voltage, Earthground will select the feedback resistors, round them to E24 values, and warn you if the result output voltage is beyond a specified percentage
 
-
-## State of the Project
-This an actively worked on project. Currently there's no way to finish layout. I'm working on a KiCAD exporter so you can import the netlist and footprints to KiCAD and do layout there. The final goal is to incorporate a layout editor into the project.
