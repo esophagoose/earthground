@@ -14,7 +14,7 @@ class PinLayout(enum.Enum):
 
 def standard_0_1_inch_header(pin_count, row_count=1):
     return Throughhole(pin_count, row_count).generate_footprint(
-        ap_lib.ApertureCircle(diameter=1.4, hole=1.02),
+        ap_lib.ApertureCircle(diameter=1.7, hole=1.0),
         2.54,  # mm = 0.1 inch
         PinLayout.Z_FORMAT,
     )

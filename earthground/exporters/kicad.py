@@ -31,7 +31,8 @@ class KicadExporter:
         """
         self.board = kiutils.board.Board.create_new()
         self.schematic = schematic
-        self.net_index = 0
+        self._added_nets = {}
+        self.net_index = 1
 
         for y, module in enumerate(schematic.modules + [schematic]):
             for x, component in enumerate(module.components.values()):
@@ -50,22 +51,44 @@ class KicadExporter:
         for index, pad in component.footprint.pads.items():
             shape, size = aperture_to_shape_size(pad.aperture)
             pin = component.pins[index]
+            kicad_net = None
             net = design.pin_to_net.get(pin)
-            if net:
-                net = base.Net(number=self.net_index, name=net.name)
-                self.board.nets.append(net)
+            if net and net not in self._added_nets:
+                kicad_net = base.Net(number=self.net_index, name=net.name)
+                self._added_nets[net] = kicad_net
+                self.board.nets.append(kicad_net)
                 self.net_index += 1
+            elif net:
+                kicad_net = self._added_nets[net]
+            hole = getattr(pad.aperture, "hole", None)
             footprint.pads.append(
                 fp.Pad(
                     number=str(index),
-                    type="smd",
+                    type="thru_hole" if hole else "smd",
                     shape=shape,
                     position=to_position(pad.location),
                     size=size,
+                    drill=fp.DrillDefinition(diameter=hole) if hole else hole,
                     layers=["F.Cu"],
-                    net=net,
+                    net=kicad_net,
                 )
             )
+        # Add silk layer information to the footprint
+        silk_text_ref = fp.FpText(
+            type="reference",
+            text=component.refdes,
+            position=base.Position(X=0, Y=-0.5),
+            layer="F.SilkS",
+        )
+        footprint.graphicItems.append(silk_text_ref)
+
+        silk_text_value = fp.FpText(
+            type="value",
+            text=component.footprint.name,
+            position=base.Position(X=0, Y=1),
+            layer="F.SilkS",
+        )
+        footprint.graphicItems.append(silk_text_value)
         return footprint
 
     def save(self, output_folder="."):

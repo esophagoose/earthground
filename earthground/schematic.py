@@ -11,8 +11,8 @@ class Ports:
         self.symbol = cmp.Component("SYMBOL")
         self.symbol.name = parent.name
         self.symbol.pins = cmp.PinContainer.from_list(ports, self)
-        for port in self.names:
-            setattr(self, port, cmp.Pin(port, 0, parent))
+        for name in ports:
+            setattr(self, name.lower(), self.symbol.pins.by_name(name))
 
     def __getitem__(self, port):
         port = port.lower()
@@ -25,7 +25,6 @@ class Ports:
 
 
 class Design:
-
     def __init__(self, name, short_name=None, ports=[]):
         """
         A design is equivalent to a schematic page. Its function is to hold the relationships
@@ -84,6 +83,7 @@ class Design:
                 if isinstance(component, cmp.PASSIVE_TYPES):
                     self.set_passive_footprint(component)
         self.modules.append(module)
+        self.add_component(module.port.symbol)
         return module
 
     def add_component(self, component):
@@ -98,8 +98,7 @@ class Design:
         """
 
         logging.info(f"Adding component {component}")
-        if isinstance(component,
-                      cmp.PASSIVE_TYPES) and self.default_passive_size:
+        if isinstance(component, cmp.PASSIVE_TYPES) and self.default_passive_size:
             self.set_passive_footprint(component)
         self.components[hash(component)] = component
         component.parent = self
@@ -143,15 +142,6 @@ class Design:
         :return: The net to which the pin was successfully joined.
         :rtype: earthground.components.Net
         """
-        # schematic = pin.parent
-        # if not isinstance(schematic, Design):
-        #     schematic = cast(Design, pin.parent.parent)
-        # assert schematic, f"Floating part {pin.parent}! Did you forget to add it?"
-        # if net_name not in schematic.nets:
-        #     schematic.nets[net_name] = cmp.Net(net_name)
-        # net = schematic.nets[net_name]
-        # schematic._add_to_net(pin, net)
-        # return schematic.nets[net_name]
         # error = f"Floating part {pin.parent}! Did you forget to add it?"
         # assert pin.parent in self.components.values(), error
         if net_name not in self.nets:
@@ -197,7 +187,7 @@ class Design:
                 net_name = f"AutoNet_{list_of_pins[0].name}"
             else:
                 # Some pins have nets associated with them
-                #  First valid net set as net for all pins
+                #   First valid net set as net for all pins
                 net_name = [net.name for net in nets if net][0]
         for pin in list_of_pins:
             self.join_net(pin, net_name)
@@ -207,8 +197,7 @@ class Design:
         name, pin = next(iter(bus._asdict().items()))
         if pin in self.pin_to_net:
             net_name = self.pin_to_net[pin].name
-            if net_name.startswith(bus_type) and net_name.endswith(
-                    name.upper()):
+            if net_name.startswith(bus_type) and net_name.endswith(name.upper()):
                 return int(net_name[len(bus_type)])
 
     def set_passive_footprint(self, component):
@@ -233,8 +222,9 @@ class Design:
 
         bus_types = [type(bus) for bus in busses]
         bus_type = bus_types[0].__name__
-        assert all(t == type(busses[0])
-                   for t in bus_types), f"Mismatch busses! {bus_types}"
+        assert all(
+            t == type(busses[0]) for t in bus_types
+        ), f"Mismatch busses! {bus_types}"
         if bus_index is None:
             # Check if either bus is already connected to a bus
             for bus in busses:
@@ -304,17 +294,16 @@ class Design:
         self.join_net(pin2, next_name)
         return res
 
-    def validate(self,
-                 skip_footprints=False,
-                 check_no_single_connections=False):
+    def validate(self, skip_footprint_check=False, check_no_single_connections=False):
         errors = []
         components = list(self.components.values())
         for module in self.modules:
             components.extend(list(module.components.values()))
-        for component in components:
-            logging.debug(f"Validated: {component}")
-            if not component.footprint and not skip_footprints:
-                errors.append(f"No footprint: {component.name}")
+        if not skip_footprint_check:
+            for component in components:
+                logging.debug(f"Validated: {component}")
+                if not component.footprint and isinstance(component, cmp.Component):
+                    errors.append(f"No footprint: {component.name}")
         errors.extend(self._validate_design(check_no_single_connections))
         if errors:
             header = f" {self.name.upper()} VALIDATION FAILED "
@@ -334,9 +323,9 @@ class Design:
             errors.append(f"Ports changed after initialization! {port_diff}")
         if check_no_single_connections:
             for net in self.nets.values():
-                if len(net.connections) == 1:
-                    errors.append(
-                        f"Single connection! {net} - {net.connections}")
+                if len(net.connections) != 1:
+                    continue
+                errors.append(f"Single connection! {net} - {net.connections}")
         return errors
 
     def print_symbol(self):
@@ -377,5 +366,3 @@ class Design:
                     connection = self.pin_to_net[pin].name
                 print(f"|{pin.name.rjust(pad)}|-- {connection}")
             print("'" + "-" * pad + "'\n")
-        for module in self.modules:
-            module.print_symbol()

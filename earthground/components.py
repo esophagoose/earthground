@@ -1,6 +1,7 @@
 from typing import List, Union
 
 import earthground.standard_values as sv
+import earthground.footprint_types as ft
 
 
 class Net:
@@ -74,7 +75,7 @@ class Component:
         self.parameters = {}
         self.pins = PinContainer([])
         self.parent = None
-        self.footprint = None
+        self.footprint: ft.BaseFootprint = None
         self.dnp = False  # Do not populate
         if self.refdes_prefix not in Component.REFDES_MAP:
             Component.REFDES_MAP[self.refdes_prefix] = 0
