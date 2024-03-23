@@ -61,6 +61,7 @@ class KicadExporter:
             elif net:
                 kicad_net = self._added_nets[net]
             hole = getattr(pad.aperture, "hole", None)
+            layer = "*" if hole else "F"
             footprint.pads.append(
                 fp.Pad(
                     number=str(index),
@@ -69,7 +70,7 @@ class KicadExporter:
                     position=to_position(pad.location),
                     size=size,
                     drill=fp.DrillDefinition(diameter=hole) if hole else hole,
-                    layers=["F.Cu"],
+                    layers=[f"{layer}.Cu", f"{layer}.Mask"],
                     net=kicad_net,
                 )
             )
