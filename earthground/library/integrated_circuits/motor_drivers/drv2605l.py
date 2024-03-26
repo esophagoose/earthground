@@ -2,6 +2,7 @@ import enum
 
 import earthground.components as cmp
 import earthground.schematic as sch
+from earthground.library.footprints.manufacturer_specific import ti
 from earthground.library.protocols.serial import I2C
 
 
@@ -59,10 +60,11 @@ class DRV2605L(cmp.Component):
         }
         self.pins = cmp.PinContainer.from_dict(PINOUT[package], self)
         self.i2c = I2C(sda=self.pins.by_name("SDA"), scl=self.pins.by_name("SCL"))
+        self.footprint = ti.DGS_VSSOP(10)
 
 
 def generate_design(package: Package):
-    ports = ["VCC", "GND", "I2C", "ENABLE", "TRIGGER", "OUT_P", "OUT_N"]
+    ports = ["VCC", "GND", "I2C", "SDA", "SCL", "ENABLE", "TRIGGER", "OUT_P", "OUT_N"]
     design = sch.Design("DRV2605L_Design", "Haptic", ports)
     driver = design.add_component(DRV2605L(package))
     design.join_net(driver.pins.by_name("VDD"), "VCC")
@@ -76,13 +78,12 @@ def generate_design(package: Package):
     design.add_decoupling_cap(driver.pins.by_name("REG"), cmp.Capacitor("1u", 10))
 
     # Assign ports
-    design.connect([design.port.vcc, driver.pins.by_name("VDD")])
-    # design.port.i2c = driver.i2c
-    design.port.trigger = driver.pins.by_name("IN/TRIG")
-    design.port.enable = driver.pins.by_name("EN")
-    design.port.out_p = driver.pins.by_name("OUT+")
-    design.port.out_n = driver.pins.by_name("OUT-")
-    design.connect([design.port.gnd, driver.pins.by_name("GND")])
-    design.print_symbol()
-    design.validate(skip_footprints=True)
+    design.connect([driver.pins.by_name("VDD"), design.port.vcc])
+    design.port.i2c = I2C(sda=design.port.sda, scl=design.port.scl)
+    design.connect([driver.pins.by_name("IN/TRIG"), design.port.trigger])
+    design.connect([driver.pins.by_name("EN"), design.port.enable])
+    design.connect([driver.pins.by_name("OUT+"), design.port.out_p])
+    design.connect([driver.pins.by_name("OUT-"), design.port.out_n])
+    design.connect([driver.pins.by_name("GND"), design.port.gnd])
+    design.validate(skip_footprint_check=True)
     return design
