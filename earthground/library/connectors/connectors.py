@@ -38,10 +38,11 @@ class Throughhole(cmp.Component):
         return self
 
 
-class ConnectorFootprint:
+class ConnectorFootprint(ft.BaseFootprint):
     def __init__(
         self, dimensions: Tuple[float], aperture, spacing, layout_format
     ) -> None:
+        super().__init__()
         self.name = f"ConnectorFootprint{dimensions}_{spacing}mm"
         self.pins_per_row, self.rows = dimensions
         self.count = self.pins_per_row * self.rows

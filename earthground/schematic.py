@@ -9,6 +9,7 @@ class Ports:
     def __init__(self, ports: List[str], parent: "Design"):
         self.names = [p.lower() for p in ports]
         self.symbol = cmp.Component("SYMBOL")
+        self.symbol.virtual = True
         self.symbol.name = parent.name
         self.symbol.pins = cmp.PinContainer.from_list(ports, self)
         for name in ports:
@@ -86,13 +87,12 @@ class Design:
         self.add_component(module.port.symbol)
         return module
 
-    def add_component(self, component):
+    def add_component(self, component: cmp.Component):
         """
-        Adds a component to the current design.
+        Adds a component to the current design
 
         :param component: The component to be added to the design.
         :type component: Component
-
         :return: The component that was added, with updated footprint if applicable.
         :rtype: Component
         """
@@ -302,7 +302,7 @@ class Design:
         if not skip_footprint_check:
             for component in components:
                 logging.debug(f"Validated: {component}")
-                if not component.footprint and isinstance(component, cmp.Component):
+                if not component.footprint and not component.virtual:
                     errors.append(f"No footprint: {component.name}")
         errors.extend(self._validate_design(check_no_single_connections))
         if errors:

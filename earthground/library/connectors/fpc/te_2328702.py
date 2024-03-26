@@ -67,6 +67,6 @@ class TeFpcFootprint(ft.BaseFootprint):
         self.pads.update({"MT1": ft.Pad([-mount_x, mount_y], mount_aperture)})
         self.pads.update({"MT2": ft.Pad([mount_x, mount_y], mount_aperture)})
         self.silk = [
-            [(-cx, 0), (-cx, -cy), (-cx, xstart + aperture.width)],
-            [(cx, 0), (cx, -cy), (cx, abs(xstart) - aperture.width)],
+            [(-cx, 0), (-cx, -cy), (xstart - aperture.width, -cy)],
+            [(cx, 0), (cx, -cy), (abs(xstart) + aperture.width, -cy)],
         ]

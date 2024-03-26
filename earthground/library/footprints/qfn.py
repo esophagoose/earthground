@@ -40,7 +40,7 @@ def validate(value, options):
     raise ValueError(f"Invalid option: {value}. Options {options}")
 
 
-class Qfn:
+class Qfn(ft.BaseFootprint):
     def __init__(
         self,
         pin_count,
@@ -48,6 +48,7 @@ class Qfn:
         pitch: float,
         ep: Optional[Tuple[float, float]] = None,
     ) -> None:
+        super().__init__()
         package = PACKAGE_SIZES[size.value]
         size_name = size.name.replace("_", ".")[1:].lower()
         self.name = f"QFN{pin_count}_{size_name}_P{pitch}mm"

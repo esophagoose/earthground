@@ -11,8 +11,9 @@ class Pad(NamedTuple):
 
 class BaseFootprint:
     def __init__(self) -> None:
-        if not getattr(self, "pads", None):
-            self.pads: Dict[str, Pad] = {}
+        self.pads: Dict[str, Pad] = {}
+        self.paste = 0  # None = no paste, 1 == 1mm reduction from pad
+        self.silk = []
 
     def get_bbox(self):
         min_x, min_y = float("inf"), float("inf")
