@@ -8,6 +8,11 @@ class I2C(NamedTuple):
     scl: cmp.Pin
 
 
+class USB(NamedTuple):
+    dm: cmp.Pin
+    dp: cmp.Pin
+
+
 class SPI(NamedTuple):
     mosi: cmp.Pin
     miso: cmp.Pin

@@ -22,8 +22,7 @@ def aperture_to_shape_size(aperture):
 
 
 class KicadExporter:
-
-    def __init__(self, schematic: sch_lib.Design):
+    def __init__(self, schematic: sch_lib.Design, positions={}):
         """
         A class to export schematic designs to KiCad format.
 
@@ -44,12 +43,15 @@ class KicadExporter:
                 if component.virtual:
                     continue
                 footprint = self.parse_footprint(module, component)
-                footprint.position = base.Position(X=10 * (x + 1),
-                                                   Y=50 * (y + 1))
+                if component.refdes in positions:
+                    footprint.position = positions[component.refdes]
+                else:
+                    footprint.position = base.Position(X=10 * (x + 1), Y=50 * (y + 1))
                 self.board.footprints.append(footprint)
 
-    def parse_footprint(self, design: sch_lib.Design,
-                        component: cmp.Component) -> fp.Footprint:
+    def parse_footprint(
+        self, design: sch_lib.Design, component: cmp.Component
+    ) -> fp.Footprint:
         footprint = fp.Footprint.create_new(
             library_id=component.name,
             value=component.footprint.name,
@@ -74,7 +76,8 @@ class KicadExporter:
                     drill=fp.DrillDefinition(diameter=hole) if hole else hole,
                     layers=[f"{layer}.Cu", f"{layer}.Mask"],
                     net=kicad_net,
-                ))
+                )
+            )
         # Add silk layer information to the footprint
         footprint.graphicItems.append(
             fp.FpText(
@@ -82,11 +85,11 @@ class KicadExporter:
                 text=component.refdes,
                 position=base.Position(X=0, Y=0),
                 layer="F.SilkS",
-            ))
+            )
+        )
         for polysilk in component.footprint.silk:
             for i in range(len(polysilk) - 1):
-                print(polysilk[i:i + 2])
-                previous, current = polysilk[i:i + 2]
+                previous, current = polysilk[i : i + 2]
                 line = fp.FpLine(to_pos(previous), to_pos(current), "F.SilkS")
                 footprint.graphicItems.append(line)
         return footprint

@@ -5,6 +5,7 @@ from typing import Dict
 
 import digikey
 import openai
+from digikey.v3.productinformation import KeywordSearchRequest
 from InquirerPy import inquirer
 
 FOLDER_IDS = {
@@ -20,6 +21,7 @@ FAMILY_IDS = {
     199: "",
     560: "interface_sensor",
     783: "",
+    753: "controllers",
     744: "motor_drivers",
     739: "voltage_regulators/switching",
     399: "fpc",
@@ -33,7 +35,7 @@ def get_credentials(service: str):
         return data.get("client_id"), data.get("client_secret")
 
 
-def get_component_from_digikey(part_number: str):
+def digikey_login():
     cache = str(pathlib.Path.home() / ".credentials/")
     cid, password = get_credentials("digikey")
     os.environ["DIGIKEY_CLIENT_ID"] = cid
@@ -41,6 +43,8 @@ def get_component_from_digikey(part_number: str):
     os.environ["DIGIKEY_CLIENT_SANDBOX"] = "False"
     os.environ["DIGIKEY_STORAGE_PATH"] = cache
 
+
+def get_component_from_digikey(part_number: str):
     part = digikey.product_details(part_number)
     data = part.to_dict()
     folder_id = int(data["category"]["value_id"])
@@ -89,7 +93,7 @@ def generate_pins(datasheet):
     "comment" for the pin name, pin index, and pin description (if present)\n"""
     print()
 
-    column_prompt = (
+    column_prompt = " ".join(
         "If there's multiple columns of pin indices for",
         "for different footprints, escribe which column to use. Else leave blank",
     )
@@ -140,12 +144,34 @@ def write_component(path: str, attributes: Dict[str, str], pins=None):
         print(f"Successfully wrote {filepath}")
 
 
-if __name__ == "__main__":
-    dpn = inquirer.text("Enter the DigiKey part number:").execute()
-    folder, attr = get_component_from_digikey(dpn)
-    use_ai_prompt = "Would you like to use AI to generate the pins?"
-    ai = inquirer.confirm(use_ai_prompt).execute()
+def get_digikey_part_number_from_mpn(mpn: str) -> str:
+    request = KeywordSearchRequest(keywords=mpn, record_count=10)
+    response = digikey.keyword_search(body=request)
+
+    choices = {}
+    for i, part in enumerate(response.products):
+        key = f"{part.manufacturer_part_number}: {part.product_description}"
+        key += f" - {part.detailed_description}"
+        choices[key] = i
+    description = inquirer.select(
+        "Select the right part:",
+        choices=list(choices.keys()),
+    ).execute()
+    return response.products[choices[description]].digi_key_part_number
+
+
+def create(digikey_part_number: str, use_ai_for_pins: bool):
+    folder, attr = get_component_from_digikey(digikey_part_number)
     part_pins = None
-    if ai:
+    if use_ai_for_pins:
         part_pins = generate_pins(attr["datasheet"])
     write_component(folder, attr, part_pins)
+
+
+if __name__ == "__main__":
+    digikey_login()
+    dpn = inquirer.text("Enter the DigiKey part number:").execute()
+    use_ai_prompt = inquirer.confirm(
+        "Would you like to use AI to generate the pins?"
+    ).execute()
+    create(dpn, use_ai_prompt)

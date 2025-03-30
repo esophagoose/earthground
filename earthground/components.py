@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Set, Union
 
 import earthground.footprint_types as ft
 import earthground.standard_values as sv
@@ -14,7 +14,7 @@ class Net:
         """
 
         self.name = name
-        self.connections = set()
+        self.connections: Set["Pin"] = set()
 
     def __repr__(self) -> str:
         return f"Net<{self.name}>"
