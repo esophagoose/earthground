@@ -1,177 +1,207 @@
-import json
-import os
+import logging
 import pathlib
-from typing import Dict
+from typing import List
 
-import digikey
-import openai
-from digikey.v3.productinformation import KeywordSearchRequest
-from InquirerPy import inquirer
+import colorlog
 
-FOLDER_IDS = {
-    32: "integrated_circuits",
-    15: "switches",
-    33: "headers",
-    20: "connectors",
-}
-FAMILY_IDS = {
-    749: "io_expanders",
-    685: "microcontrollers",
-    754: "specialized",
-    199: "",
-    560: "interface_sensor",
-    783: "",
-    753: "controllers",
-    744: "motor_drivers",
-    739: "voltage_regulators/switching",
-    399: "fpc",
-}
+import earthground.tools.helper.ai as ai_lib
+import earthground.tools.helper.python_writer as pw_lib
+import earthground.tools.helper.digikey as digikey_lib
+import earthground.tools.helper.markdown as markdown_lib
 
-
-def get_credentials(service: str):
-    path = pathlib.Path.home() / ".credentials" / f"{service}.json"
-    with open(path, "r") as f:
-        data = json.load(f)
-        return data.get("client_id"), data.get("client_secret")
-
-
-def digikey_login():
-    cache = str(pathlib.Path.home() / ".credentials/")
-    cid, password = get_credentials("digikey")
-    os.environ["DIGIKEY_CLIENT_ID"] = cid
-    os.environ["DIGIKEY_CLIENT_SECRET"] = password
-    os.environ["DIGIKEY_CLIENT_SANDBOX"] = "False"
-    os.environ["DIGIKEY_STORAGE_PATH"] = cache
-
-
-def get_component_from_digikey(part_number: str):
-    part = digikey.product_details(part_number)
-    data = part.to_dict()
-    folder_id = int(data["category"]["value_id"])
-    family_id = int(data["family"]["value_id"])
-    if folder_id not in FOLDER_IDS:
-        uid, category = (data["category"]["value_id"], data["category"]["value"])
-        raise KeyError(f"Missing folder id {uid}: {category}")
-    if family_id not in FAMILY_IDS:
-        uid, family = (data["family"]["value_id"], data["family"]["value"])
-        raise KeyError(f"Missing family id {uid}: {family}")
-    parameters = {}
-    for param in data["parameters"]:
-        parameters[param["parameter"]] = param["value"]
-    attributes = {
-        "manufacturer": data["manufacturer"]["value"],
-        "mpn": data["manufacturer_part_number"],
-        "description": data["product_description"],
-        "datasheet": data["primary_datasheet"],
-        "parameters": parameters,
-    }
-    path = pathlib.Path(FOLDER_IDS[folder_id]) / pathlib.Path(FAMILY_IDS[family_id])
-    return path, attributes
-
-
-def generate_pins(datasheet):
-    client = openai.OpenAI()
-
-    print(f"Open the datasheet in your browser: {datasheet}")
-    text_prompt = inquirer.text("Copy the pin table here:").execute()
-    system_prompt = """You create json objects of pin indexes to names for various
-    footprints from text from a datasheet. There should be columns for
-    pin names, pin indexes, and maybe pin descriptions. The input will be text
-    and you output a json object that looks like this:
-    {
-        "pins": [
-            {
-                "name": parsed_pin_name,
-                "index": parsed_pin_index,
-                "comment": parsed_pin_comment
-            }
-        ]
-    }"""
-
-    user_prompt = f"""{text_prompt} \nOutput a json object from the text below 
-    where every object in the json list has three keys: "name", "index", 
-    "comment" for the pin name, pin index, and pin description (if present)\n"""
-    print()
-
-    column_prompt = " ".join(
-        "If there's multiple columns of pin indices for",
-        "for different footprints, escribe which column to use. Else leave blank",
+handler = colorlog.StreamHandler()
+handler.setFormatter(
+    colorlog.ColoredFormatter(
+        "%(log_color)s%(asctime)s - %(levelname)s: [%(name)s] %(message)s",
+        log_colors={
+            "DEBUG": "cyan",
+            "INFO": "green",
+            "WARNING": "yellow",
+            "ERROR": "red",
+            "CRITICAL": "red,bg_white",
+        },
     )
-    column = inquirer.text(column_prompt).execute()
-    if column:
-        user_prompt += f"To find the pin indexes, {column}"
+)
 
-    response = client.chat.completions.create(
-        model="gpt-4-turbo-preview",
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    )
-
-    content = response.choices[0].message.content
-    pins = json.loads(content).get("pins")
-    for pin in pins:
-        print(f"  {pin['index']}: {pin['name']},  # {pin['comment'][:10]}")
-    inquirer.confirm("Is this correct?").execute()
-    return pins
+logging.basicConfig(level=logging.INFO, handlers=[handler])
+LOG = logging.getLogger("ComponentCreator")
+BASE_LIBRARY_PATH = pathlib.Path("earthground/library")
+RATINGS = [
+    ("abs_max", "Absolute Maximum Ratings"),
+    ("recommended", "Recommended Operating Conditions"),
+]
 
 
-def write_component(path: str, attributes: Dict[str, str], pins=None):
-    name = attributes["mpn"].lower()
-    filepath = "earthground/library" / path / (name + ".py")
-    out = "import earthground.components as cmp"
-    out += "\n\n\n"
-    out += f"class {name.upper()}(cmp.Component):\n"
-    out += "    def __init__(self):\n"
-    out += "        super().__init__()\n"
-    for name, value in attributes.items():
-        if isinstance(value, str):
-            value = f'"{value}"'
-        out += f"        self.{name} = {value}\n"
-    if pins:
-        out += "        self.pins = cmp.PinContainer.from_dict({\n"
-        for pin in pins:
-            out += " " * 12
-            out += f"\"{pin['index']}\": \"{pin['name']}\""
-            out += f"  # {pin['comment']},\n"
-        out += "        }, self)"
-    if not os.path.exists(os.path.dirname(filepath)):
-        os.makedirs(os.path.dirname(filepath))
-    with open(filepath, "w") as f:
-        f.write(out)
-        print(f"Successfully wrote {filepath}")
+def normalize_dict_list(dict_list):
+    """
+    Normalizes a list of dictionaries by:
+    1. Removing keys that have the same value across all dictionaries
+    2. Removing keys that are not present in all dictionaries
+
+    :param dict_list: A list of dictionaries to normalize
+    :type dict_list: List[Dict]
+    :return: A list of normalized dictionaries
+    :rtype: List[Dict]
+    """
+    LOG.info(f"Normalizing list of {len(dict_list) if dict_list else 0} dictionaries")
+    if not dict_list or not isinstance(dict_list, list):
+        LOG.warning("Input is not a valid list of dictionaries")
+        return dict_list
+
+    # Find all unique keys across all dictionaries
+    all_keys = set()
+    for d in dict_list:
+        all_keys.update(d.keys())
+    LOG.debug(f"Found {len(all_keys)} unique keys across all dictionaries")
+
+    # Find keys present in all dictionaries
+    common_keys = set(all_keys)
+    for d in dict_list:
+        common_keys &= set(d.keys())
+    LOG.debug(f"Found {len(common_keys)} common keys across all dictionaries")
+
+    # Check if all dictionaries have the same value for each common key
+    keys_with_same_value = set()
+    for key in common_keys:
+        values = [d[key] for d in dict_list]
+        if all(value == values[0] for value in values):
+            keys_with_same_value.add(key)
+
+    # Remove keys that are not common or have the same value across all dictionaries
+    keys_to_keep = common_keys - keys_with_same_value
+    LOG.debug(f"Keeping {len(keys_to_keep)} keys after normalization")
+
+    # Create new dictionaries with only the keys to keep
+    normalized_dict_list = []
+    for d in dict_list:
+        normalized_dict = {k: d[k] for k in keys_to_keep}
+        normalized_dict_list.append(normalized_dict)
+
+    return normalized_dict_list
 
 
-def get_digikey_part_number_from_mpn(mpn: str) -> str:
-    request = KeywordSearchRequest(keywords=mpn, record_count=10)
-    response = digikey.keyword_search(body=request)
+class ComponentCreator:
+    def __init__(self, mpn: str, markdown_path: str):
+        self.md = markdown_lib.SimpleMarkdown.parse(markdown_path)
+        self.ai = ai_lib.ComponentAI()
+        self.cw = pw_lib.PythonWriter(BASE_LIBRARY_PATH)
+        self.digikey = digikey_lib.DigikeyComponentCreator()
+        self.params = self.digikey.get_component_details(mpn)
+        self._ratings = {}
+        self._component = pw_lib.ClassInstance(self.params.mpn, base_class="cmp.Component")
 
-    choices = {}
-    for i, part in enumerate(response.products):
-        key = f"{part.manufacturer_part_number}: {part.product_description}"
-        key += f" - {part.detailed_description}"
-        choices[key] = i
-    description = inquirer.select(
-        "Select the right part:",
-        choices=list(choices.keys()),
-    ).execute()
-    return response.products[choices[description]].digi_key_part_number
+    def _generate_electrical_ratings(self, section_name: str) -> List[pw_lib.Variable]:
+        text = self.md.get_all_text_from_search([section_name])
+        ratings = self.ai.generate_ratings(text)
+        variables = []
+        for rating in ratings.get("ratings", []):
+            if not rating.get("symbol").strip():
+                continue
+            params = []
+            for key in ["min", "typ", "max", "units"]:
+                value = rating.get(key)
+                if not value:
+                    continue
+                value = f"'{value}'" if key == "units" else value
+                params.append(f"{key}={value}")
+            cv = pw_lib.Variable(
+                name=pw_lib.clean_variable_name(rating.get("symbol")).lower(),
+                value=f"sv.ValueBounds({', '.join(params)})",
+                comment=rating["description"],
+            )
+            variables.append(cv)
+        return variables
 
+    def process_electrical_ratings(self) -> List[pw_lib.Variable]:
+        LOG.info("Processing electrical ratings")
+        self.cw.add_import("collections", function="namedtuple")
+        self.cw.add_import("earthground.standard_values", as_name="sv")
+        for variable_name, section_name in RATINGS:
+            variables = self._generate_electrical_ratings(section_name)
+            self._ratings[variable_name] = variables
+            class_name = variable_name.title().replace("_", "")
+            ntuple = f"namedtuple('{class_name}', {[r.name for r in variables]})"
+            self.cw.add_module_variable(class_name, ntuple)
+            self._component.class_vars.extend(variables)
 
-def create(digikey_part_number: str, use_ai_for_pins: bool):
-    folder, attr = get_component_from_digikey(digikey_part_number)
-    part_pins = None
-    if use_ai_for_pins:
-        part_pins = generate_pins(attr["datasheet"])
-    write_component(folder, attr, part_pins)
+    def process_summary(self):
+        LOG.info("Generating component summary")
+        first_pages = self.md.get_lines(0, 100)
+        self._component.docstring = self.ai.generate_summary(first_pages)
+
+    def process_params(self):
+        LOG.info("Processing component parameters")
+        self._component.instance_vars.extend([
+            pw_lib.Variable(name="manufacturer", value=self.params.manufacturer),
+            pw_lib.Variable(name="description", value=self.params.description),
+            pw_lib.Variable(name="datasheet", value=self.params.datasheet),
+        ])
+        self._component.instance_vars.extend(pw_lib.Variable.from_dict(self.params.attributes))
+
+    def process_ordering_info(self):
+        LOG.info("Processing ordering information")
+        sections = ["Order", "PACKAGING INFORMATION"]
+        ordering_section = self.md.get_all_text_from_search(sections)
+        ordering_info = self.ai.generate_ordering_info(ordering_section)
+        package_types = self.ai.get_unique_packages(ordering_section)
+        LOG.info(f"Retrieved package types: {package_types}")
+        values = normalize_dict_list(list(ordering_info.values()))
+        part_numbers = dict(zip(ordering_info.keys(), values))
+        first_part_number = part_numbers[list(part_numbers.keys())[0]]
+        parameters = [f"{k}: {type(v).__name__}" for k, v in first_part_number.items()]
+        packages = {k: list(v.values()) for k, v in part_numbers.items()}   
+        self._component.constructor_args = parameters     
+        self.cw.add_import("enum")
+        enum_class = pw_lib.ClassInstance(
+            class_name="LSF0102Packages",
+            base_class="enum.Enum",
+            docstring="LSF0102 Packages\n\nValues are: "
+            + ", ".join(first_part_number.keys()).replace("_", " "),
+            class_vars=pw_lib.Variable.from_dict(packages),
+            has_init=False,
+        )
+        self.cw.add_class(enum_class)
+        return package_types
+
+    def run(self):
+        # Find component and datasheet and parse into python
+        LOG.info("Starting component creator")
+        self.cw.add_import("earthground.components", as_name="cmp")
+        self.process_summary()
+        self.process_params()
+        packages = self.process_ordering_info()
+        self.process_electrical_ratings()
+        pin_section = self.md.get_all_text_from_search("Pin")
+        pins = self.ai.generate_pins(pin_section, packages)
+        
+        # Write component to file       
+        self.cw.add_class(self._component)
+        LOG.info("Writing Python class to file")
+        self.cw.write(self.params.path / f"{self.params.mpn.lower()}.py")
+        return self
 
 
 if __name__ == "__main__":
-    digikey_login()
-    dpn = inquirer.text("Enter the DigiKey part number:").execute()
-    use_ai_prompt = inquirer.confirm(
-        "Would you like to use AI to generate the pins?"
-    ).execute()
-    create(dpn, use_ai_prompt)
+    path = "/Users/andrewmmello/Development/earthground/examples/lsf0102.md"
+    creator = ComponentCreator("296-39070-6-ND", path).run()
+
+
+    # import code
+    # code.interact(local=dict(globals(), **locals()))
+
+    # pprint.pprint(pins)
+    # content = [
+    #     summary,
+    #     md.get_all_text_from_search("Application"),
+    #     md.get_text_from_chapter(7),
+    # ]
+    # # print("\n".join(content))
+    # reference_design = ai.generate_reference_design(content)
+    # print(reference_design)
+    # print("\n".join(md._raw))
+    # digikey_login             ()
+    # dpn = inquirer.text("Enter the DigiKey part number:").execute()
+    # use_ai_prompt = inquirer.confirm(
+    #     "Would you like to use AI to generate the pins?"
+    # ).execute()
+    # create(dpn, use_ai_prompt)
