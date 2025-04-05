@@ -1,13 +1,15 @@
+import argparse
 import logging
 import pathlib
 from typing import List
 
 import colorlog
+from InquirerPy import inquirer
 
 import earthground.tools.helper.ai as ai_lib
-import earthground.tools.helper.python_writer as pw_lib
 import earthground.tools.helper.digikey as digikey_lib
 import earthground.tools.helper.markdown as markdown_lib
+import earthground.tools.helper.python_writer as pw_lib
 
 handler = colorlog.StreamHandler()
 handler.setFormatter(
@@ -25,10 +27,11 @@ handler.setFormatter(
 
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 LOG = logging.getLogger("ComponentCreator")
+CACHE_DIR = pathlib.Path(".cache/")
 BASE_LIBRARY_PATH = pathlib.Path("earthground/library")
 RATINGS = [
-    ("abs_max", "Absolute Maximum Ratings"),
-    ("recommended", "Recommended Operating Conditions"),
+    ("abs_max", ["Absolute Maximum Ratings"]),
+    ("recommended", ["Recommended Operating Conditions", "Electrical Characteristics"]),
 ]
 
 
@@ -80,19 +83,36 @@ def normalize_dict_list(dict_list):
     return normalized_dict_list
 
 
+def parse_datasheet(mpn: str, datasheet: str) -> str:
+    """
+    Parses the datasheet URL to extract the path to the markdown file.
+    """
+    cache_path = CACHE_DIR / "datasheets" / f"{mpn.lower()}.md"
+    if cache_path.exists():
+        return cache_path
+    raise NotImplementedError(f"Docling support not implemented yet: {cache_path}")
+
+
 class ComponentCreator:
-    def __init__(self, mpn: str, markdown_path: str):
-        self.md = markdown_lib.SimpleMarkdown.parse(markdown_path)
+    def __init__(self, mpn: str):
         self.ai = ai_lib.ComponentAI()
         self.cw = pw_lib.PythonWriter(BASE_LIBRARY_PATH)
         self.digikey = digikey_lib.DigikeyComponentCreator()
         self.params = self.digikey.get_component_details(mpn)
         self._ratings = {}
-        self._component = pw_lib.ClassInstance(self.params.mpn, base_class="cmp.Component")
+        self._component = pw_lib.ClassInstance(
+            self.params.mpn, base_class="cmp.Component"
+        )
+        markdown_path = parse_datasheet(self.params.mpn, self.params.datasheet)
+        self.md = markdown_lib.SimpleMarkdown.parse(markdown_path)
+        self.cw.add_import("earthground.components", as_name="cmp")
 
-    def _generate_electrical_ratings(self, section_name: str) -> List[pw_lib.Variable]:
-        text = self.md.get_all_text_from_search([section_name])
+    def _generate_electrical_ratings(
+        self, sections: List[str]
+    ) -> List[pw_lib.Variable]:
+        text = self.md.get_all_text_from_search(sections)
         ratings = self.ai.generate_ratings(text)
+        print(ratings)
         variables = []
         for rating in ratings.get("ratings", []):
             if not rating.get("symbol").strip():
@@ -116,8 +136,8 @@ class ComponentCreator:
         LOG.info("Processing electrical ratings")
         self.cw.add_import("collections", function="namedtuple")
         self.cw.add_import("earthground.standard_values", as_name="sv")
-        for variable_name, section_name in RATINGS:
-            variables = self._generate_electrical_ratings(section_name)
+        for variable_name, sections in RATINGS:
+            variables = self._generate_electrical_ratings(sections)
             self._ratings[variable_name] = variables
             class_name = variable_name.title().replace("_", "")
             ntuple = f"namedtuple('{class_name}', {[r.name for r in variables]})"
@@ -131,12 +151,16 @@ class ComponentCreator:
 
     def process_params(self):
         LOG.info("Processing component parameters")
-        self._component.instance_vars.extend([
-            pw_lib.Variable(name="manufacturer", value=self.params.manufacturer),
-            pw_lib.Variable(name="description", value=self.params.description),
-            pw_lib.Variable(name="datasheet", value=self.params.datasheet),
-        ])
-        self._component.instance_vars.extend(pw_lib.Variable.from_dict(self.params.attributes))
+        self._component.instance_vars.extend(
+            [
+                pw_lib.Variable(name="manufacturer", value=self.params.manufacturer),
+                pw_lib.Variable(name="description", value=self.params.description),
+                pw_lib.Variable(name="datasheet", value=self.params.datasheet),
+            ]
+        )
+        self._component.instance_vars.extend(
+            pw_lib.Variable.from_dict(self.params.attributes)
+        )
 
     def process_ordering_info(self):
         LOG.info("Processing ordering information")
@@ -149,13 +173,13 @@ class ComponentCreator:
         part_numbers = dict(zip(ordering_info.keys(), values))
         first_part_number = part_numbers[list(part_numbers.keys())[0]]
         parameters = [f"{k}: {type(v).__name__}" for k, v in first_part_number.items()]
-        packages = {k: list(v.values()) for k, v in part_numbers.items()}   
-        self._component.constructor_args = parameters     
+        packages = {k: list(v.values()) for k, v in part_numbers.items()}
+        self._component.constructor_args = parameters
         self.cw.add_import("enum")
         enum_class = pw_lib.ClassInstance(
-            class_name="LSF0102Packages",
+            class_name=f"{self.params.mpn}PartNumbers",
             base_class="enum.Enum",
-            docstring="LSF0102 Packages\n\nValues are: "
+            docstring=f"{self.params.mpn} Part Number Configurations\n\nValues are: "
             + ", ".join(first_part_number.keys()).replace("_", " "),
             class_vars=pw_lib.Variable.from_dict(packages),
             has_init=False,
@@ -166,42 +190,31 @@ class ComponentCreator:
     def run(self):
         # Find component and datasheet and parse into python
         LOG.info("Starting component creator")
-        self.cw.add_import("earthground.components", as_name="cmp")
         self.process_summary()
         self.process_params()
-        packages = self.process_ordering_info()
         self.process_electrical_ratings()
+        packages = self.process_ordering_info()
         pin_section = self.md.get_all_text_from_search("Pin")
-        pins = self.ai.generate_pins(pin_section, packages)
-        
-        # Write component to file       
+        self.ai.generate_pins(pin_section, packages)
+
+        # Write component to file
         self.cw.add_class(self._component)
         LOG.info("Writing Python class to file")
         self.cw.write(self.params.path / f"{self.params.mpn.lower()}.py")
         return self
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Create a component from a part number"
+    )
+    parser.add_argument("mpn", nargs="?", help="Manufacturer part number")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    path = "/Users/andrewmmello/Development/earthground/examples/lsf0102.md"
-    creator = ComponentCreator("296-39070-6-ND", path).run()
-
-
-    # import code
-    # code.interact(local=dict(globals(), **locals()))
-
-    # pprint.pprint(pins)
-    # content = [
-    #     summary,
-    #     md.get_all_text_from_search("Application"),
-    #     md.get_text_from_chapter(7),
-    # ]
-    # # print("\n".join(content))
-    # reference_design = ai.generate_reference_design(content)
-    # print(reference_design)
-    # print("\n".join(md._raw))
-    # digikey_login             ()
-    # dpn = inquirer.text("Enter the DigiKey part number:").execute()
-    # use_ai_prompt = inquirer.confirm(
-    #     "Would you like to use AI to generate the pins?"
-    # ).execute()
-    # create(dpn, use_ai_prompt)
+    args = parse_args()
+    mpn = args.mpn
+    if not mpn:
+        mpn = inquirer.text("Enter the part number:").execute()
+    creator = ComponentCreator(mpn).run()

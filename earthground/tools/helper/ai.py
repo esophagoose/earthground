@@ -5,8 +5,8 @@ import os
 import pathlib
 from typing import Any, Dict, List
 
-import openai
 import digikey
+import openai
 
 LOG = logging.getLogger("OPENAI")
 
@@ -263,7 +263,7 @@ class ComponentAI:
         result = self._query_json(system_prompt, user_prompt)
         LOG.debug(f"Generated ratings: {result}")
         return result
-    
+
     def get_unique_packages(self, ordering_section: str) -> List[str]:
         system_prompt = """You are an expert in electrical components. 
         Extract unique footprints, also known as package drawings or package 
@@ -279,7 +279,7 @@ class ComponentAI:
         ```
             
         """
-        
+
         user_prompt = f"""Extract the package information from the ordering section and return as a JSON object.
         
         Ordering Section:
@@ -287,7 +287,7 @@ class ComponentAI:
         {ordering_section}
         ```
         """
-        
+
         result = self._query_json(system_prompt, user_prompt)
         LOG.debug(f"Generated package information: {result}")
         return result.get("footprints", [])

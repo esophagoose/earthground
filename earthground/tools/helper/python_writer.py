@@ -94,9 +94,7 @@ class ClassInstance:
 class PythonWriter:
     """A class for generating and writing Python source code files."""
 
-    def __init__(
-        self, base_dir: Optional[pathlib.Path] = None, indent: str = "    "
-    ):
+    def __init__(self, base_dir: Optional[pathlib.Path] = None, indent: str = "    "):
         """
         Initialize the PythonClassWriter.
 
@@ -152,7 +150,9 @@ class PythonWriter:
         # Class definition line
         class_def = f"class {class_instance.class_name}:"
         if class_instance.base_class:
-            class_def = f"class {class_instance.class_name}({class_instance.base_class}):"
+            class_def = (
+                f"class {class_instance.class_name}({class_instance.base_class}):"
+            )
         result.append(class_def)
 
         self.indent_level += 1
@@ -280,4 +280,3 @@ class PythonWriter:
             # f.write(black.format_str(self.generate(), mode=BLACK_MODE))
             f.write(self.generate())
             print(f"Successfully wrote {full_path}")
-
