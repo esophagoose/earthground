@@ -1,7 +1,11 @@
-from typing import List, Set, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
 
 import earthground.footprint_types as ft
 import earthground.standard_values as sv
+from earthground.library.footprints import passives
+
+if TYPE_CHECKING:
+    import earthground.schematic as sch
 
 
 class Net:
@@ -54,6 +58,28 @@ class Pin:
             return False
         return self.name == other.name and (hash(self.parent) == hash(other.parent))
 
+    def add_decoupling_capacitor(
+        self, capacitor: "Capacitor", net_name=None, ground_net_name="GND"
+    ):
+        """
+        Helper function to automatically add a decoupling capacitor to a pin
+
+        :param capacitor: The decoupling capacitor to add.
+        :param net_name: (Optional) The name of the net to which the capacitor will be connected. If not provided, it will be determined based on the pin.
+        :type capacitor: earthground.components.Capacitor
+        :type net_name: Optional[str]
+        :return: None
+        """
+        assert isinstance(
+            self.parent, Component
+        ), "Component must be in a design before adding decoupling capacitor!"
+        design: sch.Design = self.parent.parent
+        net_name = net_name or design._get_net_name_from_pin(self)
+        design.add_component(capacitor)
+        design.join_net(self, net_name)
+        design.join_net(capacitor.pins[1], net_name)
+        design.join_net(capacitor.pins[2], ground_net_name)
+
 
 class Component:
     REFDES_MAP = {}
@@ -73,11 +99,13 @@ class Component:
         self.mpn = ""
         self.type = self.__class__.__name__
         self.parameters = {}
-        self.pins = PinContainer([])
-        self.parent = None
+        self.pins = PinContainer()
+        self.parent: Optional["Component"] = None
         self.footprint: ft.BaseFootprint = None
         self.virtual = False
-        self.dnp = False  # Do not populate
+        self.dnp = False  # DNP = Do Not Populate
+        self.ltspice_model = None
+        self._placed = False
         if self.refdes_prefix not in Component.REFDES_MAP:
             Component.REFDES_MAP[self.refdes_prefix] = 0
         Component.REFDES_MAP[self.refdes_prefix] += 1
@@ -106,6 +134,56 @@ class Component:
         if postfix and not postfix.startswith("_"):
             postfix = "_" + postfix
         return f"{self.refdes_prefix}{self.refdes_index}{postfix}"
+
+    @property
+    def is_in_design(self):
+        return self._placed
+
+    def place(self, parent: "sch.Design"):
+        self.parent = parent
+        self._placed = True
+        if type(self) in [Resistor, Capacitor]:
+            package = type(self).__name__[0] + parent.default_passive_size
+            self.footprint = passives.PassiveSmd(passives.PassivePackage[package])
+
+    def set_pins(self, nets: List[str] | Dict[str, str | Pin]) -> "Component":
+        """
+        Sets the pins for the component based on a list of net names or a dictionary mapping pin names to net names.
+
+        :param nets: A list of net names or a dictionary mapping pin names to net names.
+        :type nets: List[str] or Dict[str, str | Pin]
+        :return: The component with the pins set.
+        :rtype: Component
+        """
+        if not self._placed:
+            raise ValueError("Component must be placed before setting pin nets!")
+        if isinstance(nets, dict):
+            for pin_name, net_name in nets.items():
+                if net_name is None:
+                    continue
+                if isinstance(net_name, Pin):
+                    self.parent.connect([self.pins.by_name(pin_name), net_name])
+                else:
+                    self.parent.join_net(self.pins.by_name(pin_name), net_name)
+            return self
+        elif isinstance(nets, list):
+            for i, net_name in enumerate(nets):
+                if net_name is None:
+                    continue
+                self.parent.join_net(self.pins.by_index(i + 1), net_name)
+            return self
+        raise ValueError("Invalid type for nets")
+
+    def print(self):
+        pad = max([len(p.name) for p in self.pins]) + 2
+        print(f"{self.refdes} ({self.name})")
+        print("." + "-" * pad + ".")
+        for pin in sorted(self.pins, key=lambda p: p.name):
+            connection = "<NO CONNECTION>"
+            if pin in self.parent.pin_to_net:
+                connection = self.parent.pin_to_net[pin].name
+            print(f"|{pin.name.rjust(pad)}|-- {connection}")
+        print("'" + "-" * pad + "'\n")
 
 
 class Resistor(Component):
@@ -155,14 +233,14 @@ PASSIVE_TYPES = (Resistor, Capacitor)
 
 
 class PinContainer:
-    def __init__(self, pins: List[Pin]):
+    def __init__(self, pins: List[Pin] = []):
         """
         Container for managing a set of pins.
 
         :param pins: A list of :class:`Pin` objects to be managed.
         :type pins: List[:class:`Pin`]
         """
-        self._pins = frozenset(pins)
+        self._pins = frozenset(pins)  # TODO: make this ordered
         self.names = {p.name: p for p in pins}
         self.indicies = {p.index: p for p in pins}
 
@@ -229,7 +307,7 @@ class PinContainer:
         """
         if name in self.names:
             return self.names[name]
-        raise ValueError(f"Unknown name: {name} in {self.names}")
+        raise ValueError(f"Unknown name: {name} in {self.names.keys()}")
 
     def by_index(self, index):
         """
