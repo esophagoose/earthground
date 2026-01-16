@@ -1,4 +1,5 @@
 import math
+from pathlib import Path
 from typing import Dict, NamedTuple
 
 import pygerber.aperture as ap_lib
@@ -29,6 +30,25 @@ class BaseFootprint:
             min_y = min(min_y, pad.location[1] - hh)
             max_y = max(max_y, pad.location[1] + hh)
         return (min_x, min_y), (max_x, max_y)
+
+
+class KicadFootprint(BaseFootprint):
+    def __init__(self, kicad_mod: str, builtin: bool = True):
+        super().__init__()
+        self.kicad_mod = kicad_mod
+        self.builtin = builtin
+
+    @property
+    def path(self) -> Path:
+        if self.builtin:
+            print(Path(__file__).parent / "kicad-footprints" / self.kicad_mod)
+            return (
+                Path(__file__).parent.parent.parent
+                / "kicad-footprints"
+                / self.kicad_mod
+            )
+        else:
+            return Path(self.kicad_mod)
 
 
 def get_dual_side_locations(count, width, pitch):
