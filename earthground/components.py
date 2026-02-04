@@ -178,7 +178,7 @@ class Component:
         pad = max([len(p.name) for p in self.pins]) + 2
         print(f"{self.refdes} ({self.name})")
         print("." + "-" * pad + ".")
-        for pin in sorted(self.pins, key=lambda p: p.name):
+        for pin in sorted(self.pins, key=pin_sort_key):
             connection = "<NO CONNECTION>"
             if pin in self.parent.pin_to_net:
                 connection = self.parent.pin_to_net[pin].name
@@ -338,3 +338,31 @@ class PinContainer:
                 yield pin
             elif isinstance(name, list) and pin.name in name:
                 yield pin
+
+
+def pin_sort_key(pin: "Pin") -> tuple:
+    """
+    Sort key function for pins with the following priority:
+    1. Numeric pins (sorted numerically) - come first
+    2. Regular alphabetical pins
+    3. GND and SHIELD - come last
+
+    :param pin: The pin to generate a sort key for
+    :type pin: Pin
+    :return: Tuple for sorting (priority, value)
+    :rtype: tuple
+    """
+    name = pin.name
+    # Check if the name can be converted to a number
+    try:
+        numeric_value = int(name)
+        # Numeric pins get priority 0 (first)
+        return (0, numeric_value)
+    except ValueError:
+        # Not a number, check if it's GND or SHIELD
+        if name.upper() in ("GND", "SHIELD"):
+            # GND and SHIELD get priority 2 (last)
+            return (2, name.upper())
+        else:
+            # Regular pins get priority 1 (middle), sorted alphabetically
+            return (1, name.upper())
