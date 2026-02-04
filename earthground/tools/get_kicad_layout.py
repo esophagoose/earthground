@@ -7,16 +7,12 @@ Converts footprints to Dict[str, layout.ComponentLayout] format.
 
 import logging
 import pathlib
-import pprint
 import sys
 from typing import Dict, Optional, Tuple
 
-import kiutils.board
-import kiutils.footprint as fp
-import kiutils.items.common as base
 from pykicad.parser.kicad_sexp import read_in_pcb_from_kicad_pcb
 
-from earthground.tools import layout
+import earthground.schematic as sch_lib
 
 # Configure logging
 logging.basicConfig(
@@ -25,70 +21,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_reference_text(footprint: fp.Footprint) -> fp.FpText | None:
-    """Get the reference text (ID) from a footprint."""
-    for item in footprint.graphicItems:
-        if isinstance(item, fp.FpText) and (
-            item.type == "reference" or item.text == "${REFERENCE}"
-        ):
-            return item
-    return None
-
-
-def kiutil_to_layout_position(pos: base.Position) -> layout.Position:
-    """Convert kiutils Position to layout.Position."""
-    return layout.Position(
-        x=float(pos.X),
-        y=float(pos.Y),
-        angle=float(pos.angle) if pos.angle is not None else 0.0,
-    )
-
-
-def get_reference_designator(footprint: fp.Footprint) -> str | None:
-    """Get the reference designator from a footprint using multiple methods."""
-    # Method 1: Check for reference in FpText items first (most reliable)
-    for item in footprint.graphicItems:
-        if isinstance(item, fp.FpText) and (
-            item.type == "reference" or getattr(item, "text", None) == "${REFERENCE}"
-        ):
-            if item.text and item.text != "${REFERENCE}":
-                return item.text
-
-    # Method 2: Check properties dictionary
-    if hasattr(footprint, "properties"):
-        if isinstance(footprint.properties, dict):
-            refdes = footprint.properties.get("Reference", None)
-            if refdes:
-                return refdes
-        elif hasattr(footprint.properties, "get"):
-            refdes = footprint.properties.get("Reference", None)
-            if refdes:
-                return refdes
-
-    # Method 3: Check if there's a direct reference attribute
-    if hasattr(footprint, "reference") and footprint.reference:
-        return footprint.reference
-
-    # Method 4: Check properties list (kiutils might use a list of Property objects)
-    if hasattr(footprint, "properties") and isinstance(footprint.properties, list):
-        for prop in footprint.properties:
-            if hasattr(prop, "name") and prop.name == "Reference":
-                if hasattr(prop, "value"):
-                    return prop.value
-                if hasattr(prop, "text"):
-                    return prop.text
-
-    return None
-
-
-def extract_layouts(board_path: pathlib.Path) -> Dict[str, layout.ComponentLayout]:
+def extract_layouts(board_path: pathlib.Path) -> Dict[str, sch_lib.ComponentLayout]:
     """
     Extract component layouts from a KiCad PCB file.
 
     :param board_path: Path to the .kicad_pcb file
     :type board_path: pathlib.Path
     :return: Dictionary mapping refdes to ComponentLayout
-    :rtype: Dict[str, layout.ComponentLayout]
+    :rtype: Dict[str, sch_lib.ComponentLayout]
     """
     logger.info(f"Loading board file: {board_path}")
     board = read_in_pcb_from_kicad_pcb(board_path)
@@ -100,14 +40,14 @@ def extract_layouts(board_path: pathlib.Path) -> Dict[str, layout.ComponentLayou
         refdes = [prop for prop in footprint.properties if prop.name == "Reference"][0]
         if not refdes:
             logger.warning(f"Footprint {i} has no reference designator")
-            id_position = layout.Position(x=0.0, y=0.0, angle=0.0)
+            id_position = sch_lib.Position(x=0.0, y=0.0, angle=0.0)
             for prop in footprint.properties:
                 logger.debug(f"  - property: {prop.name} = {prop.value}")
             continue
         else:
             id_position = refdes.at
 
-        layouts[refdes.value] = layout.ComponentLayout(
+        layouts[refdes.value] = sch_lib.ComponentLayout(
             id=id_position, component=footprint.at
         )
         logger.debug(
@@ -118,7 +58,7 @@ def extract_layouts(board_path: pathlib.Path) -> Dict[str, layout.ComponentLayou
     return layouts
 
 
-def print_layouts(layouts: Dict[str, layout.ComponentLayout]):
+def print_layouts(layouts: Dict[str, sch_lib.ComponentLayout]):
     """Print layouts in a readable format."""
     print("{")
     for refdes, comp_layout in sorted(layouts.items()):
@@ -132,100 +72,49 @@ def print_layouts(layouts: Dict[str, layout.ComponentLayout]):
         print("    ),")
     print("}")
 
+def compare_positions(pos1: sch_lib.Position, pos2: sch_lib.Position) -> bool:
+    is_different = pos1.x != pos2.x or pos1.y != pos2.y or pos1.angle != pos2.angle
+    return is_different
 
-def _extract_footprints_for_diff(
-    path: pathlib.Path,
-) -> Dict[str, Dict[str, Optional[Tuple[float, float, float]]]]:
-    """
-    Extract footprints from a KiCad PCB file in the format needed for diff comparison.
-
-    :param path: Path to the .kicad_pcb file
-    :return: Dictionary mapping refdes to {"at": (x, y, angle), "ref_at": (x, y, angle)}
-    """
-    board = kiutils.board.Board.from_file(path)
-    footprints = {}
-
-    logger.debug(f"Found {len(board.footprints)} footprints in {path}")
-
-    for footprint in board.footprints:
-        ref = get_reference_designator(footprint)
-        if not ref:
-            logger.warning(f"Skipping footprint with no reference designator")
+def diff_layout(
+    path1: pathlib.Path,
+    path2: pathlib.Path,
+) -> bool:
+    layout_1 = extract_layouts(path1)
+    layout_2 = extract_layouts(path2)
+    # Compare component layouts by their reference designators and report changes.
+    print("================================================")
+    print(f"DIFFERENCES: ")
+    print(f"  - {path1}")
+    print(f"  - {path2}")
+    print("------------------------------------------------")
+    found_diffs = False
+    all_keys = set(layout_1.keys()) | set(layout_2.keys())
+    for key in sorted(all_keys):
+        c1 = layout_1.get(key)
+        c2 = layout_2.get(key)
+        if c1 is None:
+            print(f"  - {key} added")
+            found_diffs = True
+        elif c2 is None:
+            print(f"  - {key} removed")
+            found_diffs = True
+        if c1.id == c2.id and c1.component == c2.component:
             continue
-
-        # Get footprint position (component position)
-        at = None
-        if hasattr(footprint, "position") and footprint.position:
-            pos = footprint.position
-            angle = float(pos.angle) if pos.angle is not None else 0.0
-            at = (float(pos.X), float(pos.Y), angle)
-
-        # Get reference text position (ID position)
-        ref_at = None
-        ref_text = get_reference_text(footprint)
-        if ref_text and hasattr(ref_text, "position"):
-            pos = ref_text.position
-            angle = float(pos.angle) if pos.angle is not None else 0.0
-            ref_at = (float(pos.X), float(pos.Y), angle)
-
-        footprints[ref] = {"at": at, "ref_at": ref_at}
-        logger.debug(f"Extracted {ref}: at={at}, ref_at={ref_at}")
-
-    logger.info(f"Extracted {len(footprints)} footprints from {path}")
-    return footprints
+        else:
+            if compare_positions(c1.id, c2.id):
+                print(f"  - {key} id changed: {c1.id} -> {c2.id}")
+                found_diffs = True
+            if compare_positions(c1.component, c2.component):
+                print(f"  - {key} component changed: {c1.component} -> {c2.component}")
+                found_diffs = True
+    if not found_diffs:
+        print("Both files are identical.")
+    print("================================================")
+    return found_diffs
 
 
-def diff_layout(old_path: pathlib.Path, new_path: pathlib.Path) -> Dict[str, Dict]:
-    """
-    Compare two KiCad board files and return differences in footprint positions.
 
-    :param old_path: Path to the baseline .kicad_pcb file
-    :param new_path: Path to the modified .kicad_pcb file
-    :return: Dictionary of differences, keyed by reference designator
-    """
-    logger.info(f"Comparing {old_path} (old) vs {new_path} (new)")
-    old = _extract_footprints_for_diff(old_path)
-    new = _extract_footprints_for_diff(new_path)
-
-    refs = sorted(set(old.keys()) | set(new.keys()))
-    diffs = {}
-
-    for ref in refs:
-        o = old.get(ref)
-        n = new.get(ref)
-
-        if o is None:
-            logger.debug(f"{ref}: missing in old file, present in new")
-            diffs[ref] = {"missing": "old", "at": n["at"], "ref_at": n["ref_at"]}
-            continue
-
-        if n is None:
-            logger.debug(f"{ref}: missing in new file, present in old")
-            diffs[ref] = {"missing": "new", "at": o["at"], "ref_at": o["ref_at"]}
-            continue
-
-        entry = {}
-        # Compare positions (handle None values)
-        if o["at"] != n["at"]:
-            entry["at"] = n["at"]
-            logger.debug(f"{ref}: position changed from {o['at']} to {n['at']}")
-
-        if o["ref_at"] != n["ref_at"]:
-            entry["ref_at"] = n["ref_at"]
-            logger.debug(
-                f"{ref}: reference text position changed from {o['ref_at']} to {n['ref_at']}"
-            )
-
-        if entry:
-            diffs[ref] = entry
-
-    logger.info(f"Found {len(diffs)} differences")
-    return diffs
-
-
-def print_diff(diffs: Dict[str, Dict], indent: int = 4):
-    """Print diff results in a readable format."""
-    print(pprint.pformat(diffs, sort_dicts=True, indent=indent))
 
 
 def main():
@@ -280,18 +169,7 @@ def main():
             logger.error(f"New file not found: {new_path}")
             sys.exit(1)
 
-        if not old_path.suffix == ".kicad_pcb":
-            logger.warning(f"Old file does not have .kicad_pcb extension: {old_path}")
-
-        if not new_path.suffix == ".kicad_pcb":
-            logger.warning(f"New file does not have .kicad_pcb extension: {new_path}")
-
-        try:
-            diffs = diff_layout(old_path, new_path)
-            print_diff(diffs)
-        except Exception as e:
-            logger.error(f"Error processing files: {e}", exc_info=True)
-            sys.exit(1)
+        diff_layout(old_path, new_path)
     else:
         # Single file extraction mode
         board_path = args.board_file
