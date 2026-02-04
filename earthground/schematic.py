@@ -1,8 +1,19 @@
 import logging
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, NamedTuple, Optional, Union
 
 import earthground.components as cmp
 import earthground.library.footprints.passives as passives
+
+
+class Position(NamedTuple):
+    x: float
+    y: float
+    angle: float
+
+
+class ComponentLayout(NamedTuple):
+    id: Position
+    component: Position
 
 
 class Ports:
@@ -50,6 +61,7 @@ class Design:
         self.default_passive_size = "0603"
         self.port = Ports([p.lower() for p in ports], self)
         self.ground = self.add_net("GND").name
+        self.layout: Dict[str, ComponentLayout] = {}
         self._ports = [p.lower() for p in ports]
         self._module_names: Dict[str, int] = {}
 
@@ -489,15 +501,36 @@ def flatten(design) -> "Design":
             component.place(design)
             design.components[hash(component)] = component
 
-        # Merge nets through ports and move remaining nets
-        for net_name, net in list(module.nets.items()):
-            # This net is not connected to a port, add it to parent
-            # (it should already have the prefix from add_module)
-            design.nets[net_name] = net
+        # Collect port symbol pins to exclude from pin_to_net copying
+        port_symbol_pins = set()
+        for port_name in module.port.names:
+            port_pin = module.port[port_name]
+            port_symbol_pins.add(port_pin)
 
-        # Merge nets through ports
+        # Move all nets to parent first
+        for net_name, net in list(module.nets.items()):
+            if net_name not in design.nets:
+                design.nets[net_name] = net
+            else:
+                # Net already exists, merge connections
+                existing_net = design.nets[net_name]
+                for pin in list(net.connections):
+                    design.pin_to_net[pin] = existing_net
+                    existing_net.connections.add(pin)
+
+        # Copy pin_to_net mappings from module to parent (excluding port pins)
+        # Point to the nets that are now in the parent design
+        for pin, net in module.pin_to_net.items():
+            if pin not in port_symbol_pins:
+                net_name = net.name
+                if net_name in design.nets:
+                    design.pin_to_net[pin] = design.nets[net_name]
+
+        # Merge nets through ports (this updates pin_to_net for all pins in merged nets)
         for module_net_name, parent_net_name in port_net_mappings.items():
             if module_net_name in design.nets and parent_net_name in design.nets:
+                if module_net_name == parent_net_name:
+                    continue
                 design.merge_nets(module_net_name, parent_net_name)
 
     return design

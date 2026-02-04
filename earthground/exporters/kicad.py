@@ -1,4 +1,5 @@
 import pathlib
+from typing import Dict, Optional
 
 import kiutils.board
 import kiutils.footprint as fp
@@ -13,6 +14,12 @@ def to_pos(coordinates):
     return base.Position(X=coordinates[0], Y=coordinates[1])
 
 
+def _to_kiutil_position(position: sch_lib.Position) -> base.Position:
+    if isinstance(position, base.Position):
+        return position
+    return base.Position(X=position.x, Y=position.y, angle=position.angle)
+
+
 def aperture_to_shape_size(aperture):
     if isinstance(aperture, ap_lib.ApertureRectangle):
         return "rect", base.Position(aperture.width, aperture.height)
@@ -20,38 +27,69 @@ def aperture_to_shape_size(aperture):
         return "circle", base.Position(aperture.diameter, aperture.diameter)
     raise NotImplementedError(f"Unsupported aperture: {aperture}")
 
+def get_index(fp: fp.Footprint) -> Optional[str]:
+    return fp.properties.get("Reference", None)
+
+
+def get_index_fptext(footprint: fp.Footprint) -> Optional[fp.FpText]:
+    for item in footprint.graphicItems:
+        if isinstance(item, fp.FpText) and item.type == "reference":
+            return item
+
 
 class KicadExporter:
-    def __init__(self, schematic: sch_lib.Design, positions={}):
+    def __init__(self, schematic: sch_lib.Design):
         """
         A class to export schematic designs to KiCad format.
 
         :param schematic: The schematic design to be exported.
         :type schematic: sch_lib.Design
+        :param positions: Dictionary mapping component refdes to positions or concise layout dicts.
+        :type positions: dict
+        :type board_path: Optional[pathlib.Path or str]
         """
         self.board = kiutils.board.Board.create_new()
         self.schematic = schematic
-        self._added_nets = {}
+        self.assigned_layout: Dict[str, sch_lib.ComponentLayout] = schematic.layout
+        self._added_nets: Dict[str, base.Net] = {}
 
-        for y, module in enumerate(schematic.modules + [schematic]):
-            self._added_nets[module.name] = {}
-            for i, net in enumerate(module.nets.values()):
-                kicad_net = base.Net(number=i + 1, name=net.name)
-                self._added_nets[module.name][net.name] = kicad_net
-                self.board.nets.append(kicad_net)
-            for x, component in enumerate(module.components.values()):
-                if component.virtual:
-                    continue
-                footprint = self.parse_footprint(module, component)
-                if component.refdes in positions:
-                    footprint.position = positions[component.refdes]
-                else:
-                    footprint.position = base.Position(X=10 * (x + 1), Y=50 * (y + 1))
-                self.board.footprints.append(footprint)
+    
+    def convert_to_kicad(self):
+        x0, y0 = 0, 0
+        in_row = 0
+        component_spacing = 5
+        # Map existing nets by name
+        for i, net in enumerate(self.schematic.nets.values()):
+            kicad_net = base.Net(number=i + 1, name=net.name)
+            self.board.nets.append(kicad_net)
+            self._added_nets[net.name] = kicad_net
+        
+        # Process components
+        for x, component in enumerate(self.schematic.components.values()):
+            if component.virtual:
+                continue
 
-    def parse_footprint(
-        self, design: sch_lib.Design, component: cmp.Component
-    ) -> fp.Footprint:
+            # Generate default position for new footprints
+            bbox = component.footprint.get_bbox()
+            x0 += (bbox.width() + component_spacing)
+            in_row = max(in_row, bbox.height())
+            if x % 10 == 0:
+                x0 = 0
+                y0 += in_row + component_spacing
+                in_row = 0
+            f_pos = base.Position(X=x0, Y=y0, angle=0)
+            id_pos = base.Position(X=0, Y=0, angle=0)
+    
+            # Check if component has a set position
+            if component.refdes in self.assigned_layout:
+                layout = self.assigned_layout[component.refdes]
+                f_pos = _to_kiutil_position(layout.component)
+                id_pos = _to_kiutil_position(layout.id if layout.id else id_pos)
+            footprint = self.parse_footprint(component, f_pos, id_pos)
+            self.board.footprints.append(footprint)
+
+    
+    def parse_footprint(self, component: cmp.Component, position: base.Position, id_position: base.Position) -> fp.Footprint:
         footprint = fp.Footprint.create_new(
             library_id=component.name,
             value=component.footprint.name,
@@ -60,10 +98,10 @@ class KicadExporter:
         for index, pad in component.footprint.pads.items():
             shape, size = aperture_to_shape_size(pad.aperture)
             pin = component.pins[index]
-            net = design.pin_to_net.get(pin)
+            net = self.schematic.pin_to_net.get(pin)
             kicad_net = None
             if net:
-                kicad_net = self._added_nets[design.name][net.name]
+                kicad_net = self._added_nets[net.name]
             hole = getattr(pad.aperture, "hole", None)
             layer = "*" if hole else "F"
             footprint.pads.append(
@@ -73,7 +111,7 @@ class KicadExporter:
                     shape=shape,
                     position=to_pos(pad.location),
                     size=size,
-                    drill=fp.DrillDefinition(diameter=hole) if hole else hole,
+                    drill=fp.DrillDefinition(diameter=hole) if hole else None,
                     layers=[f"{layer}.Cu", f"{layer}.Mask"],
                     net=kicad_net,
                 )
@@ -83,7 +121,7 @@ class KicadExporter:
             fp.FpText(
                 type="reference",
                 text=component.refdes,
-                position=base.Position(X=0, Y=0),
+                position=id_position,
                 layer="F.SilkS",
             )
         )
@@ -92,16 +130,30 @@ class KicadExporter:
                 previous, current = polysilk[i : i + 2]
                 line = fp.FpLine(to_pos(previous), to_pos(current), "F.SilkS")
                 footprint.graphicItems.append(line)
+        footprint.position = position
         return footprint
 
-    def save(self, output_folder="."):
+
+    
+    def save(self, output_folder=".", overwrite=False):
         """
         Saves design as `kicad_pcb` file
 
-        :param output_folder: Folder to export the KiCad layout to
+        :param output_folder: Folder to export the KiCad layout to (used if board_path is None)
         :type output_folder: str
+        :param board_path: Optional path to save the board file. If None, uses output_folder and schematic name.
+        :type board_path: Optional[pathlib.Path or str]
         :return: None
         """
         path = pathlib.Path(output_folder) / f"{self.schematic.name}.kicad_pcb"
+        if overwrite:
+            current_board = kiutils.board.Board.from_file(path)
+            for fp in current_board.footprints:
+                text = get_index_fptext(fp)
+                self.assigned_layout[get_index(fp)] = sch_lib.ComponentLayout(
+                    component=fp.position,
+                    id=text.position if text else base.Position(X=0, Y=0, angle=0),
+                )
+        self.convert_to_kicad()
         self.board.to_file(path)
-        print(f"Wrote board file: {path}")
+        print(f"{"Overwrote" if overwrite else "Wrote"} board file: {path}")
