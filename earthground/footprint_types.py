@@ -10,13 +10,26 @@ class Pad(NamedTuple):
     aperture: ap_lib.Aperture
 
 
+class BoundingBox(NamedTuple):
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+    def width(self) -> float:
+        return self.x2 - self.x1
+
+    def height(self) -> float:
+        return self.y2 - self.y1
+
+
 class BaseFootprint:
     def __init__(self) -> None:
         self.pads: Dict[str, Pad] = {}
         self.paste = 0  # None = no paste, 1 == 1mm reduction from pad
         self.silk = []
 
-    def get_bbox(self):
+    def get_bbox(self) -> BoundingBox:
         min_x, min_y = float("inf"), float("inf")
         max_x, max_y = 0, 0
         for pad in self.pads.values():
@@ -25,18 +38,20 @@ class BaseFootprint:
                 hw, hh = r, r
             elif isinstance(pad.aperture, ap_lib.ApertureRectangle):
                 hw, hh = pad.aperture.width / 2, pad.aperture.height / 2
-            min_x = min(min_x, pad.location[0] - hw)
-            max_x = max(max_x, pad.location[0] + hw)
-            min_y = min(min_y, pad.location[1] - hh)
-            max_y = max(max_y, pad.location[1] + hh)
-        return (min_x, min_y), (max_x, max_y)
+        return BoundingBox(
+            min(min_x, pad.location[0] - hw),
+            min(min_y, pad.location[1] - hh),
+            max(max_x, pad.location[0] + hw),
+            max(max_y, pad.location[1] + hh),
+        )
 
 
 class KicadFootprint(BaseFootprint):
-    def __init__(self, kicad_mod: str, builtin: bool = True):
+    def __init__(self, kicad_mod: str, schematic, builtin: bool = True):
         super().__init__()
         self.kicad_mod = kicad_mod
         self.builtin = builtin
+        self.schematic = schematic
 
     @property
     def path(self) -> Path:
