@@ -62,13 +62,17 @@ class KicadExporter:
     def convert_to_kicad(self, schematic: sch_lib.Design):
         x0 = 0
         y0 = self._y_offset * 20
+        managed_layout = False
+        if schematic in self.schematic.modules and schematic.short_name in self.schematic.layout:
+            layout = self.schematic.layout[schematic.short_name]
+            x0 = layout.component.x
+            y0 = layout.component.y
+            managed_layout = True
         net_index_start = len(self.board.nets)
         component_spacing = 5
 
         # Map existing nets by name
         for i, net in enumerate(schematic.nets.values()):
-            if schematic.name == "Load Switch Design":
-                print(f"Net {net.name} has index {i + net_index_start + 1}")
             kicad_net = base.Net(number=i + net_index_start + 1, name=net.name)
             self.board.nets.append(kicad_net)
             self._added_nets[net.name] = kicad_net
@@ -80,14 +84,15 @@ class KicadExporter:
 
             # Generate default position for new footprints
             bbox = component.footprint.get_bbox()
-            x0 += (bbox.width() + component_spacing)
+            if not managed_layout and cid not in schematic.layout:
+                x0 += (bbox.width() + component_spacing)
             f_pos = base.Position(X=x0, Y=y0, angle=0)
             id_pos = base.Position(X=0, Y=0, angle=0)
     
             # Check if component has a set position
             if cid in schematic.layout:
                 layout = schematic.layout[cid]
-                f_pos = shift(_to_kiutil_position(layout.component), (0, y0))
+                f_pos = shift(_to_kiutil_position(layout.component), (x0, y0))
                 id_pos = _to_kiutil_position(layout.id if layout.id else id_pos)
             footprint = self.parse_footprint(component, f_pos, id_pos, schematic)
             self.board.footprints.append(footprint)

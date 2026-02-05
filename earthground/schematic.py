@@ -19,7 +19,7 @@ class ComponentLayout(NamedTuple):
 class Ports:
     def __init__(self, ports: List[str], parent: "Design"):
         self.names = [p.lower() for p in ports]
-        self.symbol = cmp.Component("SUB")
+        self.symbol = cmp.Component(parent.short_name)
         self.symbol.virtual = True
         self.symbol.name = parent.name
         self.symbol.pins = cmp.PinContainer.from_list(ports, self)
@@ -87,8 +87,8 @@ class Design:
             raise ValueError("Invalid module! Must be schematic.Design type")
         if module.short_name not in self._module_names:
             self._module_names[module.short_name] = 0
-        prefix = module.short_name + str(self._module_names[module.short_name])
         self._module_names[module.short_name] += 1
+        prefix = f"{module.short_name}{self._module_names[module.short_name]}"
         module.short_name = prefix
         net_names = [net.name for net in module.nets.values()]
         for net_name in net_names:
