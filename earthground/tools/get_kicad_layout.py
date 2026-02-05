@@ -33,6 +33,7 @@ def extract_layouts(board_path: pathlib.Path) -> Dict[str, sch_lib.ComponentLayo
     logger.info(f"Loading board file: {board_path}")
     board = read_in_pcb_from_kicad_pcb(board_path)
     logger.info(f"Found {len(board.footprints)} footprints in board file")
+    cid_mapper = {}
 
     layouts = {}
     for i, footprint in enumerate(board.footprints):
@@ -46,8 +47,9 @@ def extract_layouts(board_path: pathlib.Path) -> Dict[str, sch_lib.ComponentLayo
             continue
         else:
             id_position = refdes.at
-
-        layouts[refdes.value] = sch_lib.ComponentLayout(
+        prefix = refdes.value[0]
+        cid_mapper[prefix] = cid_mapper.get(prefix, 0) + 1
+        layouts[prefix + str(cid_mapper[prefix])] = sch_lib.ComponentLayout(
             id=id_position, component=footprint.at
         )
         logger.debug(
@@ -62,12 +64,12 @@ def print_layouts(layouts: Dict[str, sch_lib.ComponentLayout]):
     """Print layouts in a readable format."""
     print("{")
     for refdes, comp_layout in sorted(layouts.items()):
-        print(f'    "{refdes}": ComponentLayout(')
+        print(f'    "{refdes}": sch_lib.ComponentLayout(')
         print(
-            f"        id=Position(x={comp_layout.id.x}, y={comp_layout.id.y}, angle={comp_layout.id.angle}),"
+            f"        id=sch_lib.Position(x={comp_layout.id.x}, y={comp_layout.id.y}, angle={comp_layout.id.angle}),"
         )
         print(
-            f"        component=Position(x={comp_layout.component.x}, y={comp_layout.component.y}, angle={comp_layout.component.angle})"
+            f"        component=sch_lib.Position(x={comp_layout.component.x}, y={comp_layout.component.y}, angle={comp_layout.component.angle})"
         )
         print("    ),")
     print("}")

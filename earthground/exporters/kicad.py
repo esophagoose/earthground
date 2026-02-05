@@ -1,5 +1,5 @@
 import pathlib
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import kiutils.board
 import kiutils.footprint as fp
@@ -12,6 +12,9 @@ import earthground.schematic as sch_lib
 
 def to_pos(coordinates):
     return base.Position(X=coordinates[0], Y=coordinates[1])
+
+def shift(position: base.Position, offset: Tuple[float, float]) -> base.Position:
+    return base.Position(X=position.X + offset[0], Y=position.Y + offset[1], angle=position.angle)
 
 
 def _to_kiutil_position(position: sch_lib.Position) -> base.Position:
@@ -52,44 +55,45 @@ class KicadExporter:
         self.schematic = schematic
         self.assigned_layout: Dict[str, sch_lib.ComponentLayout] = schematic.layout
         self._added_nets: Dict[str, base.Net] = {}
+        self._y_offset = 0
+
 
     
-    def convert_to_kicad(self):
-        x0, y0 = 0, 0
-        in_row = 0
+    def convert_to_kicad(self, schematic: sch_lib.Design):
+        x0 = 0
+        y0 = self._y_offset * 20
+        net_index_start = len(self.board.nets)
         component_spacing = 5
+
         # Map existing nets by name
-        for i, net in enumerate(self.schematic.nets.values()):
-            kicad_net = base.Net(number=i + 1, name=net.name)
+        for i, net in enumerate(schematic.nets.values()):
+            if schematic.name == "Load Switch Design":
+                print(f"Net {net.name} has index {i + net_index_start + 1}")
+            kicad_net = base.Net(number=i + net_index_start + 1, name=net.name)
             self.board.nets.append(kicad_net)
             self._added_nets[net.name] = kicad_net
         
         # Process components
-        for x, component in enumerate(self.schematic.components.values()):
+        for cid, component in schematic.components.items():
             if component.virtual:
                 continue
 
             # Generate default position for new footprints
             bbox = component.footprint.get_bbox()
             x0 += (bbox.width() + component_spacing)
-            in_row = max(in_row, bbox.height())
-            if x % 10 == 0:
-                x0 = 0
-                y0 += in_row + component_spacing
-                in_row = 0
             f_pos = base.Position(X=x0, Y=y0, angle=0)
             id_pos = base.Position(X=0, Y=0, angle=0)
     
             # Check if component has a set position
-            if component.refdes in self.assigned_layout:
-                layout = self.assigned_layout[component.refdes]
-                f_pos = _to_kiutil_position(layout.component)
+            if cid in schematic.layout:
+                layout = schematic.layout[cid]
+                f_pos = shift(_to_kiutil_position(layout.component), (0, y0))
                 id_pos = _to_kiutil_position(layout.id if layout.id else id_pos)
-            footprint = self.parse_footprint(component, f_pos, id_pos)
+            footprint = self.parse_footprint(component, f_pos, id_pos, schematic)
             self.board.footprints.append(footprint)
 
     
-    def parse_footprint(self, component: cmp.Component, position: base.Position, id_position: base.Position) -> fp.Footprint:
+    def parse_footprint(self, component: cmp.Component, position: base.Position, id_position: base.Position, schematic: sch_lib.Design) -> fp.Footprint:
         footprint = fp.Footprint.create_new(
             library_id=component.name,
             value=component.footprint.name,
@@ -98,7 +102,7 @@ class KicadExporter:
         for index, pad in component.footprint.pads.items():
             shape, size = aperture_to_shape_size(pad.aperture)
             pin = component.pins[index]
-            net = self.schematic.pin_to_net.get(pin)
+            net = schematic.pin_to_net.get(pin)
             kicad_net = None
             if net:
                 kicad_net = self._added_nets[net.name]
@@ -135,7 +139,7 @@ class KicadExporter:
 
 
     
-    def save(self, output_folder=".", overwrite=False):
+    def save(self, output_folder="./generated_outputs/", overwrite=False):
         """
         Saves design as `kicad_pcb` file
 
@@ -154,6 +158,9 @@ class KicadExporter:
                     component=fp.position,
                     id=text.position if text else base.Position(X=0, Y=0, angle=0),
                 )
-        self.convert_to_kicad()
+        self.convert_to_kicad(self.schematic)
+        for module in self.schematic.modules:
+            self._y_offset += 1
+            self.convert_to_kicad(module)
         self.board.to_file(path)
         print(f"{"Overwrote" if overwrite else "Wrote"} board file: {path}")

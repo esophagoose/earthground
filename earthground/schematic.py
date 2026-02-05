@@ -23,6 +23,7 @@ class Ports:
         self.symbol.virtual = True
         self.symbol.name = parent.name
         self.symbol.pins = cmp.PinContainer.from_list(ports, self)
+        self.parent = parent
         for name in ports:
             setattr(self, name.lower(), self.symbol.pins.by_name(name))
 
@@ -64,6 +65,7 @@ class Design:
         self.layout: Dict[str, ComponentLayout] = {}
         self._ports = [p.lower() for p in ports]
         self._module_names: Dict[str, int] = {}
+        self._cid_map: Dict[str, int] = {}
 
     def add_module(self, module: "Design"):
         """
@@ -112,8 +114,10 @@ class Design:
         if isinstance(component, cmp.PASSIVE_TYPES) and self.default_passive_size:
             self.set_passive_footprint(component)
 
-        if hash(component) not in self.components:
-            self.components[hash(component)] = component
+        if not component.is_in_design:
+            self._cid_map[component.refdes_prefix] = self._cid_map.get(component.refdes_prefix, 0) + 1
+            cid = component.refdes_prefix + str(self._cid_map[component.refdes_prefix])
+            self.components[cid] = component
             component.place(self)
             return component
         raise ValueError(f"Component is already in the design! {component}")
@@ -156,8 +160,11 @@ class Design:
         :return: The net to which the pin was successfully joined.
         :rtype: earthground.components.Net
         """
-        # error = f"Floating part {pin.parent}! Did you forget to add it?"
-        # assert pin.parent in self.components.values(), error
+        # If the pin is a port, then the net inside the module should be changed
+        if isinstance(pin.parent, Ports):
+            module_design: Design = pin.parent.parent
+            if pin in module_design.pin_to_net:
+                module_design.change_net_name(module_design.pin_to_net[pin].name, net_name)
         if net_name not in self.nets:
             self.nets[net_name] = cmp.Net(net_name)
         net = self.nets[net_name]
@@ -344,7 +351,6 @@ class Design:
         """
         net_name = net_name or self._get_net_name_from_pin(self)
         self.add_component(capacitor)
-        self.join_net(self, net_name)
         self.join_net(capacitor.pins[1], net_name)
         self.join_net(capacitor.pins[2], ground_net_name)
 
