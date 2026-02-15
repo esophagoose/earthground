@@ -1,6 +1,6 @@
 import math
 from pathlib import Path
-from typing import Dict, NamedTuple
+from typing import Dict, List, NamedTuple
 
 import pygerber.aperture as ap_lib
 
@@ -8,6 +8,11 @@ import pygerber.aperture as ap_lib
 class Pad(NamedTuple):
     location: list
     aperture: ap_lib.Aperture
+
+
+class Point(NamedTuple):
+    x: float
+    y: float
 
 
 class BoundingBox(NamedTuple):
@@ -22,12 +27,19 @@ class BoundingBox(NamedTuple):
     def height(self) -> float:
         return self.y2 - self.y1
 
+    def center(self) -> Point:
+        return Point((self.x1 + self.x2) / 2, (self.y1 + self.y2) / 2)
+
 
 class BaseFootprint:
     def __init__(self) -> None:
         self.pads: Dict[str, Pad] = {}
         self.paste = 0  # None = no paste, 1 == 1mm reduction from pad
         self.silk = []
+        self.vias: List[Point] = []
+
+    def __str__(self):
+        return self.name
 
     def get_bbox(self) -> BoundingBox:
         min_x, min_y = float("inf"), float("inf")
@@ -66,6 +78,11 @@ class KicadFootprint(BaseFootprint):
             return Path(self.kicad_mod)
 
 
+class EP(NamedTuple):
+    aperture: ap_lib.ApertureRectangle
+    via_count: int
+
+
 def get_dual_side_locations(count, width, pitch):
     """
     Generate x, y locations for footprint pads on a dual column IC.
@@ -95,7 +112,9 @@ def get_dual_side_locations(count, width, pitch):
         yield index + 1, x, y
 
 
-def get_quad_side_locations(count, width, pitch):
+def get_quad_side_locations(
+    count: int, width: float, pitch: float, pad: ap_lib.ApertureRectangle
+):
     """
     Generate x, y locations for footprint pads on a quad column IC.
 
@@ -117,6 +136,12 @@ def get_quad_side_locations(count, width, pitch):
     Yields:
         tuple: A tuple containing the pad index and x, y coordinates of the pad location
     """
+    rotated = ap_lib.ApertureRectangle(
+        width=pad.height,
+        height=pad.width,
+        radius=pad.radius,
+        rotation=pad.rotation + 90,
+    )
     hcount = math.floor(count / 4)
     wcount = math.ceil(count / 4)
     assert 2 * hcount + 2 * wcount == count
@@ -128,12 +153,12 @@ def get_quad_side_locations(count, width, pitch):
             start = -pitch * (hcount - 1) / 2
             y = start + index * pitch
             y = -sign * y
-            yield index + i, x, y, 0
+            yield index + i, Pad([x, y], pad)
         i += hcount
         for index in range(wcount):
             start = -pitch * (wcount - 1) / 2
             x = start + index * pitch
             x = -sign * x
             y = -sign * constant
-            yield index + i, x, y, 90
+            yield index + i, Pad([x, y], rotated)
         i += wcount

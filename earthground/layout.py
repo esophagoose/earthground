@@ -1,78 +1,91 @@
-import kiutils.board
-import kiutils.footprint as fp
-import kiutils.items.brditems as brditems
-import kiutils.items.common as base
-import pygerber.aperture as ap_lib
+import math
+from typing import TYPE_CHECKING, Dict, NamedTuple, Tuple
 
 import earthground.components as cmp
-import earthground.exporters.kicad as kicad
-import earthground.schematic as sch_lib
+from earthground.footprint_types import BoundingBox
+
+if TYPE_CHECKING:
+    import earthground.schematic as sch_lib
+
+
+class Position(NamedTuple):
+    x: float
+    y: float
+    angle: float
+
+    def rotate(self, angle: float, origin: Tuple[float, float] = (0, 0)) -> "Position":
+        """
+        Return a new Position rotated by 'angle' radians about 'origin'.
+        """
+        if angle % 90 != 0:
+            raise ValueError("Angle must be a multiple of 90 degrees")
+        ox, oy = origin
+        # Translate position to origin
+        tx = self.x - ox
+        ty = self.y - oy
+        # Rotate
+        cos_a = math.cos(math.radians(angle))
+        sin_a = math.sin(math.radians(angle))
+        rx = tx * cos_a - ty * sin_a
+        ry = tx * sin_a + ty * cos_a
+        # Translate back
+        new_x = rx + ox
+        new_y = ry + oy
+        return Position(new_x, new_y, self.angle + angle)
+
+    def translate(self, x: float, y: float) -> "Position":
+        return Position(self.x + x, self.y + y, self.angle)
+
+
+class ViaConfig(NamedTuple):
+    location: Position
+    net_name: str
+    hole_size: float
+    drill_size: float
+
+
+class PourLayer(NamedTuple):
+    net_name: str
+    layer: int
+
+
+class ComponentLayout(NamedTuple):
+    component: Position
+    id: Position = Position(x=0, y=0, angle=0)
 
 
 class Layout:
-    def __init__(self, schematic: sch_lib.Design, layer_count: int) -> None:
-        self.components = {}
-        self.schematic = schematic
+    def __init__(self, design: "sch_lib.Design") -> None:
+        self.design = design
+        self.placement: Dict[str, ComponentLayout] = {}
+        self.outline = BoundingBox(x1=0, y1=0, x2=0, y2=0)
+        self.layout_count = 2
         self.traces = []
-        self.layer_count = layer_count
+        self.vias = []
+        self.pours = []
 
-    def find(self, refdes: str) -> cmp.Component:
-        for component in self.schematic.components.values():
-            if component.refdes == refdes:
-                return component
-        raise ValueError(f"{refdes} not found!")
-
-    def move(self, refdes, x, y, rotation=0):
-        self.components[refdes] = base.Position(x, y, rotation)
-
-    def auto_route(self, exceptions=[]):
-        for name, net in self.schematic.nets.items():
-            if name in exceptions:
-                continue
-            print(f"{name} ==========================")
-            self._auto_route_net(net)
-            print("==================================")
-
-    def _auto_route_net(self, net: cmp.Net):
-        # Assuming net.connections is a list of tuples (x, y) representing pin locations
-        # Sort connections to minimize the total distance traveled
-        locations = []
-        for pin in net.connections:
-            component = pin.parent
-            position = self.components.get(component.refdes)
-            if position:
-                x, y = component.footprint.pads[pin.index].location
-                pad = base.Position(x, y, angle=position.angle)
-                locations.append((position.X + pad.X, position.Y + pad.Y))
-        connections = sorted(locations, key=lambda x: (x[0], x[1]))
-
-        # Create segments between sorted pins using 45 deg angles
-        segments = []
-        for i in range(len(connections) - 1):
-            start = connections[i]
-            end = connections[i + 1]
-            dx = end[0] - start[0]
-            dy = end[1] - start[1]
-
-            if abs(dx) > abs(dy):
-                # Move diagonally, then horizontally
-                intermediate_point = (start[0] + dy, start[1] + dy)
+    def flatten(self) -> Dict[str, Tuple[ComponentLayout, cmp.Component]]:
+        """
+        Flatten the layout into a dictionary of component layouts.
+        """
+        flattened = {}
+        print(f"Flattening layout for {self.design.name}")
+        for cid, component in self.design.components.items():
+            print(f"Component: {cid} {type(component)}")
+            if isinstance(component, cmp.ModuleComponent):
+                module_position = self.placement[cid].component
+                flat_module = component.parent.layout.flatten()
+                for module_cid, comp in flat_module.items():
+                    layout, component = comp
+                    layout = ComponentLayout(
+                        id=layout.id,
+                        component=layout.component.translate(
+                            module_position.x, module_position.y
+                        ),
+                    )
+                    flattened[f"{cid}_{module_cid}"] = (layout, component)
+            elif isinstance(component, cmp.Component):
+                flattened[cid] = (self.placement[cid], component)
             else:
-                # Move diagonally, then vertically
-                intermediate_point = (start[0] + dx, start[1] + dx)
-
-            # Create segments: start to intermediate, intermediate to end
-            segments.append((start, intermediate_point))
-            segments.append((intermediate_point, end))
-            self.traces.append(
-                brditems.Segment(kicad.to_pos(start), kicad.to_pos(intermediate_point))
-            )
-            self.traces.append(
-                brditems.Segment(kicad.to_pos(intermediate_point), kicad.to_pos(end))
-            )
-        print(segments)
-
-    def export(self, output_location):
-        k = kicad.KicadExporter(self.schematic, self.components)
-        k.board.traceItems.extend(self.traces)
-        k.save(output_location)
+                raise ValueError(f"Invalid component type: {type(component)}")
+        return flattened

@@ -1,40 +1,32 @@
 import logging
-from typing import Dict, List, NamedTuple, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import earthground.components as cmp
+import earthground.layout as layout_lib
 import earthground.library.footprints.passives as passives
-
-
-class Position(NamedTuple):
-    x: float
-    y: float
-    angle: float
-
-
-class ComponentLayout(NamedTuple):
-    id: Position
-    component: Position
 
 
 class Ports:
     def __init__(self, ports: List[str], parent: "Design"):
-        self.names = [p.lower() for p in ports]
-        self.symbol = cmp.Component(parent.short_name)
+        self.names = ports
+        self.symbol = cmp.ModuleComponent(parent.short_name)
         self.symbol.virtual = True
         self.symbol.name = parent.name
         self.symbol.pins = cmp.PinContainer.from_list(ports, self)
         self.parent = parent
         for name in ports:
-            setattr(self, name.lower(), self.symbol.pins.by_name(name))
+            setattr(self, name, self.symbol.pins.by_name(name))
 
     def __getitem__(self, port) -> cmp.Pin:
-        port = port.lower()
         if port not in self.names:
             raise ValueError(f"Unknown port: {port}. Options {self.names}")
         return getattr(self, port)
 
     def __setitem__(self, port, value) -> None:
         raise RuntimeError("Can't direct set ports! Connect in schematic")
+
+    def __str__(self):
+        return f"SchematicPorts<{self.parent.name}>"
 
 
 class Design:
@@ -60,10 +52,10 @@ class Design:
         self.pin_to_net: Dict[cmp.Pin, cmp.Net] = {}
         self.busses = {}
         self.default_passive_size = "0603"
-        self.port = Ports([p.lower() for p in ports], self)
+        self.port = Ports(ports, self)
         self.ground = self.add_net("GND").name
-        self.layout: Dict[str, ComponentLayout] = {}
-        self._ports = [p.lower() for p in ports]
+        self.layout: layout_lib.Layout = layout_lib.Layout(self)
+        self._ports = ports
         self._module_names: Dict[str, int] = {}
         self._cid_map: Dict[str, int] = {}
 
@@ -99,6 +91,9 @@ class Design:
                     self.set_passive_footprint(component)
         self.modules.append(module)
         self.add_component(module.port.symbol)
+        # Restore the symbol's parent to the module, since it logically belongs to the module
+        # even though it's placed in the parent design
+        module.port.symbol.parent = module
         return module
 
     def add_component(self, component: cmp.Component) -> cmp.Component:
@@ -115,7 +110,9 @@ class Design:
             self.set_passive_footprint(component)
 
         if not component.is_in_design:
-            self._cid_map[component.refdes_prefix] = self._cid_map.get(component.refdes_prefix, 0) + 1
+            self._cid_map[component.refdes_prefix] = (
+                self._cid_map.get(component.refdes_prefix, 0) + 1
+            )
             cid = component.refdes_prefix + str(self._cid_map[component.refdes_prefix])
             self.components[cid] = component
             component.place(self)
@@ -164,7 +161,9 @@ class Design:
         if isinstance(pin.parent, Ports):
             module_design: Design = pin.parent.parent
             if pin in module_design.pin_to_net:
-                module_design.change_net_name(module_design.pin_to_net[pin].name, net_name)
+                module_design.change_net_name(
+                    module_design.pin_to_net[pin].name, net_name
+                )
         if net_name not in self.nets:
             self.nets[net_name] = cmp.Net(net_name)
         net = self.nets[net_name]
@@ -181,7 +180,7 @@ class Design:
         :type new_net_name: str
         :return: None
         """
-        logging.warning(f"Overwriting net {old_net_name} to {new_net_name}")
+        logging.info(f"Overwriting net {old_net_name} to {new_net_name}")
         self.nets[new_net_name] = self.nets.pop(old_net_name)
         self.nets[new_net_name].name = new_net_name
 
@@ -368,7 +367,6 @@ class Design:
         :raises ValueError: If a port name doesn't exist in the design
         """
         for port_name, connection in port_connections.items():
-            port_name = port_name.lower()
             if port_name not in self.port.names:
                 raise ValueError(
                     f"Port '{port_name}' does not exist in design '{self.name}'"

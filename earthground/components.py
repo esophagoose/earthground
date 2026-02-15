@@ -115,7 +115,7 @@ class Component:
         return f"{self.name}<{self.refdes}>"
 
     def __repr__(self):
-        return f"{self.name}<{self.refdes}|{hash(self)}>"
+        return f"{self.name}<{self.refdes}>"
 
     def __hash__(self) -> int:
         # TODO: fix hashing to not rely on refdes
@@ -184,6 +184,11 @@ class Component:
                 connection = self.parent.pin_to_net[pin].name
             print(f"|{pin.name.rjust(pad)}|-- {connection}")
         print("'" + "-" * pad + "'\n")
+
+
+class ModuleComponent(Component):
+    def __init__(self, refdes_prefix="U"):
+        super().__init__(refdes_prefix)
 
 
 class Resistor(Component):
