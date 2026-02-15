@@ -50,12 +50,11 @@ class BaseFootprint:
                 hw, hh = r, r
             elif isinstance(pad.aperture, ap_lib.ApertureRectangle):
                 hw, hh = pad.aperture.width / 2, pad.aperture.height / 2
-        return BoundingBox(
-            min(min_x, pad.location[0] - hw),
-            min(min_y, pad.location[1] - hh),
-            max(max_x, pad.location[0] + hw),
-            max(max_y, pad.location[1] + hh),
-        )
+            min_x = min(min_x, pad.location[0] - hw)
+            min_y = min(min_y, pad.location[1] - hh)
+            max_x = max(max_x, pad.location[0] + hw)
+            max_y = max(max_y, pad.location[1] + hh)
+        return BoundingBox(min_x, min_y, max_x, max_y)
 
 
 class KicadFootprint(BaseFootprint):
