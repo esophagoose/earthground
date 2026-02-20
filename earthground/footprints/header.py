@@ -3,8 +3,9 @@ import pygerber.aperture as ap_lib
 import earthground.footprint_types as ft
 
 
-class TwoRowThroughHoleHeader:
+class TwoRowThroughHoleHeader(ft.BaseFootprint):
     def __init__(self, count: int, spacing: float = 2.54) -> None:
+        super().__init__()
         self.name = f'Two Row 0.1" Header with {spacing} spacing'
         self.description = self.name
         self.pads = {}
@@ -17,12 +18,13 @@ class TwoRowThroughHoleHeader:
             self.pads[i] = ft.Pad((x, pad.location[1]), pad.aperture)
 
 
-class PointOneInchHeader:
+class PointOneInchHeader(ft.BaseFootprint):
     def __init__(self, count: int, spacing: float = 2.54) -> None:
+        super().__init__()
         self.name = f'0.1" Header, {count} Position, {spacing} Spacing'
         self.description = self.name
         start = -1 * spacing * ((count - 1) / 2)
-        aperture = ap_lib.ApertureRectangle(2.54, 2.54)  # TODO: make this generic
+        aperture = ap_lib.ApertureCircle(diameter=1.8796, hole=1.016)
         self.pads = {
             i: ft.Pad((0, i * spacing + start), aperture) for i in range(1, count + 1)
         }

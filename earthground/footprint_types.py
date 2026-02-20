@@ -30,6 +30,10 @@ class BoundingBox(NamedTuple):
     def center(self) -> Point:
         return Point((self.x1 + self.x2) / 2, (self.y1 + self.y2) / 2)
 
+    @classmethod
+    def from_height_width(cls, x: float, y: float, height: float, width: float) -> "BoundingBox":
+        return cls(x, y, x + width, y + height)
+
 
 class BaseFootprint:
     def __init__(self) -> None:

@@ -54,8 +54,9 @@ class PassivePackage(enum.Enum):
     C3640 = PackageParams(4.0875, 1.925, 10.45, 0.12987)
 
 
-class PassiveSmd:
+class PassiveSmd(ft.BaseFootprint):
     def __init__(self, package: PassivePackage) -> None:
+        super().__init__()
         self.name = package.name
         self.description = f"PASSIVE SMD {self.name}, IPC_7351 nominal"
         p = package.value
