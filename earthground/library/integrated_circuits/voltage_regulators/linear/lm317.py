@@ -1,6 +1,6 @@
 import earthground.components as cmp
 import earthground.layout as layout_lib
-import earthground.library.footprints.transistor_outline as to
+import earthground.footprints.transistor_outline as to
 import earthground.schematic as sch
 import earthground.standard_values as sv
 

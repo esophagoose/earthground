@@ -1,7 +1,7 @@
 import re
 
 import earthground.components as cmp
-from earthground.library.footprints import header
+from earthground.footprints import header
 from earthground.library.protocols.serial import I2C, UART
 
 ANALOG_PINS = ["A0", "A1", "A4", "A6", "A7", "B0", "B1"]

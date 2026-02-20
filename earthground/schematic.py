@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Union
 
 import earthground.components as cmp
 import earthground.layout as layout_lib
-import earthground.library.footprints.passives as passives
+import earthground.footprints.passives as passives
 
 
 class Ports:

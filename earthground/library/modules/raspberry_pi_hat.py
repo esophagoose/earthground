@@ -1,6 +1,6 @@
 import earthground.components as cmp
 import earthground.library.protocols.serial as serial
-from earthground.library.footprints import header
+from earthground.footprints import header
 
 
 class RaspberryPiHat(cmp.Component):

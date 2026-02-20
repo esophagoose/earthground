@@ -1,5 +1,5 @@
 import earthground.components as cmp
-import earthground.library.footprints.tssop as tssop
+import earthground.footprints.tssop as tssop
 import earthground.schematic as sch
 import earthground.utils as utils
 from earthground.library.protocols.serial import I2C
