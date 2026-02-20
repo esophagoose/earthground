@@ -2,7 +2,6 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
 
 import earthground.footprint_types as ft
 import earthground.standard_values as sv
-from earthground.library.footprints import passives
 
 if TYPE_CHECKING:
     import earthground.schematic as sch
@@ -142,9 +141,6 @@ class Component:
     def place(self, parent: "sch.Design"):
         self.parent = parent
         self._placed = True
-        if type(self) in [Resistor, Capacitor]:
-            package = type(self).__name__[0] + parent.default_passive_size
-            self.footprint = passives.PassiveSmd(passives.PassivePackage[package])
 
     def set_pins(self, nets: List[str] | Dict[str, str | Pin]) -> "Component":
         """
@@ -192,7 +188,7 @@ class ModuleComponent(Component):
 
 
 class Resistor(Component):
-    def __init__(self, value, **parameters):
+    def __init__(self, value, **kwargs):
         """
         Resistor with a specified value and optional parameters.
 
@@ -209,7 +205,10 @@ class Resistor(Component):
         self.description = self.name
         self.pins = PinContainer.from_count(2, self)
         self.refdes_prefix = "R"
-        self.parameters = parameters
+        self.parameters = {}
+        self.package_size = None
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 
 class Capacitor(Component):
@@ -232,6 +231,7 @@ class Capacitor(Component):
         self.pins = PinContainer.from_count(2, self)
         self.refdes_prefix = "C"
         self.parameters = parameters
+        self.package_size = None
 
 
 PASSIVE_TYPES = (Resistor, Capacitor)

@@ -106,7 +106,7 @@ class Design:
         :rtype: Component
         """
         logging.info(f"Adding component {component}")
-        if isinstance(component, cmp.PASSIVE_TYPES) and self.default_passive_size:
+        if isinstance(component, cmp.PASSIVE_TYPES):
             self.set_passive_footprint(component)
 
         if not component.is_in_design:
@@ -260,8 +260,9 @@ class Design:
             if net_name.startswith(bus_type) and net_name.endswith(name.upper()):
                 return int(net_name[len(bus_type)])
 
-    def set_passive_footprint(self, component):
-        name = type(component).__name__[0] + self.default_passive_size
+    def set_passive_footprint(self, component: cmp.PASSIVE_TYPES):
+        package_size = component.package_size or self.default_passive_size
+        name = type(component).__name__[0] + package_size
         package = passives.PassivePackage[name]
         component.footprint = passives.PassiveSmd(package)
 
