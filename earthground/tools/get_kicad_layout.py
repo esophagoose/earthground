@@ -8,11 +8,11 @@ Converts footprints to Dict[str, layout.ComponentLayout] format.
 import logging
 import pathlib
 import sys
-from typing import Dict, Optional, Tuple
+from typing import Dict
 
 from pykicad.parser.kicad_sexp import read_in_pcb_from_kicad_pcb
 
-import earthground.schematic as sch_lib
+import earthground.layout as layout
 
 # Configure logging
 logging.basicConfig(
@@ -21,14 +21,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def extract_layouts(board_path: pathlib.Path) -> Dict[str, sch_lib.ComponentLayout]:
+def extract_layouts(board_path: pathlib.Path) -> Dict[str, layout.ComponentLayout]:
     """
     Extract component layouts from a KiCad PCB file.
 
     :param board_path: Path to the .kicad_pcb file
     :type board_path: pathlib.Path
     :return: Dictionary mapping refdes to ComponentLayout
-    :rtype: Dict[str, sch_lib.ComponentLayout]
+    :rtype: Dict[str, layout.ComponentLayout]
     """
     logger.info(f"Loading board file: {board_path}")
     board = read_in_pcb_from_kicad_pcb(board_path)
@@ -41,7 +41,7 @@ def extract_layouts(board_path: pathlib.Path) -> Dict[str, sch_lib.ComponentLayo
         refdes = [prop for prop in footprint.properties if prop.name == "Reference"][0]
         if not refdes:
             logger.warning(f"Footprint {i} has no reference designator")
-            id_position = sch_lib.Position(x=0.0, y=0.0, angle=0.0)
+            id_position = layout.Position(x=0.0, y=0.0, angle=0.0)
             for prop in footprint.properties:
                 logger.debug(f"  - property: {prop.name} = {prop.value}")
             continue
@@ -49,7 +49,7 @@ def extract_layouts(board_path: pathlib.Path) -> Dict[str, sch_lib.ComponentLayo
             id_position = refdes.at
         prefix = refdes.value[0]
         cid_mapper[prefix] = cid_mapper.get(prefix, 0) + 1
-        layouts[prefix + str(cid_mapper[prefix])] = sch_lib.ComponentLayout(
+        layouts[prefix + str(cid_mapper[prefix])] = layout.ComponentLayout(
             id=id_position, component=footprint.at
         )
         logger.debug(
@@ -60,23 +60,25 @@ def extract_layouts(board_path: pathlib.Path) -> Dict[str, sch_lib.ComponentLayo
     return layouts
 
 
-def print_layouts(layouts: Dict[str, sch_lib.ComponentLayout]):
+def print_layouts(layouts: Dict[str, layout.ComponentLayout]):
     """Print layouts in a readable format."""
     print("{")
     for refdes, comp_layout in sorted(layouts.items()):
-        print(f'    "{refdes}": sch_lib.ComponentLayout(')
+        print(f'    "{refdes}": layout_lib.ComponentLayout(')
         print(
-            f"        id=sch_lib.Position(x={comp_layout.id.x}, y={comp_layout.id.y}, angle={comp_layout.id.angle}),"
+            f"        id=layout_lib.Position(x={comp_layout.id.x}, y={comp_layout.id.y}, angle={comp_layout.id.angle}),"
         )
         print(
-            f"        component=sch_lib.Position(x={comp_layout.component.x}, y={comp_layout.component.y}, angle={comp_layout.component.angle})"
+            f"        component=layout_lib.Position(x={comp_layout.component.x}, y={comp_layout.component.y}, angle={comp_layout.component.angle})"
         )
         print("    ),")
     print("}")
 
-def compare_positions(pos1: sch_lib.Position, pos2: sch_lib.Position) -> bool:
+
+def compare_positions(pos1: layout.Position, pos2: layout.Position) -> bool:
     is_different = pos1.x != pos2.x or pos1.y != pos2.y or pos1.angle != pos2.angle
     return is_different
+
 
 def diff_layout(
     path1: pathlib.Path,
@@ -114,9 +116,6 @@ def diff_layout(
         print("Both files are identical.")
     print("================================================")
     return found_diffs
-
-
-
 
 
 def main():
