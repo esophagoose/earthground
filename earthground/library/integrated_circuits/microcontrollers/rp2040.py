@@ -1,6 +1,7 @@
 import earthground.components as cmp
 import earthground.library.protocols.serial as serial
 
+
 class RP2040(cmp.Component):
     def __init__(self):
         super().__init__()

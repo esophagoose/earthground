@@ -24,16 +24,16 @@ class PRT_14417(cmp.Component):
         }
         self.pins = cmp.PinContainer.from_dict(
             {
-                1: "GND",
-                2: "VCC",
-                3: "SDA",
-                4: "SCL",
-                "M1": "MOUNTING1",
-                "M2": "MOUNTING2",
+                1: "1",
+                2: "2",
+                3: "3",
+                4: "4",
+                "M1": "M1",
+                "M2": "M2",
             },
             self,
         )
-        self.i2c = I2C(sda=self.pins.by_name("SDA"), scl=self.pins.by_name("SCL"))
+        self.i2c = I2C(sda=self.pins.by_name("3"), scl=self.pins.by_name("4"))
         self.footprint = JstShFootprint(4, JstType.SIDE_ENTRY)
 
 
@@ -42,8 +42,9 @@ class JstType(enum.Enum):
     SIDE_ENTRY = 2
 
 
-class JstShFootprint:
+class JstShFootprint(ft.BaseFootprint):
     def __init__(self, pin_count: int, style: JstType) -> None:
+        super().__init__()
         self.name = f"JST_SH_Connector_{pin_count}pin_{style.name}"
         self.count = pin_count
         self.style = style
