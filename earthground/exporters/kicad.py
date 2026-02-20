@@ -60,58 +60,49 @@ class KicadExporter:
         self.assigned_layout: Dict[str, layout_lib.ComponentLayout] = schematic.layout.placement
         self._added_nets: Dict[str, base.Net] = {}
         self._y_offset = 0
-        inner_layers = list(range(self.schematic.layout.layout_count - 2))
+        inner_layers = list(range(self.schematic.layout.layer_count - 2))
         self._layer_map = ["F.Cu"] + [f"In{i+2}.Cu" for i in inner_layers] + ["B.Cu"]
         for i in inner_layers:
             self.board.layers.append(kibrditems.LayerToken(ordinal=2*i+4, name=f"In{i+2}.Cu"))
     
+    def _collect_all_nets(self, schematic: sch_lib.Design) -> Dict[str, cmp.Net]:
+        """
+        Collect all nets from the design and all its modules recursively.
+
+        Returns:
+            Dictionary mapping net names to Net objects
+        """
+        all_nets = {}
+        # Collect nets from this design
+        for net_name, net in schematic.nets.items():
+            all_nets[net_name] = net
+        # Collect nets from all modules recursively
+        for module in schematic.modules:
+            module_nets = self._collect_all_nets(module)
+            all_nets.update(module_nets)
+        return all_nets
+
     def convert_to_kicad(self, schematic: sch_lib.Design):
-        x0 = 0
-        y0 = self._y_offset * 20
-        angle = 0
-        managed_layout = schematic ==self.schematic
-        if schematic in self.schematic.modules and schematic.short_name in self.schematic.layout.placement:
-            layout = self.schematic.layout.placement[schematic.short_name]
-            x0 = layout.component.x
-            y0 = layout.component.y
-            angle = layout.component.angle
-            managed_layout = True
         net_index_start = len(self.board.nets)
-        component_spacing = 5
+        flattened_layout = schematic.layout.flatten()
 
-        # Ensure no typos in layout placement
-        for cid, layout in schematic.layout.placement.items():
-            if cid not in schematic.components:
-                options = list(schematic.components.keys())
-                raise ValueError(f"Component {cid} not found in {schematic.name}. Options: {options}")
-
-        # Map existing nets by name
-        for i, net in enumerate(schematic.nets.values()):
+        all_nets = self._collect_all_nets(schematic)
+        for i, net in enumerate(all_nets.values()):
             kicad_net = base.Net(number=i + net_index_start + 1, name=net.name)
             self.board.nets.append(kicad_net)
             self._added_nets[net.name] = kicad_net
         
-        # Process components
-        for cid, component in schematic.components.items():
+        for cid, (layout, component) in flattened_layout.items():
             if component.virtual:
                 continue
-
-            # Generate default position for new footprints
-            bbox = component.footprint.get_bbox()
-            if not managed_layout and cid not in schematic.layout.placement:
-                x0 += (bbox.width() + component_spacing)
-            f_pos = base.Position(X=x0, Y=y0, angle=0)
-            id_pos = base.Position(X=0, Y=0, angle=0)
-    
-            # Check if component has a set position
-            if cid in schematic.layout.placement:
-                layout = schematic.layout.placement[cid]
-                id_pos = layout.id if layout.id else id_pos
-                f_pos = shift(_to_kiutil_position(layout.component.rotate(angle)), (x0, y0))
-                id_pos = _to_kiutil_position(id_pos.rotate(angle, (id_pos.x, id_pos.y)))
-            footprint = self.parse_footprint(component, f_pos, id_pos, schematic)
+            id_pos = layout.id if layout.id else id_pos
+            f_pos = _to_kiutil_position(layout.component)
+            id_pos = _to_kiutil_position(id_pos)
+            
+            footprint = self.parse_footprint(cid, component, f_pos, id_pos, component.parent)
             self.board.footprints.append(footprint)
 
+        # Process pours and vias from the main schematic
         for pour in schematic.layout.pours:
             self.add_pours(pour)
 
@@ -119,11 +110,12 @@ class KicadExporter:
             logging.info("Adding via: ", via)
             self.add_via(via)
     
-    def parse_footprint(self, component: cmp.Component, component_position: base.Position, id_position: base.Position, schematic: sch_lib.Design) -> fp.Footprint:
+    def parse_footprint(self, cid: str, component: cmp.Component, component_position: base.Position, id_position: base.Position, schematic: sch_lib.Design) -> fp.Footprint:
+        self._validate_component(component)
         footprint = fp.Footprint.create_new(
             library_id=component.name,
             value=component.footprint.name,
-            reference=component.refdes,
+            reference=cid,
         )
         for index, pad in component.footprint.pads.items():
             shape, size = aperture_to_shape_size(pad.aperture)
@@ -150,7 +142,7 @@ class KicadExporter:
         footprint.graphicItems.append(
             fp.FpText(
                 type="reference",
-                text=component.refdes,
+                text=cid,
                 position=id_position,
                 layer="F.SilkS",
             )
@@ -164,6 +156,9 @@ class KicadExporter:
         footprint.position.angle = -component_position.angle
         return footprint
 
+    def _validate_component(self, component: cmp.Component):
+        if not component.footprint:
+            raise RuntimeError(f"No footprint defined for: {component.name}")
 
     def draw_board_outline(self):
         outline = self.schematic.layout.outline
@@ -213,10 +208,8 @@ class KicadExporter:
                     component=fp.position,
                     id=text.position if text else base.Position(X=0, Y=0, angle=0),
                 )
+        # Use flattened layout to process all components at once
         self.convert_to_kicad(self.schematic)
-        for module in self.schematic.modules:
-            self._y_offset += 1
-            self.convert_to_kicad(module)
         self.draw_board_outline()
         self.board.to_file(path)
         print(f"{"Overwrote" if overwrite else "Wrote"} board file: {path}")
