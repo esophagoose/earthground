@@ -1,11 +1,24 @@
 # Earthground Tools
+## KiCad Layout Diff
+Generate a concise layout diff from two `.kicad_pcb` files.
+
+Run the tool:
+```
+uv run -m earthground.tools.kicad_diff_layout "Load Switch Design.kicad_pcb" "Load Switch Design_new.kicad_pcb"
+```
+
+Example output:
+```
+{'R1': {'at': (10.0, 5.0, 90.0), 'ref_at': (8.0, 5.0, 90.0)}}
+```
+
 ## Component Creator
 The component creator will automatically create component python definitions from a Digikey link
 
 ### Walkthrough - I/O Expander ([PI4IOE5V6416ZDEX](https://www.digikey.com/en/products/detail/diodes-incorporated/PI4IOE5V6416ZDEX/9769326))
 Run the tool:
 ```
-python3 -m earthground.tools.component_creator
+uv run -m earthground.tools.component_creator
 ```
 Here's the interaction to use the tool:
 
@@ -165,4 +178,3 @@ class PI4IOE5V6416ZDEX(cmp.Component):
             self,
         )
 ```
-

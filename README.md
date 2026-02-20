@@ -41,11 +41,30 @@ schematic.print()
 earthground.exporters.kicad.KicadExporter(schematic).save()
 ```
 
+## Export Pipeline
+This is the minimal flow from schematic to KiCad layout.
+- Build a `sch_lib.Design` and add components.
+- Create a `KicadExporter` from `earthground/exporters/kicad.py`.
+- Optionally pass `positions` to override footprint placement and reference text.
+- Call `.save()` to emit the `.kicad_pcb`.
+
+The `positions` override format is a dict keyed by refdes. Each value can be a `base.Position` or a concise dict.
+- `{"at": (x, y, rot)}` moves the footprint.
+- `{"ref_at": (x, y, rot)}` moves the reference text.
+
+Example:
+```
+positions = {
+    "R1": {"at": (10.0, 5.0, 90.0), "ref_at": (8.0, 5.0, 90.0)},
+}
+earthground.exporters.kicad.KicadExporter(schematic, positions=positions).save()
+```
+
 ### Project Walkthrough - 32 Port I/O Expander
 
 [Read the example](https://github.com/esophagoose/earthground/tree/main/examples)
 - Located in ``examples/io_expander_example.py``
-- Run using: ``python3 -m examples.io_expander_example``
+- Run using: ``uv run -m examples.io_expander_example``
 
 
 ## Advantages of Software-Defined Circuits
@@ -75,3 +94,9 @@ With a Python backend, it's simple to create powerful component libraries that a
 - For buck converters, Earthground can automatically size inductors based on datasheet parameters
 - For LDOs, given an output voltage, Earthground will select the feedback resistors, round them to E24 values, and warn you if the result output voltage is beyond a specified percentage
 
+## Workflows
+ - Work on small subcircuits in a design
+ - Export to KiCad and make a standardized layout
+ - Use `uv run -m earthground.tools.get_kicad_layout` to generate a structured layout
+ - Add that to the design
+ - Add those building blocks to the full design
