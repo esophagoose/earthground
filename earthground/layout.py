@@ -1,3 +1,4 @@
+import logging
 import math
 from typing import TYPE_CHECKING, Dict, NamedTuple, Tuple
 
@@ -6,6 +7,9 @@ from earthground.footprint_types import BoundingBox
 
 if TYPE_CHECKING:
     import earthground.schematic as sch_lib
+
+
+SCHEMATIC_WIDTH = 600
 
 
 class Position(NamedTuple):
@@ -59,21 +63,44 @@ class Layout:
         self.design = design
         self.placement: Dict[str, ComponentLayout] = {}
         self.outline = BoundingBox(x1=0, y1=0, x2=0, y2=0)
-        self.layout_count = 2
+        self.layer_count = 2
         self.traces = []
         self.vias = []
         self.pours = []
+
+    def get_placement(self, id: str) -> Dict[str, ComponentLayout]:
+        floating_components = list(
+            set(self.design.components.keys()) - set(self.placement.keys())
+        )
+        # import code; code.interact(local=dict(globals(), **locals()))
+        if id not in self.placement and id not in self.design.components:
+            raise ValueError(
+                f"Cannot get placement for {id}. Component not in {self.design.name}"
+            )
+        elif id in floating_components:
+            logging.warning(f"Component {id} is floating in {self.design.name}")
+            index = floating_components.index(id)
+            x = 0
+            for f in floating_components[:index]:
+                if self.design.components[f].virtual:
+                    continue
+                x += self.design.components[f].footprint.get_bbox().width() + 1
+            x = x % SCHEMATIC_WIDTH
+            y = x // SCHEMATIC_WIDTH
+            return ComponentLayout(
+                id=Position(x=0, y=0, angle=0),
+                component=Position(x=x, y=y, angle=0),
+            )
+        return self.placement[id]
 
     def flatten(self) -> Dict[str, Tuple[ComponentLayout, cmp.Component]]:
         """
         Flatten the layout into a dictionary of component layouts.
         """
         flattened = {}
-        print(f"Flattening layout for {self.design.name}")
         for cid, component in self.design.components.items():
-            print(f"Component: {cid} {type(component)}")
             if isinstance(component, cmp.ModuleComponent):
-                module_position = self.placement[cid].component
+                module_position = self.get_placement(cid).component
                 flat_module = component.parent.layout.flatten()
                 for module_cid, comp in flat_module.items():
                     layout, component = comp
@@ -85,7 +112,14 @@ class Layout:
                     )
                     flattened[f"{cid}_{module_cid}"] = (layout, component)
             elif isinstance(component, cmp.Component):
-                flattened[cid] = (self.placement[cid], component)
+                flattened[cid] = (self.get_placement(cid), component)
             else:
                 raise ValueError(f"Invalid component type: {type(component)}")
+        unused_cids = list(
+            set(self.placement.keys()) - set(self.design.components.keys())
+        )
+        if unused_cids:
+            print(
+                f"WARNING: Components in layout but not used in  {self.design.name}: {unused_cids}"
+            )
         return flattened
