@@ -212,7 +212,7 @@ class Resistor(Component):
 
 
 class Capacitor(Component):
-    def __init__(self, value, voltage, **parameters):
+    def __init__(self, value, voltage, **kwargs):
         """
         Capacitor with a specified value, voltage, and optional parameters.
 
@@ -230,11 +230,35 @@ class Capacitor(Component):
         self.description = self.name
         self.pins = PinContainer.from_count(2, self)
         self.refdes_prefix = "C"
-        self.parameters = parameters
         self.package_size = None
+        for key, val in kwargs.items():
+            setattr(self, key, val)
 
 
-PASSIVE_TYPES = (Resistor, Capacitor)
+class Inductor(Component):
+    def __init__(self, value, **kwargs):
+        """
+        Inductor with a specified value and optional parameters.
+
+        :param value: The inductance value of the inductor.
+        :type value: str or :class:`sv.SiNumber`
+        :param kwargs: Additional parameters (e.g. current, dcr, package_size).
+        :type kwargs: dict, optional
+        """
+        super().__init__(refdes_prefix="L")
+        if not isinstance(value, sv.SiNumber):
+            self.value = sv.SiNumber(value, "H")
+        else:
+            self.value = value
+        self.name = f"IND_{self.value}"
+        self.description = self.name
+        self.pins = PinContainer.from_count(2, self)
+        self.package_size = None
+        for key, val in kwargs.items():
+            setattr(self, key, val)
+
+
+PASSIVE_TYPES = (Resistor, Capacitor, Inductor)
 
 
 class PinContainer:

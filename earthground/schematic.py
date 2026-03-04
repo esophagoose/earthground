@@ -262,7 +262,7 @@ class Design:
 
     def set_passive_footprint(self, component: cmp.PASSIVE_TYPES):
         package_size = component.package_size or self.default_passive_size
-        name = type(component).__name__[0] + package_size
+        name = component.refdes_prefix + package_size
         package = passives.PassivePackage[name]
         component.footprint = passives.PassiveSmd(package)
 
