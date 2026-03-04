@@ -53,6 +53,18 @@ class PassivePackage(enum.Enum):
     C2225 = PackageParams(2.5375, 1.625, 6.6, 0.153846)
     C3640 = PackageParams(4.0875, 1.925, 10.45, 0.12987)
 
+    L0402 = PackageParams(0.48, 0.56, 0.62, 0.25)
+    L0504 = PackageParams(0.54, 0.66, 1.28, 0.25)
+    L0603 = PackageParams(0.775, 0.9, 0.95, 0.25)
+    L0805 = PackageParams(0.95, 1, 1.45, 0.25)
+    L1206 = PackageParams(1.475, 1.15, 1.8, 0.217391)
+    L1210 = PackageParams(1.475, 1.15, 2.7, 0.217391)
+    L1812 = PackageParams(2.05, 1.4, 3.4, 0.178571)
+    L1825 = PackageParams(2.05, 1.4, 6.8, 0.178571)
+    L2220 = PackageParams(2.55, 1.8, 5.4, 0.138889)
+    L2225 = PackageParams(2.5375, 1.625, 6.6, 0.153846)
+    L3640 = PackageParams(4.0875, 1.925, 10.45, 0.12987)
+
 
 class PassiveSmd(ft.BaseFootprint):
     def __init__(self, package: PassivePackage) -> None:

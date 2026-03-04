@@ -62,3 +62,53 @@ class JstShFootprint(ft.BaseFootprint):
         x = -(self.count - 1) * self.spacing / 2
         y = -3.375 if self.style == JstType.TOP_ENTRY else -4.775
         return x, y
+
+
+class JstEhFootprint(ft.BaseFootprint):
+    """JST EH series 2.5mm pitch through-hole shrouded header."""
+
+    def __init__(self, pin_count: int) -> None:
+        super().__init__()
+        self.name = f"JST_EH_{pin_count}pin"
+        self.count = pin_count
+        self.pitch = 2.5  # mm
+        # JST EH: hole 0.9–1.0 mm, pad ~1.8 mm typical
+        aperture = ap_lib.ApertureCircle(diameter=1.8, hole=1.0)
+        x0 = -(pin_count - 1) * self.pitch / 2
+        self.pads = {
+            i + 1: ft.Pad([x0 + i * self.pitch, 0], aperture)
+            for i in range(pin_count)
+        }
+        border_x1 = x0 - self.pitch
+        border_x2 = x0 + pin_count * self.pitch
+        border_y = 1.9
+        self.silk.append([
+            (border_x1, border_y),
+            (border_x2, border_y),
+            (border_x2, -border_y),
+            (border_x1, -border_y),
+            (border_x1, border_y),
+        ])
+
+
+class B3B_EH_A(cmp.Component):
+    """JST B3B-EH-A 3-position 2.5mm pitch through-hole shrouded header (top entry)."""
+
+    def __init__(self):
+        super().__init__(refdes_prefix="J")
+        self.name = "B3B-EH-A"
+        self.description = "CONN HEADER 3POS 2.5MM VERT"
+        self.detailed_description = "JST EH series 3-pin shrouded header, 2.5mm pitch, through-hole"
+        self.manufacturer = "JST"
+        self.mpn = "B3B-EH-A"
+        self.datasheet = "https://www.jst.com/productSeries.php?pid=2849"
+        self.parameters = {
+            "Pitch": "2.5mm",
+            "Positions": "3",
+            "Mounting": "Through-hole",
+            "Current rating": "3A",
+            "Voltage rating": "250V",
+            "Operating temperature": "-25°C to +85°C",
+        }
+        self.pins = cmp.PinContainer.from_count(3, self)
+        self.footprint = JstEhFootprint(3)

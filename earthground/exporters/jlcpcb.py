@@ -112,7 +112,7 @@ class JlcPcb:
             # Write sorted rows
             for row in footprints_data:
                 writer.writerow(row)
-
+        print(f"Generated BOM: {out_path}")
         return out_path
 
 

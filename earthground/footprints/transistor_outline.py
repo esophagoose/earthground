@@ -63,3 +63,25 @@ class TO263(ft.BaseFootprint):
             2: ft.Pad(location=[0, 0], aperture=ep),
             3: ft.Pad(location=[pad_center_offset, pitch], aperture=pad),
         }
+
+
+class TO277A(ft.BaseFootprint):
+    """TO-277A (PSMC/SMPC) package footprint — flat power Schottky rectifier."""
+    # TODO: Check footprint
+    def __init__(self):
+        super().__init__()
+        self.name = "TO-277A"
+        self.description = "TO-277A (PSMC/SMPC) Surface Mount Package, 2 pins + thermal pad"
+
+        # TO-277A: 4.6 x 6.5 mm body, 1.1 mm height. Pitch 2.13 mm between pins 1 and 2.
+        # Pin 1: Anode (left), Pin 2: Cathode (thermal pad), Pin 3: Anode (right)
+        ep = ap_lib.ApertureRectangle(4.72, 4.8)
+        pad = ap_lib.ApertureRectangle(1.4, 1.4)
+
+        x_pitch = 1.925  # mm
+        y_pitch = 1.04  # mm
+        self.pads = {
+            1: ft.Pad(location=[-x_pitch, -y_pitch], aperture=pad),
+            2: ft.Pad(location=[x_pitch, 0], aperture=ep),
+            3: ft.Pad(location=[-x_pitch, y_pitch], aperture=pad),
+        }

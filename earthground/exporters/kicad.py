@@ -95,11 +95,10 @@ class KicadExporter:
         for cid, (layout, component) in flattened_layout.items():
             if component.virtual:
                 continue
-            id_pos = layout.id if layout.id else id_pos
             f_pos = _to_kiutil_position(layout.component)
-            id_pos = _to_kiutil_position(id_pos)
+            id_pos = _to_kiutil_position(layout.id)
             
-            footprint = self.parse_footprint(cid, component, f_pos, id_pos, component.parent)
+            footprint = self.parse_footprint(cid, component, f_pos, id_pos, component.parent, layout.id_orientation)
             self.board.footprints.append(footprint)
 
         # Process pours and vias from the main schematic
@@ -110,7 +109,7 @@ class KicadExporter:
             logging.info("Adding via: ", via)
             self.add_via(via)
     
-    def parse_footprint(self, cid: str, component: cmp.Component, component_position: base.Position, id_position: base.Position, schematic: sch_lib.Design) -> fp.Footprint:
+    def parse_footprint(self, cid: str, component: cmp.Component, component_position: base.Position, id_position: base.Position, schematic: sch_lib.Design, id_orientation: layout_lib.Orientation) -> fp.Footprint:
         self._validate_component(component)
         footprint = fp.Footprint.create_new(
             library_id=component.name,
@@ -138,13 +137,27 @@ class KicadExporter:
                     net=kicad_net,
                 )
             )
+
         # Add silk layer information to the footprint
+        justify_options = {}
+        if id_orientation == layout_lib.Orientation.TOP:
+            justify_options["vertically"] = "bottom"
+        elif id_orientation == layout_lib.Orientation.BOTTOM:
+            justify_options["vertically"] = "top"
+        elif id_orientation == layout_lib.Orientation.LEFT:
+            justify_options["horizontally"] = "right"
+        elif id_orientation == layout_lib.Orientation.RIGHT:
+            justify_options["horizontally"] = "left"
         footprint.graphicItems.append(
             fp.FpText(
                 type="reference",
                 text=cid,
                 position=id_position,
                 layer="F.SilkS",
+                effects=base.Effects(
+                    font=base.Font(height=0.75, width=0.75, thickness=0.12),
+                    justify=base.Justify(**justify_options),
+                ),
             )
         )
         for polysilk in component.footprint.silk:
