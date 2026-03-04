@@ -1,6 +1,8 @@
+import dataclasses
+import enum
 import logging
 import math
-from typing import TYPE_CHECKING, Dict, NamedTuple, Tuple
+from typing import TYPE_CHECKING, Dict, NamedTuple, Optional, Tuple
 
 import earthground.components as cmp
 from earthground.footprint_types import BoundingBox
@@ -10,7 +12,9 @@ if TYPE_CHECKING:
 
 
 SCHEMATIC_WIDTH = 600
-
+GRID_SIZE = 0.5
+TEXT_HEIGHT = 1
+TEXT_PADDING = 0.5
 
 class Position(NamedTuple):
     x: float
@@ -52,23 +56,39 @@ class PourLayer(NamedTuple):
     net_name: str
     layer: int
 
+class Orientation(enum.Enum):
+    TOP = enum.auto()
+    BOTTOM = enum.auto()
+    LEFT = enum.auto()
+    RIGHT = enum.auto()
+    CENTER = enum.auto()
+
+@dataclasses.dataclass
+class Placement:
+    position: Position
+    id: Optional[Orientation] = None
 
 class ComponentLayout(NamedTuple):
+    id: Position
+    id_orientation: Orientation
     component: Position
-    id: Position = Position(x=0, y=0, angle=0)
+
+def round_to_nearest(x: float, step: float) -> float:
+    """Round x to the nearest given float step."""
+    return math.ceil(x / step) * step
 
 
 class Layout:
     def __init__(self, design: "sch_lib.Design") -> None:
         self.design = design
-        self.placement: Dict[str, ComponentLayout] = {}
+        self.placement: Dict[str, Placement] = {}
         self.outline = BoundingBox(x1=0, y1=0, x2=0, y2=0)
         self.layer_count = 2
         self.traces = []
         self.vias = []
         self.pours = []
 
-    def get_placement(self, id: str) -> Dict[str, ComponentLayout]:
+    def get_placement(self, id: str) -> ComponentLayout:
         floating_components = list(
             set(self.design.components.keys()) - set(self.placement.keys())
         )
@@ -89,9 +109,31 @@ class Layout:
             y = x // SCHEMATIC_WIDTH
             return ComponentLayout(
                 id=Position(x=0, y=0, angle=0),
+                id_orientation=Orientation.CENTER,
                 component=Position(x=x, y=y, angle=0),
             )
-        return self.placement[id]
+        if not self.placement[id].id:
+            return ComponentLayout(
+                id=Position(x=0, y=0, angle=0),
+                id_orientation=Orientation.CENTER,
+                component=self.placement[id].position,
+            )
+        component = self.design.components[id]
+        component_position = self.placement[id].position
+        ref_id = self.placement[id].id
+        x, y = 0, 0
+        if ref_id in [Orientation.TOP, Orientation.BOTTOM]:
+            y = round_to_nearest((component.footprint.get_bbox().height() + GRID_SIZE) / 2, GRID_SIZE)
+            y *= (-1 * int(ref_id == Orientation.TOP))
+            y *= (-1 * int(component_position.angle == 180))
+        elif ref_id in [Orientation.LEFT, Orientation.RIGHT]:
+            x = round_to_nearest((component.footprint.get_bbox().width() + GRID_SIZE) / 2, GRID_SIZE)
+            x = -x if ref_id == Orientation.LEFT else x
+        return ComponentLayout(
+            id=Position(x=x, y=y, angle=component_position.angle),
+            id_orientation=ref_id,
+            component=component_position
+        )
 
     def flatten(self) -> Dict[str, Tuple[ComponentLayout, cmp.Component]]:
         """
@@ -106,6 +148,7 @@ class Layout:
                     layout, component = comp
                     layout = ComponentLayout(
                         id=layout.id,
+                        id_orientation=layout.id_orientation,
                         component=layout.component.translate(
                             module_position.x, module_position.y
                         ),
