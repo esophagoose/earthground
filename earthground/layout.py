@@ -121,14 +121,27 @@ class Layout:
         component = self.design.components[id]
         component_position = self.placement[id].position
         ref_id = self.placement[id].id
+        angle = component_position.angle % 360
         x, y = 0, 0
         if ref_id in [Orientation.TOP, Orientation.BOTTOM]:
-            y = round_to_nearest((component.footprint.get_bbox().height() + GRID_SIZE) / 2, GRID_SIZE)
-            y *= (-1 * int(ref_id == Orientation.TOP))
-            y *= (-1 * int(component_position.angle == 180))
+            # Vertical label offset from component origin
+            y = round_to_nearest(
+                (component.footprint.get_bbox().height() + GRID_SIZE) / 2,
+                GRID_SIZE,
+            )
+            # Place above or below the component depending on reference edge
+            y *= -1 if ref_id == Orientation.TOP else 1
+            # Flip when the component is effectively upside-down (rotated past 90°)
+            if 90 < angle < 270:
+                y *= -1
         elif ref_id in [Orientation.LEFT, Orientation.RIGHT]:
-            x = round_to_nearest((component.footprint.get_bbox().width() + GRID_SIZE) / 2, GRID_SIZE)
-            x = -x if ref_id == Orientation.LEFT else x
+            # Horizontal label offset from component origin
+            x = round_to_nearest(
+                (component.footprint.get_bbox().width() + GRID_SIZE) / 2,
+                GRID_SIZE,
+            )
+            # Place left or right of the component depending on reference edge
+            x *= -1 if ref_id == Orientation.LEFT else 1
         return ComponentLayout(
             id=Position(x=x, y=y, angle=component_position.angle),
             id_orientation=ref_id,

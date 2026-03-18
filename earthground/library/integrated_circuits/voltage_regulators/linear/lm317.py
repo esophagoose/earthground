@@ -142,28 +142,26 @@ class LM317AMDTX(cmp.Component):
         design.join_net(design.port["VOUT"], output_net)
         design.join_net(design.port["GND"], "GND")
         design.layout.placement = {
-            "C1": layout_lib.ComponentLayout(
-                id=layout_lib.Position(x=0.0, y=-1.5, angle=0.0),
-                component=layout_lib.Position(x=3.55, y=-4.5, angle=0.0),
+            "C1": layout_lib.Placement(
+                id=layout_lib.Orientation.BOTTOM,
+                position=layout_lib.Position(x=3.55, y=-4.5, angle=0.0),
             ),
-            "C2": layout_lib.ComponentLayout(
-                id=layout_lib.Position(x=-2.775, y=0.0, angle=0.0),
-                component=layout_lib.Position(x=-4.225, y=4.5, angle=180.0),
+            "C2": layout_lib.Placement(
+                position=layout_lib.Position(x=-4.225, y=4.5, angle=180.0),
             ),
-            "R1": layout_lib.ComponentLayout(
-                id=layout_lib.Position(x=0.0, y=1.5, angle=0.0),
-                component=layout_lib.Position(x=-4.45, y=-4.5, angle=180.0),
+            "R1": layout_lib.Placement(
+                id=layout_lib.Orientation.TOP,
+                position=layout_lib.Position(x=-4.45, y=-4.5, angle=180.0),
             ),
-            "R2": layout_lib.ComponentLayout(
-                id=layout_lib.Position(x=0.0, y=1.5, angle=0.0),
-                component=layout_lib.Position(x=-0.45, y=-4.5, angle=180.0),
+            "R2": layout_lib.Placement(
+                id=layout_lib.Orientation.TOP,
+                position=layout_lib.Position(x=-0.45, y=-4.5, angle=180.0),
             ),
-            "U1": layout_lib.ComponentLayout(
-                id=layout_lib.Position(x=-4.455, y=0.0, angle=0.0),
-                component=layout_lib.Position(x=0.0, y=0.0, angle=0.0),
+            "U1": layout_lib.Placement(
+                position=layout_lib.Position(x=0.0, y=0.0, angle=0.0),
             ),
-            "REG1": layout_lib.ComponentLayout(
-                component=layout_lib.Position(x=0.0, y=20.0, angle=0.0),
+            "REG1": layout_lib.Placement(
+                position=layout_lib.Position(x=0.0, y=20.0, angle=0.0),
             ),
         }
         return design

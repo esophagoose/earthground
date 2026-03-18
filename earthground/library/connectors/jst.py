@@ -6,9 +6,17 @@ import earthground.components as cmp
 import earthground.footprint_types as ft
 from earthground.library.protocols.serial import I2C
 
+class JstFamily(enum.Enum):
+    SH = "SH"
 
-class PRT_14417(cmp.Component):
-    def __init__(self):
+
+class JstType(enum.Enum):
+    TOP_ENTRY = "BM"
+    SIDE_ENTRY = "SM"
+
+
+class Jst(cmp.Component):
+    def __init__(self, family: JstFamily, pin_count: int):
         super().__init__(refdes_prefix="J")
         self.name = "PRT-14417"
         self.detailed_description = "Qwiic - Connector"
@@ -35,11 +43,6 @@ class PRT_14417(cmp.Component):
         )
         self.i2c = I2C(sda=self.pins.by_name("3"), scl=self.pins.by_name("4"))
         self.footprint = JstShFootprint(4, JstType.SIDE_ENTRY)
-
-
-class JstType(enum.Enum):
-    TOP_ENTRY = 1
-    SIDE_ENTRY = 2
 
 
 class JstShFootprint(ft.BaseFootprint):

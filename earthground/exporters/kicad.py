@@ -7,11 +7,13 @@ import kiutils.footprint as fp
 import kiutils.items.brditems as kibrditems
 import kiutils.items.common as base
 import kiutils.items.zones as kizones
+import kiutils.utils.sexpr as sexpr_utils
 import pygerber.aperture as ap_lib
 
 import earthground.components as cmp
 import earthground.layout as layout_lib
 import earthground.schematic as sch_lib
+from earthground.importers.kicad import KicadFootprint
 
 
 def to_pos(coordinates, angle=0):
@@ -45,7 +47,7 @@ def get_index_fptext(footprint: fp.Footprint) -> Optional[fp.FpText]:
 
 
 class KicadExporter:
-    def __init__(self, schematic: sch_lib.Design):
+    def __init__(self, schematic: sch_lib.Design, pcb_path: Optional[pathlib.Path] = None):
         """
         A class to export schematic designs to KiCad format.
 
@@ -55,15 +57,17 @@ class KicadExporter:
         :type positions: dict
         :type board_path: Optional[pathlib.Path or str]
         """
-        self.board = kiutils.board.Board.create_new()
-        self.schematic = schematic
-        self.assigned_layout: Dict[str, layout_lib.ComponentLayout] = schematic.layout.placement
-        self._added_nets: Dict[str, base.Net] = {}
-        self._y_offset = 0
-        inner_layers = list(range(self.schematic.layout.layer_count - 2))
-        self._layer_map = ["F.Cu"] + [f"In{i+2}.Cu" for i in inner_layers] + ["B.Cu"]
-        for i in inner_layers:
-            self.board.layers.append(kibrditems.LayerToken(ordinal=2*i+4, name=f"In{i+2}.Cu"))
+        if pcb_path:
+            self.board = kiutils.board.Board.from_file(pcb_path)
+        else:
+            self.board = kiutils.board.Board.create_new()
+            self.schematic = schematic
+            self.assigned_layout: Dict[str, layout_lib.ComponentLayout] = schematic.layout.placement
+            self._added_nets: Dict[str, base.Net] = {}
+            inner_layers = list(range(self.schematic.layout.layer_count - 2))
+            self._layer_map = ["F.Cu"] + [f"In{i+2}.Cu" for i in inner_layers] + ["B.Cu"]
+            for i in inner_layers:
+                self.board.layers.append(kibrditems.LayerToken(ordinal=2*i+4, name=f"In{i+2}.Cu"))
     
     def _collect_all_nets(self, schematic: sch_lib.Design) -> Dict[str, cmp.Net]:
         """
@@ -110,35 +114,15 @@ class KicadExporter:
             self.add_via(via)
     
     def parse_footprint(self, cid: str, component: cmp.Component, component_position: base.Position, id_position: base.Position, schematic: sch_lib.Design, id_orientation: layout_lib.Orientation) -> fp.Footprint:
-        self._validate_component(component)
-        footprint = fp.Footprint.create_new(
-            library_id=component.name,
-            value=component.footprint.name,
-            reference=cid,
-        )
-        for index, pad in component.footprint.pads.items():
-            shape, size = aperture_to_shape_size(pad.aperture)
-            pin = component.pins[index]
-            net = schematic.pin_to_net.get(pin)
-            kicad_net = None
-            if net:
-                kicad_net = self._added_nets[net.name]
-            hole = getattr(pad.aperture, "hole", None)
-            layer = "*" if hole else "F"
-            footprint.pads.append(
-                fp.Pad(
-                    number=str(index),
-                    type="thru_hole" if hole else "smd",
-                    shape=shape,
-                    position=to_pos(pad.location, angle=component_position.angle),
-                    size=size,
-                    drill=fp.DrillDefinition(diameter=hole) if hole else None,
-                    layers=[f"{layer}.Cu", f"{layer}.Mask"],
-                    net=kicad_net,
-                )
-            )
+        """
+        Convert an earthground footprint into a KiCad footprint.
 
-        # Add silk layer information to the footprint
+        Supports both native earthground footprints (ft.BaseFootprint) and
+        imported KiCad footprints (importers.kicad.KicadFootprint).
+        """
+        self._validate_component(component)
+
+        # Determine reference text justification once
         justify_options = {}
         if id_orientation == layout_lib.Orientation.TOP:
             justify_options["vertically"] = "bottom"
@@ -148,23 +132,99 @@ class KicadExporter:
             justify_options["horizontally"] = "right"
         elif id_orientation == layout_lib.Orientation.RIGHT:
             justify_options["horizontally"] = "left"
-        footprint.graphicItems.append(
-            fp.FpText(
-                type="reference",
-                text=cid,
-                position=id_position,
-                layer="F.SilkS",
-                effects=base.Effects(
-                    font=base.Font(height=0.75, width=0.75, thickness=0.12),
-                    justify=base.Justify(**justify_options),
-                ),
+
+        # Case 1: Footprint imported directly from a KiCad .kicad_mod
+        if isinstance(component.footprint, KicadFootprint):
+            parsed = sexpr_utils.parse_sexp(component.footprint.sexp)
+            footprint = fp.Footprint.from_sexpr(parsed)
+
+            # Re-map pad nets based on the schematic connectivity.
+            for pad in footprint.pads:
+                try:
+                    index = int(pad.number)
+                except (ValueError, TypeError):
+                    continue
+                pin = component.pins[index]
+                net = schematic.pin_to_net.get(pin)
+                if net:
+                    pad.net = self._added_nets[net.name]
+
+            # Update or add the reference text to match cid and id_position.
+            ref_text = get_index_fptext(footprint)
+            if ref_text is not None:
+                ref_text.text = cid
+                ref_text.position = id_position
+                ref_text.effects.justify = base.Justify(**justify_options)
+            else:
+                footprint.graphicItems.append(
+                    fp.FpText(
+                        type="reference",
+                        text=cid,
+                        position=id_position,
+                        layer="F.SilkS",
+                        effects=base.Effects(
+                            font=base.Font(height=0.75, width=0.75, thickness=0.12),
+                            justify=base.Justify(**justify_options),
+                        ),
+                    )
+                )
+
+            # If the component is rotated by 90° or 270°, swap pad width/height.
+            # This matches how earthground's native footprints behave and keeps
+            # pad dimensions consistent with the visual rotation.
+            angle = component_position.angle
+            if abs(angle) % 180 == 90:
+                for pad in footprint.pads:
+                    size = pad.size
+                    pad.size = base.Position(X=size.Y, Y=size.X)
+        else:
+            # Case 2: Native earthground footprint definition
+            footprint = fp.Footprint.create_new(
+                library_id=component.name,
+                value=component.footprint.name,
+                reference=cid,
             )
-        )
-        for polysilk in component.footprint.silk:
-            for i in range(len(polysilk) - 1):
-                previous, current = polysilk[i : i + 2]
-                line = fp.FpLine(to_pos(previous), to_pos(current), "F.SilkS")
-                footprint.graphicItems.append(line)
+            for index, pad in component.footprint.pads.items():
+                shape, size = aperture_to_shape_size(pad.aperture)
+                pin = component.pins[index]
+                net = schematic.pin_to_net.get(pin)
+                kicad_net = None
+                if net:
+                    kicad_net = self._added_nets[net.name]
+                hole = getattr(pad.aperture, "hole", None)
+                layer = "*" if hole else "F"
+                footprint.pads.append(
+                    fp.Pad(
+                        number=str(index),
+                        type="thru_hole" if hole else "smd",
+                        shape=shape,
+                        position=to_pos(pad.location, angle=component_position.angle),
+                        size=size,
+                        drill=fp.DrillDefinition(diameter=hole) if hole else None,
+                        layers=[f"{layer}.Cu", f"{layer}.Mask"],
+                        net=kicad_net,
+                    )
+                )
+
+            # Add silk from the earthground footprint definition.
+            footprint.graphicItems.append(
+                fp.FpText(
+                    type="reference",
+                    text=cid,
+                    position=id_position,
+                    layer="F.SilkS",
+                    effects=base.Effects(
+                        font=base.Font(height=0.75, width=0.75, thickness=0.12),
+                        justify=base.Justify(**justify_options),
+                    ),
+                )
+            )
+            for polysilk in component.footprint.silk:
+                for i in range(len(polysilk) - 1):
+                    previous, current = polysilk[i : i + 2]
+                    line = fp.FpLine(to_pos(previous), to_pos(current), "F.SilkS")
+                    footprint.graphicItems.append(line)
+        # Place and orient the footprint on the board.
         footprint.position = component_position
         footprint.position.angle = -component_position.angle
         return footprint
@@ -213,15 +273,6 @@ class KicadExporter:
         :return: None
         """
         path = pathlib.Path(output_folder) / f"{self.schematic.name}.kicad_pcb"
-        if overwrite:
-            current_board = kiutils.board.Board.from_file(path)
-            for fp in current_board.footprints:
-                text = get_index_fptext(fp)
-                self.assigned_layout[get_index(fp)] = layout_lib.ComponentLayout(
-                    component=fp.position,
-                    id=text.position if text else base.Position(X=0, Y=0, angle=0),
-                )
-        # Use flattened layout to process all components at once
         self.convert_to_kicad(self.schematic)
         self.draw_board_outline()
         self.board.to_file(path)

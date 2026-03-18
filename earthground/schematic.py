@@ -7,6 +7,10 @@ import earthground.footprints.passives as passives
 
 
 class Ports:
+    """
+    Ports are the interface between modules and their parent.
+    Structurally, they present a module as a singular component with the ports being the pins
+    """
     def __init__(self, ports: List[str], parent: "Design"):
         self.names = ports
         self.symbol = cmp.ModuleComponent(parent.short_name)
@@ -59,6 +63,21 @@ class Design:
         self._module_names: Dict[str, int] = {}
         self._cid_map: Dict[str, int] = {}
 
+    def scoped_net_name(self, raw_name: str) -> str:
+        """
+        Return the scoped net name for this design.
+
+        - Global nets like GND are left unchanged.
+        - Names already prefixed with this design's short_name_ are left unchanged.
+        - All other names are prefixed with short_name_.
+        """
+        if raw_name == "GND":
+            return raw_name
+        prefix = f"{self.short_name}_"
+        if raw_name.startswith(prefix):
+            return raw_name
+        return f"{prefix}{raw_name}"
+
     def add_module(self, module: "Design"):
         """
         Adds a module (sub-design) to the current design.
@@ -80,11 +99,10 @@ class Design:
         if module.short_name not in self._module_names:
             self._module_names[module.short_name] = 0
         self._module_names[module.short_name] += 1
-        prefix = f"{module.short_name}{self._module_names[module.short_name]}"
-        module.short_name = prefix
-        net_names = [net.name for net in module.nets.values()]
-        for net_name in net_names:
-            module.change_net_name(net_name, "_".join([prefix, net_name]))
+        # Assign a unique, stable short_name for this module instance
+        module.short_name = f"{module.short_name}{self._module_names[module.short_name]}"
+        # Ensure all existing module nets are scoped with the module's short_name
+        module._enforce_scoped_net_names()
         if self.default_passive_size:
             for component in module.components.values():
                 if isinstance(component, cmp.PASSIVE_TYPES):
@@ -183,6 +201,20 @@ class Design:
         logging.info(f"Overwriting net {old_net_name} to {new_net_name}")
         self.nets[new_net_name] = self.nets.pop(old_net_name)
         self.nets[new_net_name].name = new_net_name
+
+    def _enforce_scoped_net_names(self) -> None:
+        """
+        Ensure all non-global nets in this design are scoped with short_name_.
+
+        This is primarily used for modules so that, once added to a parent,
+        all of their internal nets are uniquely namespaced. Global nets like
+        GND are not modified.
+        """
+        # Work on a snapshot of keys since we may rename during iteration
+        for net_name in list(self.nets.keys()):
+            scoped = self.scoped_net_name(net_name)
+            if scoped != net_name:
+                self.change_net_name(net_name, scoped)
 
     def merge_nets(
         self, source_net_name: str, target_net_name: str, name: Optional[str] = None
@@ -349,6 +381,8 @@ class Design:
         :type net_name: Optional[str]
         :return: None
         """
+        if not isinstance(capacitor, cmp.Capacitor):
+            raise ValueError(f"Invalid capacitor: {type(capacitor)} {capacitor}")
         net_name = net_name or self._get_net_name_from_pin(self)
         self.add_component(capacitor)
         self.join_net(capacitor.pins[1], net_name)
@@ -502,9 +536,10 @@ def flatten(design) -> "Design":
                     f"{component.refdes_postfix}_{module.short_name}"
                 )
 
-            # Add to parent design
+            # Add to parent design, keyed by stable refdes string instead of hash.
+            # refdes already includes any module-specific postfix and is unique.
             component.place(design)
-            design.components[hash(component)] = component
+            design.components[component.refdes] = component
 
         # Collect port symbol pins to exclude from pin_to_net copying
         port_symbol_pins = set()

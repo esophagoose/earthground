@@ -34,6 +34,32 @@ class SOT23(ft.BaseFootprint):
         }
 
 
+class SOT23_6(ft.BaseFootprint):
+    """SOT-23-6 (Small Outline Transistor, 6-pin) package footprint."""
+
+    def __init__(self):
+        super().__init__()
+        self.name = "SOT-23-6"
+        self.description = "SOT-23-6 Surface Mount Package"
+
+        # Approximate JEDEC MO-178: 0.95 mm pitch, body ~3.0 × 2.8 mm.
+        aperture = ap_lib.ApertureRectangle(0.9, 0.6)
+
+        pin_pitch = 0.95  # along the long edge
+        row_offset = 1.1  # distance from center to pad row
+
+        # Left side: pins 1 (top), 2 (mid), 3 (bottom)
+        # Right side: pins 4 (bottom), 5 (mid), 6 (top)
+        self.pads = {
+            1: ft.Pad(location=[-row_offset, pin_pitch], aperture=aperture),
+            2: ft.Pad(location=[-row_offset, 0.0], aperture=aperture),
+            3: ft.Pad(location=[-row_offset, -pin_pitch], aperture=aperture),
+            4: ft.Pad(location=[row_offset, -pin_pitch], aperture=aperture),
+            5: ft.Pad(location=[row_offset, 0.0], aperture=aperture),
+            6: ft.Pad(location=[row_offset, pin_pitch], aperture=aperture),
+        }
+
+
 class SC70(ft.BaseFootprint):
     """SC-70 small-outline transistor package.
 

@@ -61,26 +61,6 @@ class BaseFootprint:
         return BoundingBox(min_x, min_y, max_x, max_y)
 
 
-class KicadFootprint(BaseFootprint):
-    def __init__(self, kicad_mod: str, schematic, builtin: bool = True):
-        super().__init__()
-        self.kicad_mod = kicad_mod
-        self.builtin = builtin
-        self.schematic = schematic
-
-    @property
-    def path(self) -> Path:
-        if self.builtin:
-            print(Path(__file__).parent / "kicad-footprints" / self.kicad_mod)
-            return (
-                Path(__file__).parent.parent.parent
-                / "kicad-footprints"
-                / self.kicad_mod
-            )
-        else:
-            return Path(self.kicad_mod)
-
-
 class EP(NamedTuple):
     aperture: ap_lib.ApertureRectangle
     via_count: int

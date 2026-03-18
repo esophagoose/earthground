@@ -57,6 +57,10 @@ class Pin:
             return False
         return self.name == other.name and (hash(self.parent) == hash(other.parent))
 
+    @property
+    def net(self):
+        return self.parent.parent.pin_to_net[self]
+
     def add_decoupling_capacitor(
         self, capacitor: "Capacitor", net_name=None, ground_net_name="GND"
     ):
@@ -115,10 +119,6 @@ class Component:
 
     def __repr__(self):
         return f"{self.name}<{self.refdes}>"
-
-    def __hash__(self) -> int:
-        # TODO: fix hashing to not rely on refdes
-        return hash(self.refdes)
 
     @property
     def refdes(self):

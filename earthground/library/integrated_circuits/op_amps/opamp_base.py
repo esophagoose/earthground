@@ -55,7 +55,7 @@ class OpAmpBase(cmp.Component):
         design.connect([cap.pins[1], opamp.pins.by_name("V+"), design.port["V+"]], "V+")
         design.connect([cap.pins[2], opamp.pins.by_name("V-"), design.port["V-"]], "V-")
         for i in range(self.channel_count):
-            if channel_config[i] == OpAmpConfigurations.NONINVERTING:
+            if channel_config[i].value == OpAmpConfigurations.NONINVERTING.value:
                 self._generate_noninverting_amplifier(design, gain, i + 1)
                 interface = self.get_interface(i + 1)
                 design.connect([interface.out, design.port[f"OUT_{i+1}"]], f"OUT_{i+1}")
@@ -66,45 +66,45 @@ class OpAmpBase(cmp.Component):
                 )
         design.layout.outline = layout.BoundingBox(x1=-15.0, y1=-8, x2=15.0, y2=8)
         design.layout.placement = {
-            "C1": layout.ComponentLayout(
-                id=layout.Position(x=2.5, y=0.0, angle=0.0),
-                component=layout.Position(x=6.0, y=0.0, angle=0.0),
+            "C1": layout.Placement(
+                id=layout.Orientation.TOP,
+                position=layout.Position(x=2.5, y=0.0, angle=0.0),
             ),
-            "R1": layout.ComponentLayout(
-                id=layout.Position(x=3.0, y=0.0, angle=0.0),
-                component=layout.Position(x=-6.0, y=-1.5, angle=180.0),
+            "R1": layout.Placement(
+                id=layout.Orientation.LEFT,
+                position=layout.Position(x=-6.0, y=-1.5, angle=180.0),
             ),
-            "R2": layout.ComponentLayout(
-                id=layout.Position(x=-3.0, y=0.0, angle=0.0),
-                component=layout.Position(x=4.0, y=-3.5, angle=180.0),
+            "R2": layout.Placement(
+                id=layout.Orientation.TOP,
+                position=layout.Position(x=4.0, y=-3.5, angle=180.0),
             ),
-            "R3": layout.ComponentLayout(
-                id=layout.Position(x=-3.0, y=0.0, angle=0.0),
-                component=layout.Position(x=-4.0, y=-3.5, angle=0.0),
+            "R3": layout.Placement(
+                id=layout.Orientation.TOP,
+                position=layout.Position(x=-4.0, y=-3.5, angle=0.0),
             ),
-            "R4": layout.ComponentLayout(
-                id=layout.Position(x=3.0, y=0.0, angle=0.0),
-                component=layout.Position(x=-6.0, y=1.5, angle=180.0),
+            "R4": layout.Placement(
+                id=layout.Orientation.TOP,
+                position=layout.Position(x=-6.0, y=1.5, angle=180.0),
             ),
-            "R5": layout.ComponentLayout(
-                id=layout.Position(x=-2.5, y=0.0, angle=0.0),
-                component=layout.Position(x=4.0, y=3.5, angle=180.0),
+            "R5": layout.Placement(
+                id=layout.Orientation.TOP,
+                position=layout.Position(x=4.0, y=3.5, angle=180.0),
             ),
-            "R6": layout.ComponentLayout(
-                id=layout.Position(x=2.5, y=0.0, angle=0.0),
-                component=layout.Position(x=6.0, y=1.5, angle=0.0),
+            "R6": layout.Placement(
+                id=layout.Orientation.TOP,
+                position=layout.Position(x=6.0, y=1.5, angle=0.0),
             ),
-            "R7": layout.ComponentLayout(
-                id=layout.Position(x=3.0, y=0.0, angle=0.0),
-                component=layout.Position(x=-4.0, y=3.5, angle=180.0),
+            "R7": layout.Placement(
+                id=layout.Orientation.TOP,
+                position=layout.Position(x=-4.0, y=3.5, angle=180.0),
             ),
-            "R8": layout.ComponentLayout(
-                id=layout.Position(x=2.5, y=0.0, angle=0.0),
-                component=layout.Position(x=6.0, y=-1.5, angle=0.0),
+            "R8": layout.Placement(
+                id=layout.Orientation.TOP,
+                position=layout.Position(x=6.0, y=-1.5, angle=0.0),
             ),
-            "U1": layout.ComponentLayout(
-                id=layout.Position(x=0.0, y=-3.5, angle=0.0),
-                component=layout.Position(x=0.0, y=0.0, angle=0.0),
+            "U1": layout.Placement(
+                id=layout.Orientation.BOTTOM,
+                position=layout.Position(x=0.0, y=0.0, angle=0.0),
             ),
         }
         return design
