@@ -18,6 +18,8 @@ Add a KiCad schematic exporter for `earthground.schematic.Design` that produces 
   - short wire stubs plus `LocalLabel` for multi-drop or awkward local nets
   - built-in KiCad power symbols for recognized power and ground rails
 - Draw every emitted wire segment orthogonally. When a routed connection needs bends, use a horizontal-then-vertical-then-horizontal dogleg with the vertical trunk placed at the X midpoint between endpoints.
+- Prevent overlapping tracks between different nets. No horizontal segment may overlap another net's horizontal segment on the same Y track, and no vertical segment may overlap another net's vertical segment on the same X track.
+- When a midpoint dogleg would overlap an occupied track, offset the route by the schematic grid size while keeping the route orthogonal. If no free grid-aligned track is available within the bounded search window, fall back to labeled stubs for that net.
 - Prefer built-in KiCad power symbols only when the net name maps cleanly to a known power symbol. Otherwise fall back to labeled stubs.
 - Keep the public conversion boundary in `kicad_schematic.py`; use a separate helper/writer to emit the full file set.
 
@@ -87,6 +89,7 @@ The initial heuristic should prioritize readability and determinism over compact
 - sheet rectangles have stable sizes and pin order
 - direct-wire routing stays simple enough to avoid self-intersections in common cases
 - all drawn wires remain orthogonal, using a shared midpoint dogleg rule for bent connections
+- direct-routed nets use grid-aligned offset search to avoid overlapping horizontal or vertical tracks from other nets
 
 ## Data Flow
 
@@ -136,6 +139,8 @@ Use the hybrid connectivity policy selected during design review:
 - If a direct-wire attempt would require complex routing, degrade to labeled stubs instead of failing export.
 - Every actual wire that is drawn must use orthogonal segments only.
 - The default bend rule for routed connections is horizontal-then-vertical-then-horizontal, with the vertical segment at the X midpoint between the two endpoints.
+- If the default bend would overlap another net on the same horizontal or vertical track, the router must search neighboring grid-aligned tracks for a free route.
+- If no free route is found within the bounded search window, the exporter should fall back to labeled stubs for that net instead of emitting overlapping segments.
 
 The first version does not need a general-purpose schematic router. It only needs deterministic, readable output for common designs.
 
