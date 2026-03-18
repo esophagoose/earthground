@@ -17,6 +17,7 @@ Add a KiCad schematic exporter for `earthground.schematic.Design` that produces 
   - direct wires for simple local point-to-point nets
   - short wire stubs plus `LocalLabel` for multi-drop or awkward local nets
   - built-in KiCad power symbols for recognized power and ground rails
+- Draw every emitted wire segment orthogonally. When a routed connection needs bends, use a horizontal-then-vertical-then-horizontal dogleg with the vertical trunk placed at the X midpoint between endpoints.
 - Prefer built-in KiCad power symbols only when the net name maps cleanly to a known power symbol. Otherwise fall back to labeled stubs.
 - Keep the public conversion boundary in `kicad_schematic.py`; use a separate helper/writer to emit the full file set.
 
@@ -85,6 +86,7 @@ The initial heuristic should prioritize readability and determinism over compact
 - symbols do not overlap
 - sheet rectangles have stable sizes and pin order
 - direct-wire routing stays simple enough to avoid self-intersections in common cases
+- all drawn wires remain orthogonal, using a shared midpoint dogleg rule for bent connections
 
 ## Data Flow
 
@@ -132,6 +134,8 @@ Use the hybrid connectivity policy selected during design review:
 - For simple two-pin nets on the same page, prefer direct wires.
 - For multi-drop nets or awkward routes, prefer short wire stubs plus `LocalLabel` with the shared net name.
 - If a direct-wire attempt would require complex routing, degrade to labeled stubs instead of failing export.
+- Every actual wire that is drawn must use orthogonal segments only.
+- The default bend rule for routed connections is horizontal-then-vertical-then-horizontal, with the vertical segment at the X midpoint between the two endpoints.
 
 The first version does not need a general-purpose schematic router. It only needs deterministic, readable output for common designs.
 
