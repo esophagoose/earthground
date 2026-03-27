@@ -56,6 +56,12 @@ class PourLayer(NamedTuple):
     net_name: str
     layer: int
 
+
+class Layer(enum.Enum):
+    TOP = enum.auto()
+    BOTTOM = enum.auto()
+
+
 class Orientation(enum.Enum):
     TOP = enum.auto()
     BOTTOM = enum.auto()
@@ -67,11 +73,13 @@ class Orientation(enum.Enum):
 class Placement:
     position: Position
     id: Optional[Orientation] = None
+    layer: Layer = Layer.TOP
 
 class ComponentLayout(NamedTuple):
     id: Position
     id_orientation: Orientation
     component: Position
+    layer: Layer = Layer.TOP
 
 def round_to_nearest(x: float, step: float) -> float:
     """Round x to the nearest given float step."""
@@ -92,7 +100,6 @@ class Layout:
         floating_components = list(
             set(self.design.components.keys()) - set(self.placement.keys())
         )
-        # import code; code.interact(local=dict(globals(), **locals()))
         if id not in self.placement and id not in self.design.components:
             raise ValueError(
                 f"Cannot get placement for {id}. Component not in {self.design.name}"
@@ -111,13 +118,20 @@ class Layout:
                 id=Position(x=0, y=0, angle=0),
                 id_orientation=Orientation.CENTER,
                 component=Position(x=x, y=y, angle=0),
+                layer=Layer.TOP,
             )
-        if not self.placement[id].id:
+        if id not in self.design.components:
+            raise ValueError(f"Component {id} is not found in the design: {list(self.design.components.keys())}")
+        if not self.placement[id].id or self.design.components[id].virtual:
+            if self.design.components[id].virtual and self.placement[id].id:
+                logging.warning(f"Placement ID is set but ignored on modules: {id}")
             return ComponentLayout(
                 id=Position(x=0, y=0, angle=0),
                 id_orientation=Orientation.CENTER,
                 component=self.placement[id].position,
+                layer=self.placement[id].layer,
             )
+
         component = self.design.components[id]
         component_position = self.placement[id].position
         ref_id = self.placement[id].id
@@ -145,26 +159,46 @@ class Layout:
         return ComponentLayout(
             id=Position(x=x, y=y, angle=component_position.angle),
             id_orientation=ref_id,
-            component=component_position
+            component=component_position,
+            layer=self.placement[id].layer,
         )
 
     def flatten(self) -> Dict[str, Tuple[ComponentLayout, cmp.Component]]:
         """
         Flatten the layout into a dictionary of component layouts.
         """
+        def combine_layer(parent_layer: Layer, child_layer: Layer) -> Layer:
+            if parent_layer == Layer.TOP:
+                return child_layer
+            return Layer.BOTTOM if child_layer == Layer.TOP else Layer.TOP
+
+        def rotate_position(position: Position, angle: float) -> Position:
+            rotation_radians = math.radians(angle)
+            cos_a = math.cos(rotation_radians)
+            sin_a = math.sin(rotation_radians)
+            new_x = position.x * cos_a - position.y * sin_a
+            new_y = position.x * sin_a + position.y * cos_a
+            return Position(x=new_x, y=new_y, angle=position.angle + angle)
+
         flattened = {}
         for cid, component in self.design.components.items():
             if isinstance(component, cmp.ModuleComponent):
-                module_position = self.get_placement(cid).component
+                module_layout = self.get_placement(cid)
+                module_position = module_layout.component
                 flat_module = component.parent.layout.flatten()
                 for module_cid, comp in flat_module.items():
                     layout, component = comp
+                    rotated_component = rotate_position(
+                        layout.component, module_position.angle
+                    )
+                    rotated_id = rotate_position(layout.id, module_position.angle)
                     layout = ComponentLayout(
-                        id=layout.id,
+                        id=rotated_id,
                         id_orientation=layout.id_orientation,
-                        component=layout.component.translate(
+                        component=rotated_component.translate(
                             module_position.x, module_position.y
                         ),
+                        layer=combine_layer(module_layout.layer, layout.layer),
                     )
                     flattened[f"{cid}_{module_cid}"] = (layout, component)
             elif isinstance(component, cmp.Component):
