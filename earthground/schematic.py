@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Union
 import earthground.components as cmp
 import earthground.layout as layout_lib
 import earthground.footprints.passives as passives
-
+import earthground.standard_values as sv
 
 class Ports:
     """
@@ -294,7 +294,7 @@ class Design:
 
     def set_passive_footprint(self, component: cmp.PASSIVE_TYPES):
         package_size = component.package_size or self.default_passive_size
-        name = component.refdes_prefix + package_size
+        name = component.refdes_prefix[0] + package_size
         package = passives.PassivePackage[name]
         component.footprint = passives.PassiveSmd(package)
 
@@ -334,6 +334,18 @@ class Design:
             for name, pin in bus._asdict().items():
                 self.join_net(pin, "_".join([net_name, name.upper()]))
 
+    def add_pullup_resistor(self, pin: cmp.Pin, ohms: Union[cmp.Resistor, int, str], net_name: str):
+        """
+        Helper function to automatically add a pullup resistor to a pin
+        """
+        if not isinstance(ohms, cmp.Resistor):
+            res = self.add_component(cmp.Resistor(ohms))
+        else:
+            res = ohms
+        self.join_net(res.pins[1], net_name)
+        self.connect([res.pins[2], pin])
+        return res
+
     def add_series_res(
         self,
         pin1: cmp.Pin,
@@ -368,6 +380,25 @@ class Design:
         self.join_net(res.pins[2], next_name)
         self.join_net(pin2, next_name)
         return res
+
+    def add_voltage_divider(self, 
+        input_pin: cmp.Pin, 
+        output_pin: cmp.Pin, 
+        divider: float, 
+        resistance: float, 
+        output_net_name: Optional[str] = None,
+        ground_net_name: str = "GND"
+    ) -> cmp.Pin:
+        """
+        Helper function to automatically add a voltage divider to a pin
+        """
+        r1, r2 = sv.voltage_divider(1, divider, resistance)
+        res1 = self.add_component(cmp.Resistor(r1))
+        res2 = self.add_component(cmp.Resistor(r2))
+        self.connect([res1.pins[1], input_pin])
+        self.connect([res1.pins[2], res2.pins[1], output_pin], output_net_name)
+        self.join_net(res2.pins[2], ground_net_name)
+
 
     def add_decoupling_capacitor(
         self, capacitor: cmp.Capacitor, net_name=None, ground_net_name="GND"

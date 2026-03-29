@@ -360,13 +360,15 @@ class PinContainer:
         :type name: Union[str, List[str]]
         :raises ValueError: If the name parameter is not a string or a list of strings.
         """
+        pins = []
         if not isinstance(name, (str, list)):
             raise ValueError("'name' must be a str or list of str!")
         for pin in self._pins:
             if isinstance(name, str) and pin.name == name:
-                yield pin
+                pins.append(pin)
             elif isinstance(name, list) and pin.name in name:
-                yield pin
+                pins.append(pin)
+        return pins
 
 
 def pin_sort_key(pin: "Pin") -> tuple:

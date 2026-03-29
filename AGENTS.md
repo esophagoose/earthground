@@ -1,1 +1,0 @@
-use `python3` to run a python script. Prefer to use `uv` to run python scripts.

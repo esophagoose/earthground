@@ -67,8 +67,8 @@ class OpAmpBase(cmp.Component):
         design.layout.outline = layout.BoundingBox(x1=-15.0, y1=-8, x2=15.0, y2=8)
         design.layout.placement = {
             "C1": layout.Placement(
-                id=layout.Orientation.TOP,
-                position=layout.Position(x=2.5, y=0.0, angle=0.0),
+                id=layout.Orientation.LEFT,
+                position=layout.Position(x=-6.0, y=0.0, angle=180),
             ),
             "R1": layout.Placement(
                 id=layout.Orientation.LEFT,
@@ -137,7 +137,7 @@ class OpAmpBase(cmp.Component):
         # So R2/R1 = gain - 1
         # Use standard resistor values
         ratio = gain - 1
-        r1_value, r2_value = sv.find_closest_ratio(ratio)
+        r2_value, r1_value = sv.find_closest_ratio(ratio)
 
         r1 = design.add_component(cmp.Resistor(f"{r1_value}k", tolerance="0.1%"))
         r2 = design.add_component(cmp.Resistor(f"{r2_value}k", tolerance="0.1%"))

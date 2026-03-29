@@ -159,10 +159,7 @@ class LM317AMDTX(cmp.Component):
             ),
             "U1": layout_lib.Placement(
                 position=layout_lib.Position(x=0.0, y=0.0, angle=0.0),
-            ),
-            "REG1": layout_lib.Placement(
-                position=layout_lib.Position(x=0.0, y=20.0, angle=0.0),
-            ),
+            )
         }
         return design
 
@@ -172,4 +169,11 @@ if __name__ == "__main__":
 
     design = LM317AMDTX.generate_design(3.3)
     design.add_module(LM317AMDTX.generate_design(3.3))
+
+    design.layout.placement.update({
+        "REG1": layout_lib.Placement(
+            id=layout_lib.Orientation.RIGHT,
+            position=layout_lib.Position(x=0, y=0, angle=0),
+        )
+    })
     kicad.KicadExporter(design).save()

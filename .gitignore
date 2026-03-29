@@ -163,5 +163,4 @@ cython_debug/
 .DS_Store
 uv.lock
 generated_outputs/
-examples/
 projects/
