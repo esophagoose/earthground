@@ -1,0 +1,60 @@
+C10:
+  description: CAP_1.0uF_10.0V
+  layer: TOP
+  x: 50.0
+  y: 50.0
+  rotation: 0.0
+C4:
+  description: CAP_100.0nF_50.0V
+  layer: TOP
+  x: 40.0
+  y: 100.0
+  rotation: 0.0
+C5:
+  description: CAP_1.0uF_10.0V
+  layer: TOP
+  x: 50.0
+  y: 100.0
+  rotation: 0.0
+C9:
+  description: CAP_100.0nF_50.0V
+  layer: TOP
+  x: 40.0
+  y: 50.0
+  rotation: 0.0
+R2:
+  description: "RES_240.0\u03A9"
+  layer: TOP
+  x: 20.0
+  y: 100.0
+  rotation: 0.0
+R3:
+  description: "RES_394.0\u03A9"
+  layer: TOP
+  x: 30.0
+  y: 100.0
+  rotation: 0.0
+R7:
+  description: "RES_240.0\u03A9"
+  layer: TOP
+  x: 10.0
+  y: 45.0
+  rotation: 0.0
+R8:
+  description: "RES_394.0\u03A9"
+  layer: TOP
+  x: 10.0
+  y: 54.0
+  rotation: 0.0
+REG1:
+  description: IC REG LIN POS ADJ 1A SOT-223
+  layer: TOP
+  x: 10.0
+  y: 100.0
+  rotation: 0.0
+REG6:
+  description: IC REG LIN POS ADJ 1A SOT-223
+  layer: TOP
+  x: 10.0
+  y: 50.0
+  rotation: 0.0
