@@ -3,6 +3,7 @@ import earthground.schematic as sch
 
 DEFAULT_PORTS = ["VLOGIC", "GND", "IN+", "IN-", "OUT"]
 
+
 class CurrentSenseAmplifier(cmp.Component):
     """
     Base class for current sense amplifiers.

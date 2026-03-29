@@ -1,5 +1,6 @@
 import earthground.components as cmp
-from earthground.exporters.schematic_generation.autoplace import autoplace_design_page
+from earthground.exporters.schematic_generation.autoplace import \
+    autoplace_design_page
 from earthground.schematic import Design
 
 

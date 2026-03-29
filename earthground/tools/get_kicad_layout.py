@@ -192,9 +192,7 @@ def main():
             if placements:
                 print_layouts(placements)
             else:
-                logger.warning(
-                    "No placements were extracted from the board file"
-                )
+                logger.warning("No placements were extracted from the board file")
                 sys.exit(1)
         except Exception as e:
             logger.error(f"Error processing file: {e}", exc_info=True)

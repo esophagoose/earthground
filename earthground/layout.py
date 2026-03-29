@@ -16,6 +16,7 @@ GRID_SIZE = 0.5
 TEXT_HEIGHT = 1
 TEXT_PADDING = 0.5
 
+
 class Position(NamedTuple):
     x: float
     y: float
@@ -69,17 +70,20 @@ class Orientation(enum.Enum):
     RIGHT = enum.auto()
     CENTER = enum.auto()
 
+
 @dataclasses.dataclass
 class Placement:
     position: Position
     id: Optional[Orientation] = None
     layer: Layer = Layer.TOP
 
+
 class ComponentLayout(NamedTuple):
     id: Position
     id_orientation: Orientation
     component: Position
     layer: Layer = Layer.TOP
+
 
 def round_to_nearest(x: float, step: float) -> float:
     """Round x to the nearest given float step."""
@@ -121,7 +125,9 @@ class Layout:
                 layer=Layer.TOP,
             )
         if id not in self.design.components:
-            raise ValueError(f"Component {id} is not found in the design: {list(self.design.components.keys())}")
+            raise ValueError(
+                f"Component {id} is not found in the design: {list(self.design.components.keys())}"
+            )
         if not self.placement[id].id or self.design.components[id].virtual:
             if self.design.components[id].virtual and self.placement[id].id:
                 logging.warning(f"Placement ID is set but ignored on modules: {id}")
@@ -167,6 +173,7 @@ class Layout:
         """
         Flatten the layout into a dictionary of component layouts.
         """
+
         def combine_layer(parent_layer: Layer, child_layer: Layer) -> Layer:
             if parent_layer == Layer.TOP:
                 return child_layer

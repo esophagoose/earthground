@@ -1,10 +1,6 @@
 from __future__ import annotations
 
 import enum
-import pathlib
-import re
-from dataclasses import dataclass
-from typing import FrozenSet, Iterable, List, Optional, Sequence, Union
 
 import pygerber.aperture as ap_lib
 
@@ -17,7 +13,7 @@ from earthground.library.protocols.serial import I2C
 
 class JstFamily(enum.Enum):
     ACH = "ACH"
-    AUH = "AUH" 
+    AUH = "AUH"
     EH = "EH"
     GH = "GH"
     J2100 = "J2100"
@@ -56,8 +52,10 @@ class JstConnector(cmp.Component):
         self.description = f"CONN HEADER {pin_count}POS 2.5MM {style.value}"
         self.detailed_description = f"JST {family.value} series {pin_count}pin"
         self.pins = cmp.PinContainer.from_count(pin_count, self)
-        self.footprint = kicad.KicadImporter().import_footprint("Connector_JST", self.get_symbol())
-    
+        self.footprint = kicad.KicadImporter().import_footprint(
+            "Connector_JST", self.get_symbol()
+        )
+
     def get_symbol(self) -> str:
         if self.family != JstFamily.SH.value:
             raise NotImplementedError(f"{self.family} family is not supported yet")

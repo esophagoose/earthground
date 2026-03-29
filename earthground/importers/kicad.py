@@ -1,7 +1,5 @@
-
-
-import sys
 import pathlib
+import sys
 from typing import List, Optional, Union
 
 import kiutils.footprint as kfp
@@ -10,11 +8,10 @@ import kiutils.utils.sexpr as sexpr_utils
 import earthground.footprint_types as ft
 from earthground.footprint_types import BoundingBox
 
-
 DEFAULT_FOOTPRINT_PATH = {
-    "darwin": '/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints/',
-    "linux": '/usr/share/kicad/modules/',
-    "windows": 'C:/Program Files/KiCad/share/kicad/modules/',
+    "darwin": "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints/",
+    "linux": "/usr/share/kicad/modules/",
+    "windows": "C:/Program Files/KiCad/share/kicad/modules/",
 }
 
 
@@ -64,7 +61,7 @@ class KicadFootprint(ft.BaseFootprint):
 
         for pad in kicad_fp.pads:
             pos = pad.position  # kiutils.items.common.Position
-            size = pad.size     # Position(width, height)
+            size = pad.size  # Position(width, height)
             hw = size.X / 2.0
             hh = size.Y / 2.0
             min_x = min(min_x, pos.X - hw)
@@ -95,16 +92,24 @@ class KicadImporter:
         if additional_lib_paths:
             self.lib_paths.extend(pathlib.Path(p) for p in additional_lib_paths)
         self.lib_paths.append(pathlib.Path(DEFAULT_FOOTPRINT_PATH[sys.platform]))
-    
+
     def get_footprint_path(self, library: str, footprint_name: str) -> pathlib.Path:
         library_path = library if library.endswith(".pretty") else f"{library}.pretty"
-        footprint_path = footprint_name if footprint_name.endswith(".kicad_mod") else f"{footprint_name}.kicad_mod"
+        footprint_path = (
+            footprint_name
+            if footprint_name.endswith(".kicad_mod")
+            else f"{footprint_name}.kicad_mod"
+        )
         for path in self.lib_paths:
             if (path / library_path / footprint_path).exists():
                 return path / library_path / footprint_path
-        raise FileNotFoundError(f"Footprint '{footprint_path}' or library '{library_path}' not found in path")
+        raise FileNotFoundError(
+            f"Footprint '{footprint_path}' or library '{library_path}' not found in path"
+        )
 
-    def import_footprint(self, library: str, footprint_name: str) -> Optional[KicadFootprint]:
+    def import_footprint(
+        self, library: str, footprint_name: str
+    ) -> Optional[KicadFootprint]:
         with open(self.get_footprint_path(library, footprint_name), "r") as file:
             sexp = file.read()
             return KicadFootprint(library, footprint_name, sexp)

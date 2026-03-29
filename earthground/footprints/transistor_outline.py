@@ -67,11 +67,14 @@ class TO263(ft.BaseFootprint):
 
 class TO277A(ft.BaseFootprint):
     """TO-277A (PSMC/SMPC) package footprint — flat power Schottky rectifier."""
+
     # TODO: Check footprint
     def __init__(self):
         super().__init__()
         self.name = "TO-277A"
-        self.description = "TO-277A (PSMC/SMPC) Surface Mount Package, 2 pins + thermal pad"
+        self.description = (
+            "TO-277A (PSMC/SMPC) Surface Mount Package, 2 pins + thermal pad"
+        )
 
         # TO-277A: 4.6 x 6.5 mm body, 1.1 mm height. Pitch 2.13 mm between pins 1 and 2.
         # Pin 1: Anode (left), Pin 2: Cathode (thermal pad), Pin 3: Anode (right)

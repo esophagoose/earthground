@@ -1,5 +1,6 @@
-import earthground.footprint_types as ft
 import pygerber.aperture as ap_lib
+
+import earthground.footprint_types as ft
 
 
 def test_quad_side_locations():

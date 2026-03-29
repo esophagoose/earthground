@@ -1,11 +1,10 @@
 import earthground.components as cmp
-from earthground.exporters.schematic_generation.power_symbols import (
-    get_power_symbol_reference,
-)
-from earthground.exporters.schematic_generation.symbols.kicad_symbol import (
-    symbol_reference_for_component,
-)
-from earthground.exporters.schematic_generation.symbols.symbol import VisualSymbol
+from earthground.exporters.schematic_generation.power_symbols import \
+    get_power_symbol_reference
+from earthground.exporters.schematic_generation.symbols.kicad_symbol import \
+    symbol_reference_for_component
+from earthground.exporters.schematic_generation.symbols.symbol import \
+    VisualSymbol
 from earthground.library.integrated_circuits.io_expanders import tca9535pwr
 
 
@@ -15,10 +14,7 @@ def test_passive_components_use_builtin_symbol_references():
     inductor_reference = symbol_reference_for_component(cmp.Inductor(1e-6))
 
     assert resistor_reference.library_id == "Device:R"
-    assert (
-        capacitor_reference.library_id
-        == "Device:C"
-    )
+    assert capacitor_reference.library_id == "Device:C"
     assert inductor_reference.library_id == "Device:L"
 
 
@@ -34,7 +30,9 @@ def test_non_passive_component_generates_embedded_symbol():
     right_pin_numbers = {str(pin.index) for pin in visual_symbol.right}
     assert pins_by_number["1"].name == component.pins[1].name
     assert pins_by_number["24"].name == component.pins[24].name
-    assert all(pins_by_number[number].position.angle == 0 for number in left_pin_numbers)
+    assert all(
+        pins_by_number[number].position.angle == 0 for number in left_pin_numbers
+    )
     assert all(
         pins_by_number[number].position.angle == 180 for number in right_pin_numbers
     )

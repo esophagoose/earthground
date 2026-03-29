@@ -1,11 +1,9 @@
 from earthground.components import Capacitor, Resistor
 from earthground.exporters.kicad_sch import write_design_to_kicad_schematic
-from earthground.exporters.schematic_generation.kicad_schematic import (
-    build_schematic_bundle,
-)
-from earthground.exporters.schematic_generation.writer import (
-    write_kicad_schematic_bundle,
-)
+from earthground.exporters.schematic_generation.kicad_schematic import \
+    build_schematic_bundle
+from earthground.exporters.schematic_generation.writer import \
+    write_kicad_schematic_bundle
 from earthground.schematic import Design
 
 

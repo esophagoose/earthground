@@ -12,10 +12,10 @@ COLUMN_NAMES = ["Designator", "Mid X", "Mid Y", "Rotation", "Layer"]
 
 class JlcPcb:
     """Export component placement for JLCPCB from an earthground design.
-        It generates a CSV in with the following columns:
-        ```
-        Designator,Mid X,Mid Y,Rotation,Layer
-        ```
+    It generates a CSV in with the following columns:
+    ```
+    Designator,Mid X,Mid Y,Rotation,Layer
+    ```
     """
 
     def __init__(self, design: sch_lib.Design):

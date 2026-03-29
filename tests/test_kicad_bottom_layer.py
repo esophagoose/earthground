@@ -5,7 +5,8 @@ import earthground.exporters.kicad as kicad
 import earthground.footprints.passives as pfp
 import earthground.layout as layout_lib
 from earthground.importers.kicad import KicadFootprint
-from earthground.library.integrated_circuits.voltage_regulators.linear.lm317 import LM317AMDTX
+from earthground.library.integrated_circuits.voltage_regulators.linear.lm317 import \
+    LM317AMDTX
 from earthground.schematic import Design
 
 
@@ -37,7 +38,9 @@ def test_top_layer_placement_remains_default_and_backwards_compatible():
         ),
     )
 
-    reference = next(item for item in footprint.graphicItems if item.type == "reference")
+    reference = next(
+        item for item in footprint.graphicItems if item.type == "reference"
+    )
     assert footprint.layer == "F.Cu"
     assert footprint.position == base.Position(X=10, Y=20, angle=-90)
     assert reference.layer == "F.SilkS"
@@ -58,7 +61,9 @@ def test_bottom_layer_native_smd_footprint_uses_bottom_layers_and_mirrored_text(
         ),
     )
 
-    reference = next(item for item in footprint.graphicItems if item.type == "reference")
+    reference = next(
+        item for item in footprint.graphicItems if item.type == "reference"
+    )
     assert footprint.layer == "B.Cu"
     assert footprint.position == base.Position(X=10, Y=20, angle=-90)
     assert reference.layer == "B.SilkS"
@@ -99,7 +104,9 @@ def test_bottom_layer_imported_footprint_switches_text_and_smd_pad_layers():
         ),
     )
 
-    reference = next(item for item in footprint.graphicItems if item.type == "reference")
+    reference = next(
+        item for item in footprint.graphicItems if item.type == "reference"
+    )
     value = next(item for item in footprint.graphicItems if item.type == "value")
     assert footprint.layer == "B.Cu"
     assert footprint.position == base.Position(X=5, Y=6, angle=-180)
@@ -126,8 +133,12 @@ def test_module_placement_on_bottom_layer_pushes_child_footprints_to_bottom():
     exporter = kicad.KicadExporter(design)
     exporter.convert_to_kicad(design)
 
-    front_count = sum(1 for footprint in exporter.board.footprints if footprint.layer == "F.Cu")
-    back_count = sum(1 for footprint in exporter.board.footprints if footprint.layer == "B.Cu")
+    front_count = sum(
+        1 for footprint in exporter.board.footprints if footprint.layer == "F.Cu"
+    )
+    back_count = sum(
+        1 for footprint in exporter.board.footprints if footprint.layer == "B.Cu"
+    )
 
     assert front_count == 5
     assert back_count == 5
@@ -148,11 +159,16 @@ def test_bottom_layer_module_child_reference_stays_local_to_the_footprint():
         footprint
         for footprint in exporter.board.footprints
         if any(
-            getattr(item, "type", None) == "reference" and getattr(item, "text", None) == "REG1_U1"
+            getattr(item, "type", None) == "reference"
+            and getattr(item, "text", None) == "REG1_U1"
             for item in footprint.graphicItems
         )
     )
-    reference = next(item for item in reg1_u1.graphicItems if getattr(item, "type", None) == "reference")
+    reference = next(
+        item
+        for item in reg1_u1.graphicItems
+        if getattr(item, "type", None) == "reference"
+    )
 
     assert reg1_u1.position == base.Position(X=0.0, Y=20.0, angle=-0.0)
     assert reference.position == base.Position(X=0.0, Y=0.0, angle=0.0)
@@ -185,8 +201,14 @@ def test_bottom_layer_native_footprint_geometry_is_mirrored_across_y_axis():
         layout_lib.Layer.BOTTOM,
     )
 
-    top_ref = next(item for item in top.graphicItems if getattr(item, "type", None) == "reference")
-    bottom_ref = next(item for item in bottom.graphicItems if getattr(item, "type", None) == "reference")
+    top_ref = next(
+        item for item in top.graphicItems if getattr(item, "type", None) == "reference"
+    )
+    bottom_ref = next(
+        item
+        for item in bottom.graphicItems
+        if getattr(item, "type", None) == "reference"
+    )
 
     assert top_ref.position == base.Position(X=0, Y=-20, angle=0)
     assert bottom_ref.position == base.Position(X=0, Y=-20, angle=0)

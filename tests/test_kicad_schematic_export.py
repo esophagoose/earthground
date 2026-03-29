@@ -1,8 +1,6 @@
 import earthground.components as cmp
 from earthground.exporters.schematic_generation.kicad_schematic import (
-    build_schematic_bundle,
-    design_to_kicad_schematic,
-)
+    build_schematic_bundle, design_to_kicad_schematic)
 from earthground.schematic import Design
 
 

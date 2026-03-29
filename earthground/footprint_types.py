@@ -1,5 +1,4 @@
 import math
-from pathlib import Path
 from typing import Dict, List, NamedTuple
 
 import pygerber.aperture as ap_lib
@@ -31,7 +30,9 @@ class BoundingBox(NamedTuple):
         return Point((self.x1 + self.x2) / 2, (self.y1 + self.y2) / 2)
 
     @classmethod
-    def from_height_width(cls, x: float, y: float, height: float, width: float) -> "BoundingBox":
+    def from_height_width(
+        cls, x: float, y: float, height: float, width: float
+    ) -> "BoundingBox":
         return cls(x, y, x + width, y + height)
 
 

@@ -2,15 +2,17 @@ import logging
 from typing import Dict, List, Optional, Union
 
 import earthground.components as cmp
-import earthground.layout as layout_lib
 import earthground.footprints.passives as passives
+import earthground.layout as layout_lib
 import earthground.standard_values as sv
+
 
 class Ports:
     """
     Ports are the interface between modules and their parent.
     Structurally, they present a module as a singular component with the ports being the pins
     """
+
     def __init__(self, ports: List[str], parent: "Design"):
         self.names = ports
         self.symbol = cmp.ModuleComponent(parent.short_name)
@@ -100,7 +102,9 @@ class Design:
             self._module_names[module.short_name] = 0
         self._module_names[module.short_name] += 1
         # Assign a unique, stable short_name for this module instance
-        module.short_name = f"{module.short_name}{self._module_names[module.short_name]}"
+        module.short_name = (
+            f"{module.short_name}{self._module_names[module.short_name]}"
+        )
         # Ensure all existing module nets are scoped with the module's short_name
         module._enforce_scoped_net_names()
         if self.default_passive_size:
@@ -334,7 +338,9 @@ class Design:
             for name, pin in bus._asdict().items():
                 self.join_net(pin, "_".join([net_name, name.upper()]))
 
-    def add_pullup_resistor(self, pin: cmp.Pin, ohms: Union[cmp.Resistor, int, str], net_name: str):
+    def add_pullup_resistor(
+        self, pin: cmp.Pin, ohms: Union[cmp.Resistor, int, str], net_name: str
+    ):
         """
         Helper function to automatically add a pullup resistor to a pin
         """
@@ -381,13 +387,14 @@ class Design:
         self.join_net(pin2, next_name)
         return res
 
-    def add_voltage_divider(self, 
-        input_pin: cmp.Pin, 
-        output_pin: cmp.Pin, 
-        divider: float, 
-        resistance: float, 
+    def add_voltage_divider(
+        self,
+        input_pin: cmp.Pin,
+        output_pin: cmp.Pin,
+        divider: float,
+        resistance: float,
         output_net_name: Optional[str] = None,
-        ground_net_name: str = "GND"
+        ground_net_name: str = "GND",
     ) -> cmp.Pin:
         """
         Helper function to automatically add a voltage divider to a pin
@@ -398,7 +405,6 @@ class Design:
         self.connect([res1.pins[1], input_pin])
         self.connect([res1.pins[2], res2.pins[1], output_pin], output_net_name)
         self.join_net(res2.pins[2], ground_net_name)
-
 
     def add_decoupling_capacitor(
         self, capacitor: cmp.Capacitor, net_name=None, ground_net_name="GND"
