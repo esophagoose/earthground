@@ -12,12 +12,10 @@ COLUMN_NAMES = ["Designator", "Mid X", "Mid Y", "Rotation", "Layer"]
 
 class JlcPcb:
     """Export component placement for JLCPCB from an earthground design.
-
-    This generates a CSV in the same format as
-    `Thermal Controller V01 rev A_final-top-pos.csv`:
-
+        It generates a CSV in with the following columns:
+        ```
         Designator,Mid X,Mid Y,Rotation,Layer
-        ...
+        ```
     """
 
     def __init__(self, design: sch_lib.Design):
@@ -114,17 +112,3 @@ class JlcPcb:
                 writer.writerow(row)
         print(f"Generated BOM: {out_path}")
         return out_path
-
-
-def export_thermal_controller_positions() -> pathlib.Path:
-    """Helper to export the vendor thermal controller board to a JLC position CSV."""
-    # Local import to avoid circular dependency at module import time
-    from dispatch.thermal_controller import ThermalController
-
-    design = ThermalController()
-    exporter = JlcPcb(design)
-    return exporter.generate_bom()
-
-
-if __name__ == "__main__":
-    export_thermal_controller_positions()
