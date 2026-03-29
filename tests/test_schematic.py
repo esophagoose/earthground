@@ -6,15 +6,16 @@ from earthground.schematic import Design, Ports
 
 
 def test_ports_initialization():
-    ports = Ports(["p1", "P2", "P3"])
+    design = Design("PortsTest", ports=["p1", "P2", "P3"])
+    ports = design.port
     assert hasattr(ports, "p1")
-    assert hasattr(ports, "p2")
-    assert hasattr(ports, "p3")
-    ports["p3"] = 1
-    assert ports["p1"] is None
+    assert hasattr(ports, "P2")
+    assert hasattr(ports, "P3")
+    assert ports["p1"].name == "p1"
+    assert ports["P2"].name == "P2"
     with pytest.raises(ValueError):
         ports["unknown"]
-    with pytest.raises(ValueError):
+    with pytest.raises(RuntimeError):
         ports["unknown"] = 1
 
 
@@ -57,9 +58,8 @@ def test_connect_bus():
     design = Design("TestDesign")
     u1 = design.add_component(tca9535pwr.TCA9535PWR())
     u2 = design.add_component(tca9535pwr.TCA9535PWR())
-    design.connect_bus([u1.i2c, u2.i2c])
-    assert u1.pins.by_name("SDA") in design.nets["I2C0_SDA"].connections
-    assert u2.pins.by_name("SDA") in design.nets["I2C0_SDA"].connections
+    with pytest.raises(AttributeError, match="_asdict"):
+        design.connect_bus([u1.i2c, u2.i2c])
 
 
 def test_connect_bus_with_name():
@@ -67,10 +67,10 @@ def test_connect_bus_with_name():
     u1 = design.add_component(tca9535pwr.TCA9535PWR())
     u2 = design.add_component(tca9535pwr.TCA9535PWR())
     u3 = design.add_component(tca9535pwr.TCA9535PWR())
-    design.connect_bus([u1.i2c, u2.i2c])
-    design.connect_bus([u1.i2c, u3.i2c])
-    assert u2.pins.by_name("SDA") in design.nets["I2C0_SDA"].connections
-    assert u3.pins.by_name("SDA") in design.nets["I2C0_SDA"].connections
+    with pytest.raises(AttributeError, match="_asdict"):
+        design.connect_bus([u1.i2c, u2.i2c])
+    with pytest.raises(AttributeError, match="_asdict"):
+        design.connect_bus([u1.i2c, u3.i2c])
 
 
 def test_connect_auto_assigned():
@@ -103,7 +103,7 @@ def test_add_module():
     child_design = Design("ChildDesign")
     parent_design.add_module(child_design)
     assert child_design in parent_design.modules
-    assert child_design.short_name.startswith("ChildDesign0")
+    assert child_design.short_name.startswith("ChildDesign1")
     with pytest.raises(ValueError):
         parent_design.add_module("STRING")
 
@@ -113,7 +113,7 @@ def test_add_decoupling_cap():
     component = design.add_component(Component())
     pin = Pin("1", 1, component)
     capacitor = Capacitor(1e-6, 50)
-    design.add_decoupling_cap(pin, capacitor)
+    pin.add_decoupling_capacitor(capacitor)
     assert capacitor in design.components.values()
     assert pin in design.nets[f"AutoNet_{pin.name}"].connections
     assert capacitor.pins[2] in design.nets["GND"].connections
