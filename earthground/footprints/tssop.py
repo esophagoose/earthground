@@ -12,7 +12,7 @@ class Pitch(enum.Enum):
 
 
 class Width(enum.Enum):
-    # Part width -> pad x-center to x-center
+    # Body width : pad x-center to x-center
     W3_0MM = 4.3
     W4_4MM = 5.725
     W6_1MM = 7.425
@@ -31,6 +31,7 @@ PADS = {
 
 class TSSOP(ft.BaseFootprint):
     def __init__(self, count: int, width: Width, pitch: Pitch, pad_size: tuple) -> None:
+        super().__init__()
         aperture = PADS[pad_size]
         self.name = f"TSSOP({count})"
         self.description = (

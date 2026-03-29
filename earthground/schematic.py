@@ -2,27 +2,37 @@ import logging
 from typing import Dict, List, Optional, Union
 
 import earthground.components as cmp
-import earthground.library.footprints.passives as passives
+import earthground.footprints.passives as passives
+import earthground.layout as layout_lib
+import earthground.standard_values as sv
 
 
 class Ports:
+    """
+    Ports are the interface between modules and their parent.
+    Structurally, they present a module as a singular component with the ports being the pins
+    """
+
     def __init__(self, ports: List[str], parent: "Design"):
-        self.names = [p.lower() for p in ports]
-        self.symbol = cmp.Component("SYMBOL")
+        self.names = ports
+        self.symbol = cmp.ModuleComponent(parent.short_name)
         self.symbol.virtual = True
         self.symbol.name = parent.name
         self.symbol.pins = cmp.PinContainer.from_list(ports, self)
+        self.parent = parent
         for name in ports:
-            setattr(self, name.lower(), self.symbol.pins.by_name(name))
+            setattr(self, name, self.symbol.pins.by_name(name))
 
-    def __getitem__(self, port):
-        port = port.lower()
+    def __getitem__(self, port) -> cmp.Pin:
         if port not in self.names:
             raise ValueError(f"Unknown port: {port}. Options {self.names}")
         return getattr(self, port)
 
-    def __setitem__(self, port, value):
+    def __setitem__(self, port, value) -> None:
         raise RuntimeError("Can't direct set ports! Connect in schematic")
+
+    def __str__(self):
+        return f"SchematicPorts<{self.parent.name}>"
 
 
 class Design:
@@ -47,11 +57,28 @@ class Design:
         self.nets: Dict[str, cmp.Net] = {}
         self.pin_to_net: Dict[cmp.Pin, cmp.Net] = {}
         self.busses = {}
-        self.default_passive_size = None
-        self.port = Ports([p.lower() for p in ports], self)
+        self.default_passive_size = "0603"
+        self.port = Ports(ports, self)
         self.ground = self.add_net("GND").name
-        self._ports = [p.lower() for p in ports]
+        self.layout: layout_lib.Layout = layout_lib.Layout(self)
+        self._ports = ports
         self._module_names: Dict[str, int] = {}
+        self._cid_map: Dict[str, int] = {}
+
+    def scoped_net_name(self, raw_name: str) -> str:
+        """
+        Return the scoped net name for this design.
+
+        - Global nets like GND are left unchanged.
+        - Names already prefixed with this design's short_name_ are left unchanged.
+        - All other names are prefixed with short_name_.
+        """
+        if raw_name == "GND":
+            return raw_name
+        prefix = f"{self.short_name}_"
+        if raw_name.startswith(prefix):
+            return raw_name
+        return f"{prefix}{raw_name}"
 
     def add_module(self, module: "Design"):
         """
@@ -73,21 +100,25 @@ class Design:
             raise ValueError("Invalid module! Must be schematic.Design type")
         if module.short_name not in self._module_names:
             self._module_names[module.short_name] = 0
-        prefix = module.short_name + str(self._module_names[module.short_name])
         self._module_names[module.short_name] += 1
-        module.short_name = prefix
-        net_names = [net.name for net in module.nets.values()]
-        for net_name in net_names:
-            module.change_net_name(net_name, "_".join([prefix, net_name]))
+        # Assign a unique, stable short_name for this module instance
+        module.short_name = (
+            f"{module.short_name}{self._module_names[module.short_name]}"
+        )
+        # Ensure all existing module nets are scoped with the module's short_name
+        module._enforce_scoped_net_names()
         if self.default_passive_size:
             for component in module.components.values():
                 if isinstance(component, cmp.PASSIVE_TYPES):
                     self.set_passive_footprint(component)
         self.modules.append(module)
         self.add_component(module.port.symbol)
+        # Restore the symbol's parent to the module, since it logically belongs to the module
+        # even though it's placed in the parent design
+        module.port.symbol.parent = module
         return module
 
-    def add_component(self, component: cmp.Component):
+    def add_component(self, component: cmp.Component) -> cmp.Component:
         """
         Adds a component to the current design
 
@@ -96,13 +127,19 @@ class Design:
         :return: The component that was added, with updated footprint if applicable.
         :rtype: Component
         """
-
         logging.info(f"Adding component {component}")
-        if isinstance(component, cmp.PASSIVE_TYPES) and self.default_passive_size:
+        if isinstance(component, cmp.PASSIVE_TYPES):
             self.set_passive_footprint(component)
-        self.components[hash(component)] = component
-        component.parent = self
-        return component
+
+        if not component.is_in_design:
+            self._cid_map[component.refdes_prefix] = (
+                self._cid_map.get(component.refdes_prefix, 0) + 1
+            )
+            cid = component.refdes_prefix + str(self._cid_map[component.refdes_prefix])
+            self.components[cid] = component
+            component.place(self)
+            return component
+        raise ValueError(f"Component is already in the design! {component}")
 
     def add_net(self, name) -> cmp.Net:
         """
@@ -142,8 +179,13 @@ class Design:
         :return: The net to which the pin was successfully joined.
         :rtype: earthground.components.Net
         """
-        # error = f"Floating part {pin.parent}! Did you forget to add it?"
-        # assert pin.parent in self.components.values(), error
+        # If the pin is a port, then the net inside the module should be changed
+        if isinstance(pin.parent, Ports):
+            module_design: Design = pin.parent.parent
+            if pin in module_design.pin_to_net:
+                module_design.change_net_name(
+                    module_design.pin_to_net[pin].name, net_name
+                )
         if net_name not in self.nets:
             self.nets[net_name] = cmp.Net(net_name)
         net = self.nets[net_name]
@@ -160,9 +202,63 @@ class Design:
         :type new_net_name: str
         :return: None
         """
-        logging.warning(f"Overwriting net {old_net_name} to {new_net_name}")
+        logging.info(f"Overwriting net {old_net_name} to {new_net_name}")
         self.nets[new_net_name] = self.nets.pop(old_net_name)
         self.nets[new_net_name].name = new_net_name
+
+    def _enforce_scoped_net_names(self) -> None:
+        """
+        Ensure all non-global nets in this design are scoped with short_name_.
+
+        This is primarily used for modules so that, once added to a parent,
+        all of their internal nets are uniquely namespaced. Global nets like
+        GND are not modified.
+        """
+        # Work on a snapshot of keys since we may rename during iteration
+        for net_name in list(self.nets.keys()):
+            scoped = self.scoped_net_name(net_name)
+            if scoped != net_name:
+                self.change_net_name(net_name, scoped)
+
+    def merge_nets(
+        self, source_net_name: str, target_net_name: str, name: Optional[str] = None
+    ) -> None:
+        """
+        Merges two nets together, moving all connections from the source net to the target net.
+
+        :param source_net_name: The name of the net to merge from (will be removed after merging).
+        :type source_net_name: str
+        :param target_net_name: The name of the net to merge into (will contain all connections after merging).
+        :type target_net_name: str
+        :param name: Optional new name for the merged net. If None, uses target_net_name.
+        :type name: Optional[str]
+        :return: None
+        :raises KeyError: If either source_net_name or target_net_name doesn't exist in the design.
+        """
+        if source_net_name not in self.nets:
+            raise KeyError(f"Source net '{source_net_name}' does not exist in design")
+        if target_net_name not in self.nets:
+            raise KeyError(f"Target net '{target_net_name}' does not exist in design")
+        if source_net_name == target_net_name:
+            raise RuntimeError(
+                f"Source and target net are the same: '{source_net_name}'"
+            )
+
+        source_net = self.nets[source_net_name]
+        target_net = self.nets[target_net_name]
+
+        # Move all pins from source net to target net
+        for pin in list(source_net.connections):
+            # Update pin_to_net mapping
+            self.pin_to_net[pin] = target_net
+            target_net.connections.add(pin)
+
+        # Remove the source net
+        del self.nets[source_net_name]
+
+        # Rename target net if a new name is provided
+        if name and name != target_net_name:
+            self.change_net_name(target_net_name, name)
 
     def connect(self, list_of_pins: List[cmp.Pin], net_name=None):
         """
@@ -200,8 +296,9 @@ class Design:
             if net_name.startswith(bus_type) and net_name.endswith(name.upper()):
                 return int(net_name[len(bus_type)])
 
-    def set_passive_footprint(self, component):
-        name = type(component).__name__[0] + self.default_passive_size
+    def set_passive_footprint(self, component: cmp.PASSIVE_TYPES):
+        package_size = component.package_size or self.default_passive_size
+        name = component.refdes_prefix[0] + package_size
         package = passives.PassivePackage[name]
         component.footprint = passives.PassiveSmd(package)
 
@@ -241,23 +338,19 @@ class Design:
             for name, pin in bus._asdict().items():
                 self.join_net(pin, "_".join([net_name, name.upper()]))
 
-    def add_decoupling_cap(self, pin, capacitor: cmp.Capacitor, net_name=None):
+    def add_pullup_resistor(
+        self, pin: cmp.Pin, ohms: Union[cmp.Resistor, int, str], net_name: str
+    ):
         """
-        Helper function to automatically add a decoupling cap to a pin
-
-        :param pin: The pin to which the decoupling capacitor will be added.
-        :param capacitor: The decoupling capacitor to add.
-        :param net_name: (Optional) The name of the net to which the capacitor will be connected. If not provided, it will be determined based on the pin.
-        :type pin: earthground.components.Pin
-        :type capacitor: earthground.components.Capacitor
-        :type net_name: Optional[str]
-        :return: None
+        Helper function to automatically add a pullup resistor to a pin
         """
-        net_name = net_name or self._get_net_name_from_pin(pin)
-        self.add_component(capacitor)
-        self.join_net(pin, net_name)
-        self.join_net(capacitor.pins[1], net_name)
-        self.join_net(capacitor.pins[2], self.ground)
+        if not isinstance(ohms, cmp.Resistor):
+            res = self.add_component(cmp.Resistor(ohms))
+        else:
+            res = ohms
+        self.join_net(res.pins[1], net_name)
+        self.connect([res.pins[2], pin])
+        return res
 
     def add_series_res(
         self,
@@ -293,6 +386,83 @@ class Design:
         self.join_net(res.pins[2], next_name)
         self.join_net(pin2, next_name)
         return res
+
+    def add_voltage_divider(
+        self,
+        input_pin: cmp.Pin,
+        output_pin: cmp.Pin,
+        divider: float,
+        resistance: float,
+        output_net_name: Optional[str] = None,
+        ground_net_name: str = "GND",
+    ) -> cmp.Pin:
+        """
+        Helper function to automatically add a voltage divider to a pin
+        """
+        r1, r2 = sv.voltage_divider(1, divider, resistance)
+        res1 = self.add_component(cmp.Resistor(r1))
+        res2 = self.add_component(cmp.Resistor(r2))
+        self.connect([res1.pins[1], input_pin])
+        self.connect([res1.pins[2], res2.pins[1], output_pin], output_net_name)
+        self.join_net(res2.pins[2], ground_net_name)
+
+    def add_decoupling_capacitor(
+        self, capacitor: cmp.Capacitor, net_name=None, ground_net_name="GND"
+    ):
+        """
+        Helper function to automatically add a decoupling capacitor to a pin
+
+        :param capacitor: The decoupling capacitor to add.
+        :param net_name: (Optional) The name of the net to which the capacitor will be connected. If not provided, it will be determined based on the pin.
+        :type capacitor: earthground.components.Capacitor
+        :type net_name: Optional[str]
+        :return: None
+        """
+        if not isinstance(capacitor, cmp.Capacitor):
+            raise ValueError(f"Invalid capacitor: {type(capacitor)} {capacitor}")
+        net_name = net_name or self._get_net_name_from_pin(self)
+        self.add_component(capacitor)
+        self.join_net(capacitor.pins[1], net_name)
+        self.join_net(capacitor.pins[2], ground_net_name)
+
+    def set_ports(self, port_connections: Dict[str, Union[str, cmp.Pin]]) -> None:
+        """
+        Sets connections for the design's ports.
+
+        This method allows for connecting ports to either net names or pins.
+        If a port is connected to a net name, the corresponding pin will be joined to that net.
+        If a port is connected to a pin, both will be joined to the same net.
+
+        :param port_connections: Dictionary mapping port names to either net names or pins
+        :type port_connections: Dict[str, Union[str, cmp.Pin]]
+        :return: None
+        :raises ValueError: If a port name doesn't exist in the design
+        """
+        for port_name, connection in port_connections.items():
+            if port_name not in self.port.names:
+                raise ValueError(
+                    f"Port '{port_name}' does not exist in design '{self.name}'"
+                )
+
+            port_pin = self.port[port_name]
+            if isinstance(connection, str):
+                # Connect port to a net name
+                self.join_net(port_pin, connection)
+            elif isinstance(connection, cmp.Pin):
+                # Connect port to another pin
+                if connection in self.pin_to_net:
+                    # If the pin is already connected to a net, join the port to that net
+                    net_name = self.pin_to_net[connection].name
+                    self.join_net(port_pin, net_name)
+                else:
+                    # Create a new net based on the port name
+                    net_name = f"{self.short_name}_{port_name}"
+                    self.join_net(port_pin, net_name)
+                    self.join_net(connection, net_name)
+            else:
+                raise ValueError(
+                    f"Invalid connection type for port '{port_name}': {type(connection)}"
+                )
 
     def validate(self, skip_footprint_check=False, check_no_single_connections=False):
         errors = []
@@ -357,12 +527,87 @@ class Design:
         Prints visual representation of a design to the stdout
         """
         for component in self.components.values():
-            pad = max([len(p.name) for p in component.pins]) + 2
-            print(f"{component.refdes} ({component.name})")
-            print("." + "-" * pad + ".")
-            for pin in sorted(component.pins, key=lambda p: p.name):
-                connection = "<NO CONNECTION>"
-                if pin in self.pin_to_net:
-                    connection = self.pin_to_net[pin].name
-                print(f"|{pin.name.rjust(pad)}|-- {connection}")
-            print("'" + "-" * pad + "'\n")
+            component.print()
+
+
+def flatten(design) -> "Design":
+    """
+    Merges all modules into the design, flattening the hierarchical structure.
+
+    This method:
+    - Moves all components from modules into the parent design
+    - Appends module short_name to component reference designators
+    - Merges nets through ports (connects module internal nets to parent nets via ports)
+    - Removes module symbols and clears the modules list
+
+    :return: Design object
+    :rtype: Design
+    """
+    # Process modules
+    for module in list(design.modules):
+        # Recursively flatten the module
+        module = flatten(module)
+        # Store port pin to net mappings for merging
+        # Maps module net names to parent net names for nets connected through ports
+        port_net_mappings = {}
+        for name in module.port.names:
+            port = module.port[name]
+            # Check if port pin is connected to a parent net
+            parent_net = design.pin_to_net.get(port)
+            module_net = module.pin_to_net.get(port)
+            if module_net and parent_net:
+                port_net_mappings[module_net.name] = parent_net.name
+
+        # Move all components from module to parent
+        module_components = list(module.components.values())
+        for component in module_components:
+            # Skip the virtual port symbol
+            if component.virtual:
+                continue
+
+            # Update refdes_postfix to include module short_name
+            if not component.refdes_postfix:
+                component.refdes_postfix = module.short_name
+            else:
+                component.refdes_postfix = (
+                    f"{component.refdes_postfix}_{module.short_name}"
+                )
+
+            # Add to parent design, keyed by stable refdes string instead of hash.
+            # refdes already includes any module-specific postfix and is unique.
+            component.place(design)
+            design.components[component.refdes] = component
+
+        # Collect port symbol pins to exclude from pin_to_net copying
+        port_symbol_pins = set()
+        for port_name in module.port.names:
+            port_pin = module.port[port_name]
+            port_symbol_pins.add(port_pin)
+
+        # Move all nets to parent first
+        for net_name, net in list(module.nets.items()):
+            if net_name not in design.nets:
+                design.nets[net_name] = net
+            else:
+                # Net already exists, merge connections
+                existing_net = design.nets[net_name]
+                for pin in list(net.connections):
+                    design.pin_to_net[pin] = existing_net
+                    existing_net.connections.add(pin)
+
+        # Copy pin_to_net mappings from module to parent (excluding port pins)
+        # Point to the nets that are now in the parent design
+        for pin, net in module.pin_to_net.items():
+            if pin not in port_symbol_pins:
+                net_name = net.name
+                if net_name in design.nets:
+                    design.pin_to_net[pin] = design.nets[net_name]
+
+        # Merge nets through ports (this updates pin_to_net for all pins in merged nets)
+        for module_net_name, parent_net_name in port_net_mappings.items():
+            if module_net_name in design.nets and parent_net_name in design.nets:
+                if module_net_name == parent_net_name:
+                    continue
+                design.merge_nets(module_net_name, parent_net_name)
+
+    return design

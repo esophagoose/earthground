@@ -1,7 +1,7 @@
 import earthground.components as cmp
 import earthground.library.protocols.serial as serial
 import earthground.schematic as sch
-from earthground.library.footprints import qfn
+from earthground.footprints import qfn
 
 
 class CY8CMBR3116(cmp.Component):

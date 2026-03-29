@@ -7,6 +7,11 @@ import earthground.components as cmp
 import earthground.footprint_types as ft
 
 
+class ContactStyle(enum.Enum):
+    PIN = enum.auto()
+    SOCKET = enum.auto()
+
+
 class PinLayout(enum.Enum):
     Z_FORMAT = enum.auto()  # [(1, 2), (3, 4), (5, 6)]
     ROW_FORMAT = enum.auto()  # [(1, 4), (2, 5), (3, 6)]
@@ -16,6 +21,14 @@ def standard_0_1_inch_header(pin_count, row_count=1):
     return Throughhole(pin_count, row_count).generate_footprint(
         ap_lib.ApertureCircle(diameter=1.7, hole=1.0),
         2.54,  # mm = 0.1 inch
+        PinLayout.Z_FORMAT,
+    )
+
+
+def one_mm_header(pin_count, row_count=1):
+    return Throughhole(pin_count, row_count).generate_footprint(
+        ap_lib.ApertureCircle(diameter=1.7, hole=1.0),
+        1.0,  # mm = 0.1 inch
         PinLayout.Z_FORMAT,
     )
 

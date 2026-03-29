@@ -2,7 +2,7 @@ import enum
 
 import earthground.components as cmp
 import earthground.schematic as sch
-from earthground.library.footprints.manufacturer_specific import ti
+from earthground.footprints.manufacturer_specific import ti
 from earthground.library.protocols.serial import I2C
 
 

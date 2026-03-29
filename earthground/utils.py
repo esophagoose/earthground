@@ -42,3 +42,10 @@ def four_corner_rect(x0, y0, x1, y1):
     width = abs(x1 - x0)
     height = abs(y1 - y0)
     return (center_x, center_y), width, height
+
+def voltage_to_net_name(voltage: float) -> str:
+    prefix = "P" if voltage >= 0 else "N"
+    if "." in str(voltage):
+        return f"{prefix}{str(voltage).replace(".", "V")}"
+    else:
+        return f"{prefix}{str(voltage)}V0"

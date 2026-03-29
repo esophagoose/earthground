@@ -1,6 +1,6 @@
 import earthground.exporters.kicad
-import earthground.library.headers.connectors as conn_lib
-import earthground.library.headers.jst as jst
+import earthground.library.connectors.connectors as conn_lib
+import earthground.library.connectors.jst as jst
 import earthground.schematic as sch_lib
 from earthground.library.integrated_circuits.io_expanders import tca9535pwr
 

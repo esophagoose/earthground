@@ -1,63 +1,64 @@
+from __future__ import annotations
+
 import enum
 
 import pygerber.aperture as ap_lib
 
 import earthground.components as cmp
 import earthground.footprint_types as ft
+from earthground.importers import kicad
+from earthground.importers.kicad import KicadFootprint, KicadImporter
 from earthground.library.protocols.serial import I2C
 
 
-class PRT_14417(cmp.Component):
-    def __init__(self):
-        super().__init__(refdes_prefix="J")
-        self.name = "PRT-14417"
-        self.detailed_description = "Qwiic - Connector"
-        self.manufacturer = "SparkFun Electronics"
-        self.lead_time = "6 week(s)"
-        self.mpn = "PRT-14417"
-        self.datasheet = ""
-        self.description = "QWIIC CONNECTOR SMD 4-PIN"
-        self.parameters = {
-            "Packaging": "Bulk",
-            "For Use With/Related Products": "Qwiic",
-            "Accessory Type": "Connector",
-        }
-        self.pins = cmp.PinContainer.from_dict(
-            {
-                1: "GND",
-                2: "VCC",
-                3: "SDA",
-                4: "SCL",
-                "M1": "MOUNTING1",
-                "M2": "MOUNTING2",
-            },
-            self,
-        )
-        self.i2c = I2C(sda=self.pins.by_name("SDA"), scl=self.pins.by_name("SCL"))
-        self.footprint = JstShFootprint(4, JstType.SIDE_ENTRY)
+class JstFamily(enum.Enum):
+    ACH = "ACH"
+    AUH = "AUH"
+    EH = "EH"
+    GH = "GH"
+    J2100 = "J2100"
+    JWPF = "JWPF"
+    LEA = "LEA"
+    NV = "NV"
+    PH = "PH"
+    PUD = "PUD"
+    SFH = "SFH"
+    SH = "SH"
+    SHD = "SHD"
+    SHL = "SHL"
+    SUR = "SUR"
+    VH = "VH"
+    XA = "XA"
+    XAG = "XAG"
+    XH = "XH"
+    ZE = "ZE"
+    ZH = "ZH"
 
 
 class JstType(enum.Enum):
-    TOP_ENTRY = 1
-    SIDE_ENTRY = 2
+    TOP_ENTRY = "Vertical"
+    SIDE_ENTRY = "Horizontal"
 
 
-class JstShFootprint:
-    def __init__(self, pin_count: int, style: JstType) -> None:
-        self.name = f"JST_SH_Connector_{pin_count}pin_{style.name}"
-        self.count = pin_count
-        self.style = style
-        self.spacing = 1  # mm
-        pad_aperture = ap_lib.ApertureRectangle(0.6, 1.55)
-        mount_aperture = ap_lib.ApertureRectangle(1.2, 1.8)
-        x0, y0 = self._get_pad_start()
-        self.pads = {
-            i + 1: ft.Pad([i + x0, y0], pad_aperture) for i in range(pin_count)
-        }
-        self.pads.update({"M1": ft.Pad([x0 - 1.3, 0.9], mount_aperture)})
-        self.pads.update({"M2": ft.Pad([-x0 + 1.3, 0.9], mount_aperture)})
+class JstConnector(cmp.Component):
+    def __init__(self, pin_count: int, family: JstFamily, style: JstType):
+        super().__init__(refdes_prefix="J")
+        self.name = f"JST_{family.value}_{pin_count}P_{style.value}"
+        self.mpn = self.name
+        self.family = family.value
+        self.style = style.value
+        self.pin_count = pin_count
+        self.manufacturer = "JST"
+        self.description = f"CONN HEADER {pin_count}POS 2.5MM {style.value}"
+        self.detailed_description = f"JST {family.value} series {pin_count}pin"
+        self.pins = cmp.PinContainer.from_count(pin_count, self)
+        self.footprint = kicad.KicadImporter().import_footprint(
+            "Connector_JST", self.get_symbol()
+        )
 
-    def _get_pad_start(self):
-        x = -(self.count - 1) * self.spacing / 2
-        y = -3.375 if self.style == JstType.TOP_ENTRY else -4.775
-        return x, y
+    def get_symbol(self) -> str:
+        if self.family != JstFamily.SH.value:
+            raise NotImplementedError(f"{self.family} family is not supported yet")
+        pins = f"{self.pin_count:02d}"
+        style = "BM" if self.style == JstType.TOP_ENTRY.value else "SM"
+        return f"JST_{self.family}_{style}{pins}B-SRSS-TB_1x{pins}-1MP_P1.00mm_{self.style}.kicad_mod"
