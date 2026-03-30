@@ -91,7 +91,7 @@ def _open_kicad(pcb_path: pathlib.Path):
     system = platform.system()
     if system == "Darwin":
         # macOS: use 'open -a' so it works even if kicad isn't on PATH
-        subprocess.Popen(["open", "-a", "KiCad", str(pcb_path)])
+        subprocess.Popen(["open", str(pcb_path)])
     elif system == "Windows":
         # Windows: use start
         subprocess.Popen(["start", "", str(pcb_path)], shell=True)
