@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "earthground"
-version = "0.2.9"
+version = "0.3.0"
 description = "A Python Library for Creating Software-Defined Electrical Designs"
 dependencies = [
     "kiutils==1.4.8",
@@ -21,6 +21,7 @@ dependencies = [
     "drawsvg>=2.4.1",
     "kicad-python>=0.6.0",
     "pyyaml>=6.0.3",
+    "pydantic>=2.11.3",
 ]
 readme = "README.md"
 authors = [{name = "esophagoose"}]
@@ -34,11 +35,11 @@ requires-python = ">3.10"
 test = ["pytest>6"]
 bedrock = ["boto3>=1.34.0"]
 
+[project.scripts]
+place_with_kicad = "earthground.tools.place_with_kicad:main"
+
 [project.urls]
 Source = "https://github.com/esophagoose/earthground"
 
 [tool.flit.module]
 name = "earthground"
-
-[tool.uv.sources]
-pykicad = { path = "../pykicad" }

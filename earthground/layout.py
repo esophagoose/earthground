@@ -2,10 +2,15 @@ import dataclasses
 import enum
 import logging
 import math
+from pathlib import Path
 from typing import TYPE_CHECKING, Dict, NamedTuple, Optional, Tuple
+
+import yaml
+from pydantic import ValidationError
 
 import earthground.components as cmp
 from earthground.footprint_types import BoundingBox
+from earthground.models.layout_models import LayoutPlacementMap
 
 if TYPE_CHECKING:
     import earthground.schematic as sch_lib
@@ -168,6 +173,27 @@ class Layout:
             component=component_position,
             layer=self.placement[id].layer,
         )
+
+    def load_placements_from_yaml(self, path: str | Path) -> Dict[str, Placement]:
+        with open(path, encoding="utf-8") as f:
+            raw_placements = yaml.safe_load(f) or {}
+        placement_map = LayoutPlacementMap.model_validate(raw_placements)
+
+        placements = {
+            refdes: Placement(
+                position=Position(
+                    x=placement.x,
+                    y=placement.y,
+                    angle=placement.rotation,
+                ),
+                id=None,
+                layer=Layer[placement.layer],
+            )
+            for refdes, placement in placement_map.root.items()
+        }
+
+        self.placement = placements
+        return placements
 
     def flatten(self) -> Dict[str, Tuple[ComponentLayout, cmp.Component]]:
         """
