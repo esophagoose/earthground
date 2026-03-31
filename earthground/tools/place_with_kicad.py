@@ -4,8 +4,8 @@ Interactive placement tool: run a design script, open KiCad, and write a
 YAML placement file as the user arranges footprints.
 
 Usage:
-    python -m earthground.tools.place_with_kicad <script.py> [--output placements.yaml]
-                                                              [--poll-interval 1.0]
+    place_with_kicad <script.py> [--output placements.yaml]
+                                 [--poll-interval 1.0]
 
 The script must produce an ``earthground.schematic.Design`` object.  The tool
 finds it by looking for a module-level variable named ``design`` (or
