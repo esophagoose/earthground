@@ -165,3 +165,4 @@ uv.lock
 generated_outputs/
 projects/
 fp-info-cache
+.*/

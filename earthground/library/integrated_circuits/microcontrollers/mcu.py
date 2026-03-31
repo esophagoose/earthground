@@ -29,6 +29,7 @@ class GenericMicrocontroller(cmp.Component):
         self.swd: serial.SWD = None
         self.gpio: List[cmp.Pin] = []
         self.adc: List[cmp.Pin] = []
+        self.pwm: List[cmp.Pin] = []
         self._port_to_pin_name = {}
         self._used_pins = []
 
@@ -82,6 +83,7 @@ class GenericMicrocontroller(cmp.Component):
         uart: int = 0,
         spi: int = 0,
         i2c: int = 0,
+        pwm: int = 0,
         gpio: int = 0,
         jtag: bool = False,
         swd: bool = False,
@@ -104,4 +106,6 @@ class GenericMicrocontroller(cmp.Component):
             self._use_peripheral("i2c", i)
         for i in range(gpio):
             self._use_generic_pin("gpio", i)
+        for i in range(pwm):
+            self._use_generic_pin("pwm", i)
         return self._port_to_pin_name
