@@ -425,8 +425,10 @@ class KicadExporter:
     def add_pours(self, config: layout_lib.PourLayer):
         outline = self.schematic.layout.outline
         polygon = kizones.ZonePolygon(coordinates=[to_pos((outline.x1, outline.y1)), to_pos((outline.x2, outline.y1)), to_pos((outline.x2, outline.y2)), to_pos((outline.x1, outline.y2))])
+        kicad_net = _ensure_kicad_net(self, self.schematic, config.net_name)
         self.board.zones.append(kizones.Zone(
-            net=self._added_nets[config.net_name].number,
+            net=kicad_net.number,
+            netName=kicad_net.name,
             layers=[self._layer_map[config.layer - 1]],
             hatch=kizones.Hatch(style='edge', pitch=0.5),
             clearance=0.5,

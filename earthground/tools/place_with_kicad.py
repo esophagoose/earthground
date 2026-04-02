@@ -31,6 +31,7 @@ import platform
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 
 import yaml
 
@@ -297,6 +298,45 @@ def _write_yaml(yaml_path: pathlib.Path, data: dict):
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 
+def _read_yaml(yaml_path: pathlib.Path) -> dict:
+    if not yaml_path.exists():
+        return {}
+    with open(yaml_path, encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, Mapping):
+        raise ValueError(f"Expected top-level mapping in {yaml_path}")
+    return dict(data)
+
+
+def _changed_yaml_keys(
+    changed_refs: list[str],
+    *,
+    design: sch_lib.Design,
+    placement_mode: str,
+) -> set[str]:
+    if placement_mode != "rigid-modules":
+        return set(changed_refs)
+
+    module_specs = _build_module_specs(design)
+    child_to_module = {}
+    for module_refdes, spec in module_specs.items():
+        for child_refdes in spec.child_layouts:
+            child_to_module[child_refdes] = module_refdes
+
+    changed_keys = set()
+    for refdes in changed_refs:
+        changed_keys.add(child_to_module.get(refdes, refdes))
+    return changed_keys
+
+
+def _merge_yaml_changes(existing_data: dict, snapshot_data: dict, changed_keys: set[str]) -> dict:
+    merged = dict(existing_data)
+    for refdes in sorted(changed_keys):
+        if refdes in snapshot_data:
+            merged[refdes] = snapshot_data[refdes]
+    return merged
+
+
 # ------------------------------------------------------------------
 # 6. Poll loop
 # ------------------------------------------------------------------
@@ -325,6 +365,7 @@ def _poll_loop(
 ):
     """Poll KiCad for position changes and update the YAML file."""
     last_positions = {}
+    yaml_data = _read_yaml(yaml_path)
     print(f"\nPolling KiCad for placement changes (every {interval}s)...")
     print(f"YAML output: {yaml_path}")
     print("Press Ctrl-C to stop.\n")
@@ -355,20 +396,26 @@ def _poll_loop(
                                 or o.layer != n.layer):
                             changed.append(ref)
 
-                try:
-                    yaml_data = _positions_to_yaml_dict(
-                        current,
-                        descriptions,
+                if last_positions:
+                    try:
+                        snapshot_data = _positions_to_yaml_dict(
+                            current,
+                            descriptions,
+                            design=design,
+                            placement_mode=placement_mode,
+                        )
+                    except ValueError as exc:
+                        print(f"  Placement validation failed: {exc}")
+                        time.sleep(interval)
+                        continue
+                    changed_keys = _changed_yaml_keys(
+                        changed,
                         design=design,
                         placement_mode=placement_mode,
                     )
-                except ValueError as exc:
-                    print(f"  Placement validation failed: {exc}")
-                    time.sleep(interval)
-                    continue
-                _write_yaml(yaml_path, yaml_data)
+                    yaml_data = _merge_yaml_changes(yaml_data, snapshot_data, changed_keys)
+                    _write_yaml(yaml_path, yaml_data)
 
-                if last_positions:
                     for ref in changed:
                         p = current[ref]
                         print(f"  {ref}: ({p.x_mm:.2f}, {p.y_mm:.2f}) "
@@ -381,14 +428,7 @@ def _poll_loop(
             time.sleep(interval)
 
     except KeyboardInterrupt:
-        # Final write
-        if last_positions:
-            yaml_data = _positions_to_yaml_dict(
-                last_positions,
-                descriptions,
-                design=design,
-                placement_mode=placement_mode,
-            )
+        if yaml_data:
             _write_yaml(yaml_path, yaml_data)
         print(f"\nSaved final placements to {yaml_path}")
 

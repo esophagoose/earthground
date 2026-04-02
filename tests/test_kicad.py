@@ -73,3 +73,17 @@ def test_draw_fab_text_adds_board_text_on_fab_layer():
     assert fab_text.effects.font.height == 1.5
     assert fab_text.effects.font.width == 1.2
     assert fab_text.effects.font.thickness == 0.2
+
+
+def test_add_pour_sets_zone_net_name():
+    design = Design("TEST")
+    design.layout.outline = layout_lib.BoundingBox(x1=0, y1=0, x2=10, y2=20)
+    design.layout.pours.append(layout_lib.PourLayer(net_name="GND", layer=2))
+
+    exporter = kicad.KicadExporter(design)
+    exporter.convert_to_kicad(design)
+
+    zone = exporter.board.zones[0]
+    assert zone.netName == "GND"
+    assert zone.net == exporter._added_nets["GND"].number
+    assert zone.layers == ["B.Cu"]
