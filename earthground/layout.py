@@ -3,7 +3,7 @@ import enum
 import logging
 import math
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, NamedTuple, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, NamedTuple, Optional, Tuple
 
 import yaml
 from pydantic import ValidationError
@@ -63,6 +63,19 @@ class PourLayer(NamedTuple):
     layer: int
 
 
+class FabLine(NamedTuple):
+    start: Position
+    end: Position
+
+
+class FabText(NamedTuple):
+    text: str
+    position: Position
+    height: float = 1.0
+    width: float = 1.0
+    thickness: Optional[float] = None
+
+
 class Layer(enum.Enum):
     TOP = enum.auto()
     BOTTOM = enum.auto()
@@ -97,13 +110,14 @@ def round_to_nearest(x: float, step: float) -> float:
 
 class Layout:
     def __init__(self, design: "sch_lib.Design") -> None:
-        self.design = design
+        self.design: sch_lib.Design = design
         self.placement: Dict[str, Placement] = {}
-        self.outline = BoundingBox(x1=0, y1=0, x2=0, y2=0)
-        self.layer_count = 2
-        self.traces = []
-        self.vias = []
-        self.pours = []
+        self.outline: BoundingBox = BoundingBox(x1=0, y1=0, x2=0, y2=0)
+        self.layer_count: int = 2
+        self.traces: list[Any] = []
+        self.vias: list[ViaConfig] = []
+        self.pours: list[PourLayer] = []
+        self.fab: list[FabLine | FabText] = []
 
     def get_placement(self, id: str) -> ComponentLayout:
         floating_components = list(

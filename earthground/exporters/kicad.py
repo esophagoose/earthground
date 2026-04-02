@@ -394,6 +394,34 @@ class KicadExporter:
             layer="Edge.Cuts",
         ))
 
+    def draw_fab_lines(self):
+        for item in self.schematic.layout.fab:
+            if isinstance(item, layout_lib.FabLine):
+                self.board.graphicItems.append(
+                    fp.GrLine(
+                        start=to_pos((item.start.x, item.start.y)),
+                        end=to_pos((item.end.x, item.end.y)),
+                        layer="F.Fab",
+                    )
+                )
+            elif isinstance(item, layout_lib.FabText):
+                self.board.graphicItems.append(
+                    fp.GrText(
+                        text=item.text,
+                        position=to_pos((item.position.x, item.position.y), angle=item.position.angle),
+                        layer="F.Fab",
+                        effects=base.Effects(
+                            font=base.Font(
+                                height=item.height,
+                                width=item.width,
+                                thickness=item.thickness,
+                            )
+                        ),
+                    )
+                )
+            else:
+                raise TypeError(f"Unsupported fab item: {type(item)}")
+
     def add_pours(self, config: layout_lib.PourLayer):
         outline = self.schematic.layout.outline
         polygon = kizones.ZonePolygon(coordinates=[to_pos((outline.x1, outline.y1)), to_pos((outline.x2, outline.y1)), to_pos((outline.x2, outline.y2)), to_pos((outline.x1, outline.y2))])
@@ -428,5 +456,6 @@ class KicadExporter:
         path = pathlib.Path(output_folder) / f"{self.schematic.name}.kicad_pcb"
         self.convert_to_kicad(self.schematic)
         self.draw_board_outline()
+        self.draw_fab_lines()
         self.board.to_file(path)
         print(f"{"Overwrote" if overwrite else "Wrote"} board file: {path}")
