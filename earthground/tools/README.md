@@ -11,7 +11,13 @@ place_with_kicad your_design.py
 Optional flags:
 ```
 place_with_kicad your_design.py --output placements.yaml --poll-interval 1.0
+place_with_kicad your_design.py --placement-mode rigid-modules
 ```
+
+`--placement-mode rigid-modules` writes one YAML placement per top-level module
+instead of one per child footprint. The board still contains the real child
+footprints; the tool validates that they moved as one rigid transform before it
+collapses them into the module entry.
 
 ## KiCad Layout Diff
 Generate a concise layout diff from two `.kicad_pcb` files.

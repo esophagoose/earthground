@@ -6,6 +6,7 @@ YAML placement file as the user arranges footprints.
 Usage:
     place_with_kicad <script.py> [--output placements.yaml]
                                  [--poll-interval 1.0]
+                                 [--placement-mode flat|rigid-modules]
 
 The script must produce an ``earthground.schematic.Design`` object.  The tool
 finds it by looking for a module-level variable named ``design`` (or
@@ -22,7 +23,9 @@ Flow:
 """
 
 import argparse
+import dataclasses
 import importlib.util
+import math
 import pathlib
 import platform
 import subprocess
@@ -31,7 +34,9 @@ import time
 
 import yaml
 
+import earthground.components as cmp
 import earthground.exporters.kicad as kicad_exporter
+import earthground.layout as layout_lib
 import earthground.schematic as sch_lib
 
 
@@ -74,11 +79,17 @@ def _load_design_from_script(script_path: str) -> sch_lib.Design:
 
 def _build_description_map(design: sch_lib.Design) -> dict:
     descriptions = {}
-    for module in design.modules + [design]:
-        for component in module.components.values():
-            if not component.virtual:
-                desc = getattr(component, "description", "") or component.name
-                descriptions[component.refdes] = desc
+
+    def walk(current_design: sch_lib.Design, prefix: str = ""):
+        for cid, component in current_design.components.items():
+            refdes = f"{prefix}{cid}"
+            if isinstance(component, cmp.ModuleComponent):
+                descriptions[refdes] = component.parent.name
+                walk(component.parent, prefix=f"{refdes}_")
+            elif not component.virtual:
+                descriptions[refdes] = getattr(component, "description", "") or component.name
+
+    walk(design)
     return descriptions
 
 
@@ -134,8 +145,140 @@ def _layer_name(layer_str: str) -> str:
     return "TOP"
 
 
-def _positions_to_yaml_dict(positions: dict, descriptions: dict) -> dict:
+@dataclasses.dataclass(frozen=True)
+class ModulePlacementSpec:
+    refdes: str
+    description: str
+    child_layouts: dict[str, layout_lib.ComponentLayout]
+
+
+def _round_to_right_angle(angle: float) -> float:
+    return float((round(angle / 90.0) * 90) % 360)
+
+
+def _angle_error(actual: float, expected: float) -> float:
+    return abs(((actual - expected + 180) % 360) - 180)
+
+
+def _rotate_point(x: float, y: float, angle: float) -> tuple[float, float]:
+    radians = math.radians(angle)
+    cos_a = math.cos(radians)
+    sin_a = math.sin(radians)
+    return (x * cos_a - y * sin_a, x * sin_a + y * cos_a)
+
+
+def _build_module_specs(design: sch_lib.Design) -> dict[str, ModulePlacementSpec]:
+    specs = {}
+    for refdes, component in design.components.items():
+        if not isinstance(component, cmp.ModuleComponent):
+            continue
+        child_layouts = {}
+        for child_refdes, (component_layout, _child_component) in component.parent.layout.flatten().items():
+            child_layouts[f"{refdes}_{child_refdes}"] = component_layout
+        specs[refdes] = ModulePlacementSpec(
+            refdes=refdes,
+            description=component.parent.name,
+            child_layouts=child_layouts,
+        )
+    return specs
+
+
+def _infer_module_yaml_entry(
+    spec: ModulePlacementSpec,
+    positions: dict,
+) -> dict:
+    if not spec.child_layouts:
+        raise ValueError(f"Module {spec.refdes} has no child footprints to infer placement from")
+
+    reference_translation = None
+    reference_rotation = None
+    reference_layer = None
+
+    for child_refdes, component_layout in spec.child_layouts.items():
+        if child_refdes not in positions:
+            raise ValueError(f"Module {spec.refdes} is missing child footprint {child_refdes}")
+
+        current = positions[child_refdes]
+        inferred_rotation = _round_to_right_angle(
+            current.angle_deg - component_layout.component.angle
+        )
+        if _angle_error(
+            current.angle_deg,
+            component_layout.component.angle + inferred_rotation,
+        ) > 0.2:
+            raise ValueError(
+                f"Module {spec.refdes} child {child_refdes} rotation is not a rigid 90-degree transform"
+            )
+
+        local_layer = "BOTTOM" if component_layout.layer == layout_lib.Layer.BOTTOM else "TOP"
+        current_layer = _layer_name(current.layer)
+        inferred_layer = "TOP" if current_layer == local_layer else "BOTTOM"
+
+        rotated_x, rotated_y = _rotate_point(
+            component_layout.component.x,
+            component_layout.component.y,
+            inferred_rotation,
+        )
+        translation = (current.x_mm - rotated_x, current.y_mm - rotated_y)
+
+        if reference_rotation is None:
+            reference_rotation = inferred_rotation
+            reference_layer = inferred_layer
+            reference_translation = translation
+            continue
+
+        if _angle_error(inferred_rotation, reference_rotation) > 0.2:
+            raise ValueError(f"Module {spec.refdes} children do not share a rigid rotation")
+        if inferred_layer != reference_layer:
+            raise ValueError(f"Module {spec.refdes} children do not share a rigid layer transform")
+        if abs(translation[0] - reference_translation[0]) > 0.01 or abs(translation[1] - reference_translation[1]) > 0.01:
+            raise ValueError(f"Module {spec.refdes} children do not share a rigid translation")
+
+    return {
+        "description": spec.description,
+        "layer": reference_layer,
+        "x": round(reference_translation[0], 3),
+        "y": round(reference_translation[1], 3),
+        "rotation": round(reference_rotation, 1),
+    }
+
+
+def _positions_to_yaml_dict(
+    positions: dict,
+    descriptions: dict,
+    *,
+    design: sch_lib.Design | None = None,
+    placement_mode: str = "flat",
+) -> dict:
     """Convert FootprintPosition map to YAML-serializable dict."""
+    if placement_mode == "rigid-modules":
+        if design is None:
+            raise ValueError("design is required for rigid-modules placement mode")
+
+        result = {}
+        module_specs = _build_module_specs(design)
+        module_child_refdes = {
+            child_refdes
+            for spec in module_specs.values()
+            for child_refdes in spec.child_layouts
+        }
+
+        for refdes in sorted(positions):
+            if refdes in module_child_refdes:
+                continue
+            pos = positions[refdes]
+            result[refdes] = {
+                "description": descriptions.get(refdes, ""),
+                "layer": _layer_name(pos.layer),
+                "x": round(pos.x_mm, 3),
+                "y": round(pos.y_mm, 3),
+                "rotation": round(pos.angle_deg, 1),
+            }
+
+        for refdes in sorted(module_specs):
+            result[refdes] = _infer_module_yaml_entry(module_specs[refdes], positions)
+        return result
+
     result = {}
     for refdes in sorted(positions):
         pos = positions[refdes]
@@ -172,8 +315,14 @@ def _positions_changed(old: dict, new: dict) -> bool:
     return False
 
 
-def _poll_loop(ipc, yaml_path: pathlib.Path, descriptions: dict,
-               interval: float = 1.0):
+def _poll_loop(
+    ipc,
+    yaml_path: pathlib.Path,
+    descriptions: dict,
+    design: sch_lib.Design,
+    interval: float = 1.0,
+    placement_mode: str = "flat",
+):
     """Poll KiCad for position changes and update the YAML file."""
     last_positions = {}
     print(f"\nPolling KiCad for placement changes (every {interval}s)...")
@@ -206,7 +355,17 @@ def _poll_loop(ipc, yaml_path: pathlib.Path, descriptions: dict,
                                 or o.layer != n.layer):
                             changed.append(ref)
 
-                yaml_data = _positions_to_yaml_dict(current, descriptions)
+                try:
+                    yaml_data = _positions_to_yaml_dict(
+                        current,
+                        descriptions,
+                        design=design,
+                        placement_mode=placement_mode,
+                    )
+                except ValueError as exc:
+                    print(f"  Placement validation failed: {exc}")
+                    time.sleep(interval)
+                    continue
                 _write_yaml(yaml_path, yaml_data)
 
                 if last_positions:
@@ -224,7 +383,12 @@ def _poll_loop(ipc, yaml_path: pathlib.Path, descriptions: dict,
     except KeyboardInterrupt:
         # Final write
         if last_positions:
-            yaml_data = _positions_to_yaml_dict(last_positions, descriptions)
+            yaml_data = _positions_to_yaml_dict(
+                last_positions,
+                descriptions,
+                design=design,
+                placement_mode=placement_mode,
+            )
             _write_yaml(yaml_path, yaml_data)
         print(f"\nSaved final placements to {yaml_path}")
 
@@ -257,6 +421,12 @@ def main():
         "--no-open",
         action="store_true",
         help="Don't open KiCad automatically (assume it's already running).",
+    )
+    parser.add_argument(
+        "--placement-mode",
+        choices=("flat", "rigid-modules"),
+        default="flat",
+        help="Write either per-footprint placements or collapse module children into rigid module placements.",
     )
     args = parser.parse_args()
 
@@ -291,7 +461,14 @@ def main():
     print("  Connected!")
 
     # 6. Poll and write YAML
-    _poll_loop(ipc, yaml_path, descriptions, interval=args.poll_interval)
+    _poll_loop(
+        ipc,
+        yaml_path,
+        descriptions,
+        design,
+        interval=args.poll_interval,
+        placement_mode=args.placement_mode,
+    )
 
 
 if __name__ == "__main__":
