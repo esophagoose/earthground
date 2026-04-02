@@ -104,8 +104,8 @@ class GenericMicrocontroller(cmp.Component):
             self._use_peripheral("spi", i)
         for i in range(i2c):
             self._use_peripheral("i2c", i)
-        for i in range(gpio):
-            self._use_generic_pin("gpio", i)
         for i in range(pwm):
             self._use_generic_pin("pwm", i)
+        for i in range(gpio):
+            self._use_generic_pin("gpio", i)
         return self._port_to_pin_name
