@@ -107,3 +107,21 @@ REG1:
         id=None,
         layer=layout_lib.Layer.TOP,
     )
+
+
+def test_get_placement_keeps_left_reference_on_left_when_rotated_180():
+    design = Design("TEST")
+    design.add_component(cmp.Resistor(100))
+    refdes = next(iter(design.components))
+    design.layout.placement[refdes] = layout_lib.Placement(
+        position=layout_lib.Position(x=10.0, y=20.0, angle=180.0),
+        id=layout_lib.Orientation.LEFT,
+        layer=layout_lib.Layer.TOP,
+    )
+
+    placement = design.layout.get_placement(refdes)
+
+    assert placement.id_orientation == layout_lib.Orientation.LEFT
+    assert placement.id.x > 0
+    assert placement.id.y == 0
+    assert placement.id.angle == 180.0

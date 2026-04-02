@@ -215,3 +215,25 @@ def test_bottom_layer_native_footprint_geometry_is_mirrored_across_y_axis():
     assert bottom.pads[0].position == base.Position(X=4.38, Y=-2.285, angle=0)
     assert bottom.pads[1].position == base.Position(X=-2.285, Y=0, angle=0)
     assert bottom.pads[2].position == base.Position(X=4.38, Y=2.285, angle=0)
+
+
+def test_rotated_180_left_reference_uses_left_side_local_offset():
+    component = cmp.Resistor(100)
+    component.footprint = pfp.PassiveSmd(pfp.PassivePackage.R0805)
+
+    footprint = _export_single_component(
+        component,
+        layout_lib.Placement(
+            position=layout_lib.Position(x=10, y=20, angle=180),
+            id=layout_lib.Orientation.LEFT,
+        ),
+    )
+
+    reference = next(
+        item for item in footprint.graphicItems if item.type == "reference"
+    )
+
+    assert footprint.position == base.Position(X=10, Y=20, angle=-180)
+    assert reference.position.X > 0
+    assert reference.position.Y == 0
+    assert reference.effects.justify.horizontally == "right"

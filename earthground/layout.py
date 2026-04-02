@@ -181,6 +181,10 @@ class Layout:
             )
             # Place left or right of the component depending on reference edge
             x *= -1 if ref_id == Orientation.LEFT else 1
+            # Flip when the component is effectively upside-down so LEFT/RIGHT
+            # stays visually attached to the same board-side edge.
+            if 90 < angle < 270:
+                x *= -1
         return ComponentLayout(
             id=Position(x=x, y=y, angle=component_position.angle),
             id_orientation=ref_id,
