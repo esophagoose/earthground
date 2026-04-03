@@ -251,6 +251,7 @@ class KicadExporter:
 
         self._validate_component(component)
         layer_prefix = _side_prefix(layer)
+        footprint_description = component.mpn or None
 
         # Determine reference text justification once
         justify_options = {}
@@ -269,6 +270,8 @@ class KicadExporter:
         if isinstance(component.footprint, KicadFootprint):
             parsed = sexpr_utils.parse_sexp(component.footprint.sexp)
             footprint = fp.Footprint.from_sexpr(parsed)
+            if footprint_description:
+                footprint.description = footprint_description
             _apply_footprint_side(footprint, layer)
 
             # Re-map pad nets based on the schematic connectivity.
@@ -319,6 +322,8 @@ class KicadExporter:
                 value=component.footprint.name,
                 reference=cid,
             )
+            if footprint_description:
+                footprint.description = footprint_description
             _apply_footprint_side(footprint, layer)
             for index, pad in component.footprint.pads.items():
                 shape, size = aperture_to_shape_size(pad.aperture)

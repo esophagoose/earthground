@@ -1,5 +1,6 @@
 import pytest
 
+import earthground.footprints.passives as passives
 from earthground.components import Capacitor, Component, Net, Pin, Resistor
 from earthground.library.integrated_circuits.io_expanders import tca9535pwr
 from earthground.schematic import Design, Ports
@@ -35,6 +36,18 @@ def test_add_component():
     resistor = Resistor(1000)
     design.add_component(resistor)
     assert resistor in design.components.values()
+
+
+def test_add_component_preserves_custom_capacitor_footprint():
+    design = Design("TestDesign")
+    capacitor = Capacitor(1e-6, 50)
+    custom_footprint = passives.PassiveSmd(passives.PassivePackage.C0805)
+    capacitor.footprint = custom_footprint
+    capacitor.package_size = "0603"
+
+    design.add_component(capacitor)
+
+    assert capacitor.footprint is custom_footprint
 
 
 def test_add_net():

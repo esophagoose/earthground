@@ -237,3 +237,19 @@ def test_rotated_180_left_reference_uses_left_side_local_offset():
     assert reference.position.X > 0
     assert reference.position.Y == 0
     assert reference.effects.justify.horizontally == "right"
+
+
+def test_native_footprint_description_uses_component_mpn_when_available():
+    component = cmp.Resistor(100)
+    component.footprint = pfp.PassiveSmd(pfp.PassivePackage.R0805)
+    component.mpn = "RC0805FR-07100RL"
+
+    footprint = _export_single_component(
+        component,
+        layout_lib.Placement(
+            position=layout_lib.Position(x=10, y=20, angle=0),
+            id=None,
+        ),
+    )
+
+    assert footprint.description == "RC0805FR-07100RL"
