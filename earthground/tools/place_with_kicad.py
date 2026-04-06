@@ -6,20 +6,6 @@ YAML placement file as the user arranges footprints.
 Usage:
     place_with_kicad <script.py> [--output placements.yaml]
                                  [--poll-interval 1.0]
-                                 [--placement-mode flat|rigid-modules]
-
-The script must produce an ``earthground.schematic.Design`` object.  The tool
-finds it by looking for a module-level variable named ``design`` (or
-``schematic``), or—if neither exists—the first Design instance in the
-module namespace.
-
-Flow:
-    1. Execute the user's script to obtain a Design.
-    2. Export a .kicad_pcb next to the script.
-    3. Open KiCad with that board file.
-    4. Wait for KiCad's IPC API to become available.
-    5. Poll footprint positions; whenever something moves, update the YAML.
-    6. On Ctrl-C, write a final snapshot and exit.
 """
 
 import argparse
@@ -41,111 +27,6 @@ import earthground.layout as layout_lib
 import earthground.schematic as sch_lib
 
 
-# ------------------------------------------------------------------
-# 1. Load the Design from a user script
-# ------------------------------------------------------------------
-
-def _load_design_from_script(script_path: str) -> sch_lib.Design:
-    """Execute a Python script and return the Design it creates."""
-    path = pathlib.Path(script_path).resolve()
-    if not path.exists():
-        sys.exit(f"Error: script not found: {path}")
-
-    spec = importlib.util.spec_from_file_location("_user_design", str(path))
-    module = importlib.util.module_from_spec(spec)
-
-    # Make sure imports inside the user script work relative to its location
-    sys.path.insert(0, str(path.parent))
-    spec.loader.exec_module(module)
-
-    # Look for well-known names first, then fall back to first Design found
-    for name in ("design", "schematic"):
-        obj = getattr(module, name, None)
-        if isinstance(obj, sch_lib.Design):
-            return obj
-
-    for obj in vars(module).values():
-        if isinstance(obj, sch_lib.Design):
-            return obj
-
-    sys.exit(
-        "Error: could not find a Design object in the script. "
-        "Define a module-level variable named 'design' or 'schematic'."
-    )
-
-
-# ------------------------------------------------------------------
-# 2. Build a refdes → description map for the YAML
-# ------------------------------------------------------------------
-
-def _build_description_map(design: sch_lib.Design) -> dict:
-    descriptions = {}
-
-    def walk(current_design: sch_lib.Design, prefix: str = ""):
-        for cid, component in current_design.components.items():
-            refdes = f"{prefix}{cid}"
-            if isinstance(component, cmp.ModuleComponent):
-                descriptions[refdes] = component.parent.name
-                walk(component.parent, prefix=f"{refdes}_")
-            elif not component.virtual:
-                descriptions[refdes] = getattr(component, "description", "") or component.name
-
-    walk(design)
-    return descriptions
-
-
-# ------------------------------------------------------------------
-# 3. Open KiCad
-# ------------------------------------------------------------------
-
-def _open_kicad(pcb_path: pathlib.Path):
-    """Launch KiCad's PCB editor with the board file."""
-    system = platform.system()
-    if system == "Darwin":
-        # macOS: use 'open -a' so it works even if kicad isn't on PATH
-        subprocess.Popen(["open", str(pcb_path)])
-    elif system == "Windows":
-        # Windows: use start
-        subprocess.Popen(["start", "", str(pcb_path)], shell=True)
-    else:
-        # Linux: try pcbnew directly
-        subprocess.Popen(["pcbnew", str(pcb_path)])
-
-
-# ------------------------------------------------------------------
-# 4. Connect to KiCad with retries
-# ------------------------------------------------------------------
-
-def _connect_ipc(design: sch_lib.Design, retries: int = 30, delay: float = 2.0):
-    """Try to connect to KiCad's IPC API, retrying until it's available."""
-    from earthground.ipc.kicad_ipc import KicadIpc
-
-    for attempt in range(1, retries + 1):
-        try:
-            ipc = KicadIpc(design)
-            return ipc
-        except Exception:
-            if attempt == retries:
-                sys.exit(
-                    "Error: could not connect to KiCad API. "
-                    "Make sure KiCad is running with the API enabled "
-                    "(Preferences > Plugins > Enable KiCad API)."
-                )
-            print(f"  Waiting for KiCad API... (attempt {attempt}/{retries})")
-            time.sleep(delay)
-
-
-# ------------------------------------------------------------------
-# 5. YAML writing
-# ------------------------------------------------------------------
-
-def _layer_name(layer_str: str) -> str:
-    """Convert KiCad layer string to simple TOP/BOTTOM."""
-    if "B." in layer_str or "Back" in layer_str:
-        return "BOTTOM"
-    return "TOP"
-
-
 @dataclasses.dataclass(frozen=True)
 class ModulePlacementSpec:
     refdes: str
@@ -153,57 +34,172 @@ class ModulePlacementSpec:
     child_layouts: dict[str, layout_lib.ComponentLayout]
 
 
-def _round_to_right_angle(angle: float) -> float:
-    return float((round(angle / 90.0) * 90) % 360)
+@dataclasses.dataclass
+class PlaceWithKicad:
+    script_path: pathlib.Path
+    yaml_path: pathlib.Path | None = None
+    poll_interval: float = 1.0
+    no_open: bool = False
+    design: sch_lib.Design | None = dataclasses.field(default=None, init=False)
+    descriptions: dict[str, str] = dataclasses.field(default_factory=dict, init=False)
+    pcb_path: pathlib.Path | None = dataclasses.field(default=None, init=False)
+    module_specs: dict[str, ModulePlacementSpec] = dataclasses.field(default_factory=dict, init=False)
+    module_child_refdes: set[str] = dataclasses.field(default_factory=set, init=False)
+    child_to_module: dict[str, str] = dataclasses.field(default_factory=dict, init=False)
 
+    def __post_init__(self):
+        self.script_path = pathlib.Path(self.script_path).resolve()
+        if self.yaml_path is None:
+            self.yaml_path = self.script_path.with_suffix(".yaml")
+        else:
+            self.yaml_path = pathlib.Path(self.yaml_path).resolve()
 
-def _angle_error(actual: float, expected: float) -> float:
-    return abs(((actual - expected + 180) % 360) - 180)
+    @staticmethod
+    def load_design_from_script(script_path: str | pathlib.Path) -> sch_lib.Design:
+        path = pathlib.Path(script_path).resolve()
+        if not path.exists():
+            sys.exit(f"Error: script not found: {path}")
 
+        spec = importlib.util.spec_from_file_location("_user_design", str(path))
+        module = importlib.util.module_from_spec(spec)
 
-def _rotate_point(x: float, y: float, angle: float) -> tuple[float, float]:
-    radians = math.radians(angle)
-    cos_a = math.cos(radians)
-    sin_a = math.sin(radians)
-    return (x * cos_a - y * sin_a, x * sin_a + y * cos_a)
+        sys.path.insert(0, str(path.parent))
+        spec.loader.exec_module(module)
 
+        for name in ("design", "schematic"):
+            obj = getattr(module, name, None)
+            if isinstance(obj, sch_lib.Design):
+                return obj
 
-def _build_module_specs(design: sch_lib.Design) -> dict[str, ModulePlacementSpec]:
-    specs = {}
-    for refdes, component in design.components.items():
-        if not isinstance(component, cmp.ModuleComponent):
-            continue
-        child_layouts = {}
-        for child_refdes, (component_layout, _child_component) in component.parent.layout.flatten().items():
-            child_layouts[f"{refdes}_{child_refdes}"] = component_layout
-        specs[refdes] = ModulePlacementSpec(
-            refdes=refdes,
-            description=component.parent.name,
-            child_layouts=child_layouts,
+        for obj in vars(module).values():
+            if isinstance(obj, sch_lib.Design):
+                return obj
+
+        sys.exit(
+            "Error: could not find a Design object in the script. "
+            "Define a module-level variable named 'design' or 'schematic'."
         )
-    return specs
 
+    @staticmethod
+    def build_description_map(design: sch_lib.Design) -> dict[str, str]:
+        descriptions = {}
 
-def _infer_module_yaml_entry(
-    spec: ModulePlacementSpec,
-    positions: dict,
-) -> dict:
-    if not spec.child_layouts:
-        raise ValueError(f"Module {spec.refdes} has no child footprints to infer placement from")
+        def walk(current_design: sch_lib.Design, prefix: str = ""):
+            for cid, component in current_design.components.items():
+                refdes = f"{prefix}{cid}"
+                if isinstance(component, cmp.ModuleComponent):
+                    descriptions[refdes] = component.parent.name
+                    walk(component.parent, prefix=f"{refdes}_")
+                elif not component.virtual:
+                    descriptions[refdes] = getattr(component, "description", "") or component.name
 
-    reference_translation = None
-    reference_rotation = None
-    reference_layer = None
+        walk(design)
+        return descriptions
 
-    for child_refdes, component_layout in spec.child_layouts.items():
+    @staticmethod
+    def open_kicad(pcb_path: pathlib.Path):
+        system = platform.system()
+        if system == "Darwin":
+            subprocess.Popen(["open", str(pcb_path)])
+        elif system == "Windows":
+            subprocess.Popen(["start", "", str(pcb_path)], shell=True)
+        else:
+            subprocess.Popen(["pcbnew", str(pcb_path)])
+
+    @staticmethod
+    def connect_ipc(design: sch_lib.Design, retries: int = 30, delay: float = 2.0):
+        from earthground.ipc.kicad_ipc import KicadIpc
+
+        for attempt in range(1, retries + 1):
+            try:
+                return KicadIpc(design)
+            except Exception:
+                if attempt == retries:
+                    sys.exit(
+                        "Error: could not connect to KiCad API. "
+                        "Make sure KiCad is running with the API enabled "
+                        "(Preferences > Plugins > Enable KiCad API)."
+                    )
+                print(f"  Waiting for KiCad API... (attempt {attempt}/{retries})")
+                time.sleep(delay)
+
+    @staticmethod
+    def layer_name(layer_str: str) -> str:
+        if "B." in layer_str or "Back" in layer_str:
+            return "BOTTOM"
+        return "TOP"
+
+    @staticmethod
+    def round_to_right_angle(angle: float) -> float:
+        return float((round(angle / 90.0) * 90) % 360)
+
+    @staticmethod
+    def angle_error(actual: float, expected: float) -> float:
+        return abs(((actual - expected + 180) % 360) - 180)
+
+    @staticmethod
+    def rotate_point(x: float, y: float, angle: float) -> tuple[float, float]:
+        radians = math.radians(angle)
+        cos_a = math.cos(radians)
+        sin_a = math.sin(radians)
+        return (x * cos_a - y * sin_a, x * sin_a + y * cos_a)
+
+    @staticmethod
+    def build_module_specs(design: sch_lib.Design) -> dict[str, ModulePlacementSpec]:
+        specs = {}
+        for refdes, component in design.components.items():
+            if not isinstance(component, cmp.ModuleComponent):
+                continue
+            child_layouts = {}
+            for child_refdes, (component_layout, _child_component) in component.parent.layout.flatten().items():
+                child_layouts[f"{refdes}_{child_refdes}"] = component_layout
+            specs[refdes] = ModulePlacementSpec(
+                refdes=refdes,
+                description=component.parent.name,
+                child_layouts=child_layouts,
+            )
+        return specs
+
+    @staticmethod
+    def build_module_metadata(
+        design: sch_lib.Design,
+    ) -> tuple[dict[str, ModulePlacementSpec], set[str], dict[str, str]]:
+        module_specs = PlaceWithKicad.build_module_specs(design)
+        module_child_refdes = {
+            child_refdes
+            for spec in module_specs.values()
+            for child_refdes in spec.child_layouts
+        }
+        child_to_module = {
+            child_refdes: module_refdes
+            for module_refdes, spec in module_specs.items()
+            for child_refdes in spec.child_layouts
+        }
+        return module_specs, module_child_refdes, child_to_module
+
+    @classmethod
+    def infer_module_yaml_entry(
+        cls,
+        spec: ModulePlacementSpec,
+        positions: dict,
+        *,
+        preferred_child_refdes: str | None = None,
+    ) -> dict:
+        if not spec.child_layouts:
+            raise ValueError(f"Module {spec.refdes} has no child footprints to infer placement from")
+
+        child_refdes = preferred_child_refdes
+        if child_refdes is None or child_refdes not in spec.child_layouts:
+            child_refdes = next(iter(spec.child_layouts))
         if child_refdes not in positions:
             raise ValueError(f"Module {spec.refdes} is missing child footprint {child_refdes}")
 
+        component_layout = spec.child_layouts[child_refdes]
         current = positions[child_refdes]
-        inferred_rotation = _round_to_right_angle(
+        inferred_rotation = cls.round_to_right_angle(
             current.angle_deg - component_layout.component.angle
         )
-        if _angle_error(
+        if cls.angle_error(
             current.angle_deg,
             component_layout.component.angle + inferred_rotation,
         ) > 0.2:
@@ -212,230 +208,291 @@ def _infer_module_yaml_entry(
             )
 
         local_layer = "BOTTOM" if component_layout.layer == layout_lib.Layer.BOTTOM else "TOP"
-        current_layer = _layer_name(current.layer)
+        current_layer = cls.layer_name(current.layer)
         inferred_layer = "TOP" if current_layer == local_layer else "BOTTOM"
 
-        rotated_x, rotated_y = _rotate_point(
+        rotated_x, rotated_y = cls.rotate_point(
             component_layout.component.x,
             component_layout.component.y,
             inferred_rotation,
         )
         translation = (current.x_mm - rotated_x, current.y_mm - rotated_y)
 
-        if reference_rotation is None:
-            reference_rotation = inferred_rotation
-            reference_layer = inferred_layer
-            reference_translation = translation
-            continue
+        return {
+            "description": spec.description,
+            "layer": inferred_layer,
+            "x": round(translation[0], 3),
+            "y": round(translation[1], 3),
+            "rotation": round(inferred_rotation, 1),
+        }
 
-        if _angle_error(inferred_rotation, reference_rotation) > 0.2:
-            raise ValueError(f"Module {spec.refdes} children do not share a rigid rotation")
-        if inferred_layer != reference_layer:
-            raise ValueError(f"Module {spec.refdes} children do not share a rigid layer transform")
-        if abs(translation[0] - reference_translation[0]) > 0.01 or abs(translation[1] - reference_translation[1]) > 0.01:
-            raise ValueError(f"Module {spec.refdes} children do not share a rigid translation")
-
-    return {
-        "description": spec.description,
-        "layer": reference_layer,
-        "x": round(reference_translation[0], 3),
-        "y": round(reference_translation[1], 3),
-        "rotation": round(reference_rotation, 1),
-    }
-
-
-def _positions_to_yaml_dict(
-    positions: dict,
-    descriptions: dict,
-    *,
-    design: sch_lib.Design | None = None,
-    placement_mode: str = "flat",
-) -> dict:
-    """Convert FootprintPosition map to YAML-serializable dict."""
-    if placement_mode == "rigid-modules":
-        if design is None:
-            raise ValueError("design is required for rigid-modules placement mode")
+    @classmethod
+    def positions_to_yaml_dict(
+        cls,
+        positions: dict,
+        descriptions: dict[str, str],
+        *,
+        design: sch_lib.Design | None = None,
+        module_specs: dict[str, ModulePlacementSpec] | None = None,
+        module_child_refdes: set[str] | None = None,
+        preferred_children_by_module: dict[str, str] | None = None,
+    ) -> dict:
+        if design is not None:
+            return cls.module_positions_to_yaml_dict(
+                positions,
+                descriptions,
+                design=design,
+                module_specs=module_specs,
+                module_child_refdes=module_child_refdes,
+                preferred_children_by_module=preferred_children_by_module,
+            )
 
         result = {}
-        module_specs = _build_module_specs(design)
-        module_child_refdes = {
-            child_refdes
-            for spec in module_specs.values()
-            for child_refdes in spec.child_layouts
-        }
+        for refdes in sorted(positions):
+            result[refdes] = cls.position_to_yaml_entry(refdes, positions[refdes], descriptions)
+        return result
+
+    @classmethod
+    def module_positions_to_yaml_dict(
+        cls,
+        positions: dict,
+        descriptions: dict[str, str],
+        *,
+        design: sch_lib.Design,
+        module_specs: dict[str, ModulePlacementSpec] | None = None,
+        module_child_refdes: set[str] | None = None,
+        preferred_children_by_module: dict[str, str] | None = None,
+    ) -> dict:
+        result = {}
+        if module_specs is None or module_child_refdes is None:
+            module_specs, module_child_refdes, _child_to_module = cls.build_module_metadata(design)
 
         for refdes in sorted(positions):
             if refdes in module_child_refdes:
                 continue
-            pos = positions[refdes]
-            result[refdes] = {
-                "description": descriptions.get(refdes, ""),
-                "layer": _layer_name(pos.layer),
-                "x": round(pos.x_mm, 3),
-                "y": round(pos.y_mm, 3),
-                "rotation": round(pos.angle_deg, 1),
-            }
+            result[refdes] = cls.position_to_yaml_entry(refdes, positions[refdes], descriptions)
 
         for refdes in sorted(module_specs):
-            result[refdes] = _infer_module_yaml_entry(module_specs[refdes], positions)
+            result[refdes] = cls.infer_module_yaml_entry(
+                module_specs[refdes],
+                positions,
+                preferred_child_refdes=None if preferred_children_by_module is None else preferred_children_by_module.get(refdes),
+            )
         return result
 
-    result = {}
-    for refdes in sorted(positions):
-        pos = positions[refdes]
-        result[refdes] = {
+    @classmethod
+    def changed_yaml_keys(
+        cls,
+        changed_refs: list[str],
+        *,
+        design: sch_lib.Design | None = None,
+        child_to_module: dict[str, str] | None = None,
+    ) -> set[str]:
+        if child_to_module is None:
+            if design is None:
+                raise ValueError("design or child_to_module is required")
+            _module_specs, _module_child_refdes, child_to_module = cls.build_module_metadata(design)
+
+        return {child_to_module.get(refdes, refdes) for refdes in changed_refs}
+
+    @staticmethod
+    def preferred_children_by_module(
+        changed_refs: list[str],
+        *,
+        child_to_module: dict[str, str],
+    ) -> dict[str, str]:
+        preferred = {}
+        for refdes in changed_refs:
+            module_refdes = child_to_module.get(refdes)
+            if module_refdes is not None and module_refdes not in preferred:
+                preferred[module_refdes] = refdes
+        return preferred
+
+    @classmethod
+    def position_to_yaml_entry(cls, refdes: str, pos, descriptions: dict[str, str]) -> dict:
+        return {
             "description": descriptions.get(refdes, ""),
-            "layer": _layer_name(pos.layer),
+            "layer": cls.layer_name(pos.layer),
             "x": round(pos.x_mm, 3),
             "y": round(pos.y_mm, 3),
             "rotation": round(pos.angle_deg, 1),
         }
-    return result
 
+    @staticmethod
+    def write_yaml(yaml_path: pathlib.Path, data: dict):
+        with open(yaml_path, "w") as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
-def _write_yaml(yaml_path: pathlib.Path, data: dict):
-    with open(yaml_path, "w") as f:
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+    @staticmethod
+    def read_yaml(yaml_path: pathlib.Path) -> dict:
+        if not yaml_path.exists():
+            return {}
+        with open(yaml_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        if not isinstance(data, Mapping):
+            raise ValueError(f"Expected top-level mapping in {yaml_path}")
+        return dict(data)
 
+    @staticmethod
+    def merge_yaml_changes(existing_data: dict, snapshot_data: dict, changed_keys: set[str]) -> dict:
+        merged = dict(existing_data)
+        for refdes in sorted(changed_keys):
+            if refdes in snapshot_data:
+                merged[refdes] = snapshot_data[refdes]
+        return merged
 
-def _read_yaml(yaml_path: pathlib.Path) -> dict:
-    if not yaml_path.exists():
-        return {}
-    with open(yaml_path, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    if not isinstance(data, Mapping):
-        raise ValueError(f"Expected top-level mapping in {yaml_path}")
-    return dict(data)
+    @classmethod
+    def prune_module_child_entries(
+        cls,
+        data: dict,
+        *,
+        design: sch_lib.Design | None = None,
+        module_child_refdes: set[str] | None = None,
+    ) -> dict:
+        if module_child_refdes is None:
+            if design is None:
+                raise ValueError("design or module_child_refdes is required")
+            _module_specs, module_child_refdes, _child_to_module = cls.build_module_metadata(design)
+        return {
+            refdes: value
+            for refdes, value in data.items()
+            if refdes not in module_child_refdes
+        }
 
+    @staticmethod
+    def position_changed(old_pos, new_pos) -> bool:
+        return (
+            abs(old_pos.x_mm - new_pos.x_mm) > 0.001
+            or abs(old_pos.y_mm - new_pos.y_mm) > 0.001
+            or abs(old_pos.angle_deg - new_pos.angle_deg) > 0.05
+            or old_pos.layer != new_pos.layer
+        )
 
-def _changed_yaml_keys(
-    changed_refs: list[str],
-    *,
-    design: sch_lib.Design,
-    placement_mode: str,
-) -> set[str]:
-    if placement_mode != "rigid-modules":
-        return set(changed_refs)
+    @classmethod
+    def changed_refs(cls, old: dict, new: dict) -> list[str]:
+        changed = []
+        for refdes in new:
+            if refdes not in old or cls.position_changed(old[refdes], new[refdes]):
+                changed.append(refdes)
+        return changed
 
-    module_specs = _build_module_specs(design)
-    child_to_module = {}
-    for module_refdes, spec in module_specs.items():
-        for child_refdes in spec.child_layouts:
-            child_to_module[child_refdes] = module_refdes
-
-    changed_keys = set()
-    for refdes in changed_refs:
-        changed_keys.add(child_to_module.get(refdes, refdes))
-    return changed_keys
-
-
-def _merge_yaml_changes(existing_data: dict, snapshot_data: dict, changed_keys: set[str]) -> dict:
-    merged = dict(existing_data)
-    for refdes in sorted(changed_keys):
-        if refdes in snapshot_data:
-            merged[refdes] = snapshot_data[refdes]
-    return merged
-
-
-# ------------------------------------------------------------------
-# 6. Poll loop
-# ------------------------------------------------------------------
-
-def _positions_changed(old: dict, new: dict) -> bool:
-    """Return True if any footprint moved since the last snapshot."""
-    if set(old.keys()) != set(new.keys()):
-        return True
-    for refdes in old:
-        o, n = old[refdes], new[refdes]
-        if (abs(o.x_mm - n.x_mm) > 0.001
-                or abs(o.y_mm - n.y_mm) > 0.001
-                or abs(o.angle_deg - n.angle_deg) > 0.05
-                or o.layer != n.layer):
+    @classmethod
+    def positions_changed(cls, old: dict, new: dict) -> bool:
+        if set(old.keys()) != set(new.keys()):
             return True
-    return False
+        for refdes in old:
+            if cls.position_changed(old[refdes], new[refdes]):
+                return True
+        return False
 
+    def load_design(self) -> sch_lib.Design:
+        print(f"Loading design from {self.script_path}...")
+        self.design = self.load_design_from_script(self.script_path)
+        self.descriptions = self.build_description_map(self.design)
+        self.module_specs, self.module_child_refdes, self.child_to_module = self.build_module_metadata(
+            self.design
+        )
+        print(f"  Design: {self.design.name}")
+        print(f"  Components: {len(self.descriptions)}")
+        return self.design
 
-def _poll_loop(
-    ipc,
-    yaml_path: pathlib.Path,
-    descriptions: dict,
-    design: sch_lib.Design,
-    interval: float = 1.0,
-    placement_mode: str = "flat",
-):
-    """Poll KiCad for position changes and update the YAML file."""
-    last_positions = {}
-    yaml_data = _read_yaml(yaml_path)
-    print(f"\nPolling KiCad for placement changes (every {interval}s)...")
-    print(f"YAML output: {yaml_path}")
-    print("Press Ctrl-C to stop.\n")
+    def export_board(self) -> pathlib.Path:
+        if self.design is None:
+            raise ValueError("design must be loaded before exporting the board")
+        pcb_dir = self.script_path.parent
+        kicad_exporter.KicadExporter(self.design).save(output_folder=str(pcb_dir))
+        self.pcb_path = pcb_dir / f"{self.design.name}.kicad_pcb"
+        return self.pcb_path
 
-    try:
-        while True:
-            try:
-                current = ipc.get_all_positions()
-            except Exception as exc:
-                print(f"  IPC error: {exc} — retrying...")
-                time.sleep(interval)
+    def poll_loop(self, ipc):
+        if self.design is None:
+            raise ValueError("design must be loaded before polling")
+
+        last_positions = {}
+        yaml_data = self.prune_module_child_entries(
+            self.read_yaml(self.yaml_path),
+            module_child_refdes=self.module_child_refdes,
+        )
+        print(f"\nPolling KiCad for placement changes (every {self.poll_interval}s)...")
+        print(f"YAML output: {self.yaml_path}")
+        print("Press Ctrl-C to stop.\n")
+
+        try:
+            while True:
                 try:
-                    ipc.refresh_board()
-                except Exception:
-                    pass
-                continue
-
-            if _positions_changed(last_positions, current):
-                changed = []
-                for ref in current:
-                    if ref not in last_positions:
-                        changed.append(ref)
-                    else:
-                        o, n = last_positions[ref], current[ref]
-                        if (abs(o.x_mm - n.x_mm) > 0.001
-                                or abs(o.y_mm - n.y_mm) > 0.001
-                                or abs(o.angle_deg - n.angle_deg) > 0.05
-                                or o.layer != n.layer):
-                            changed.append(ref)
-
-                if last_positions:
+                    current = ipc.get_all_positions()
+                except Exception as exc:
+                    print(f"  IPC error: {exc} — retrying...")
+                    time.sleep(self.poll_interval)
                     try:
-                        snapshot_data = _positions_to_yaml_dict(
-                            current,
-                            descriptions,
-                            design=design,
-                            placement_mode=placement_mode,
+                        ipc.refresh_board()
+                    except Exception:
+                        pass
+                    continue
+
+                if self.positions_changed(last_positions, current):
+                    changed = self.changed_refs(last_positions, current)
+
+                    if last_positions:
+                        try:
+                            preferred_children_by_module = self.preferred_children_by_module(
+                                changed,
+                                child_to_module=self.child_to_module,
+                            )
+                            snapshot_data = self.positions_to_yaml_dict(
+                                current,
+                                self.descriptions,
+                                design=self.design,
+                                module_specs=self.module_specs,
+                                module_child_refdes=self.module_child_refdes,
+                                preferred_children_by_module=preferred_children_by_module,
+                            )
+                        except ValueError as exc:
+                            print(f"  Placement validation failed: {exc}")
+                            time.sleep(self.poll_interval)
+                            continue
+                        changed_keys = self.changed_yaml_keys(
+                            changed,
+                            child_to_module=self.child_to_module,
                         )
-                    except ValueError as exc:
-                        print(f"  Placement validation failed: {exc}")
-                        time.sleep(interval)
-                        continue
-                    changed_keys = _changed_yaml_keys(
-                        changed,
-                        design=design,
-                        placement_mode=placement_mode,
-                    )
-                    yaml_data = _merge_yaml_changes(yaml_data, snapshot_data, changed_keys)
-                    _write_yaml(yaml_path, yaml_data)
+                        yaml_data = self.merge_yaml_changes(yaml_data, snapshot_data, changed_keys)
+                        yaml_data = self.prune_module_child_entries(
+                            yaml_data,
+                            module_child_refdes=self.module_child_refdes,
+                        )
+                        self.write_yaml(self.yaml_path, yaml_data)
 
-                    for ref in changed:
-                        p = current[ref]
-                        print(f"  {ref}: ({p.x_mm:.2f}, {p.y_mm:.2f}) "
-                              f"{p.angle_deg:.0f}° {_layer_name(p.layer)}")
-                else:
-                    print(f"  Initial snapshot: {len(current)} footprints")
+                        for ref in changed:
+                            p = current[ref]
+                            print(
+                                f"  {ref}: ({p.x_mm:.2f}, {p.y_mm:.2f}) "
+                                f"{p.angle_deg:.0f}° {self.layer_name(p.layer)}"
+                            )
+                    else:
+                        print(f"  Initial snapshot: {len(current)} footprints")
 
-                last_positions = current
+                    last_positions = current
 
-            time.sleep(interval)
+                time.sleep(self.poll_interval)
 
-    except KeyboardInterrupt:
-        if yaml_data:
-            _write_yaml(yaml_path, yaml_data)
-        print(f"\nSaved final placements to {yaml_path}")
+        except KeyboardInterrupt:
+            if yaml_data:
+                self.write_yaml(self.yaml_path, yaml_data)
+            print(f"\nSaved final placements to {self.yaml_path}")
 
+    def run(self):
+        design = self.load_design()
+        pcb_path = self.export_board()
 
-# ------------------------------------------------------------------
-# Main
-# ------------------------------------------------------------------
+        if not self.no_open:
+            print(f"Opening KiCad with {pcb_path}...")
+            self.open_kicad(pcb_path)
+
+        print("Connecting to KiCad API...")
+        ipc = self.connect_ipc(design)
+        print("  Connected!")
+        self.poll_loop(ipc)
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -462,53 +519,14 @@ def main():
         action="store_true",
         help="Don't open KiCad automatically (assume it's already running).",
     )
-    parser.add_argument(
-        "--placement-mode",
-        choices=("flat", "rigid-modules"),
-        default="flat",
-        help="Write either per-footprint placements or collapse module children into rigid module placements.",
-    )
     args = parser.parse_args()
 
-    # 1. Load design
-    print(f"Loading design from {args.script}...")
-    design = _load_design_from_script(args.script)
-    print(f"  Design: {design.name}")
-
-    descriptions = _build_description_map(design)
-    print(f"  Components: {len(descriptions)}")
-
-    # 2. Export board
-    script_path = pathlib.Path(args.script).resolve()
-    pcb_dir = script_path.parent
-    kicad_exporter.KicadExporter(design).save(output_folder=str(pcb_dir))
-    pcb_path = pcb_dir / f"{design.name}.kicad_pcb"
-
-    # 3. Determine YAML output path
-    if args.output:
-        yaml_path = pathlib.Path(args.output).resolve()
-    else:
-        yaml_path = script_path.with_suffix(".yaml")
-
-    # 4. Open KiCad
-    if not args.no_open:
-        print(f"Opening KiCad with {pcb_path}...")
-        _open_kicad(pcb_path)
-
-    # 5. Connect to KiCad IPC
-    print("Connecting to KiCad API...")
-    ipc = _connect_ipc(design)
-    print("  Connected!")
-
-    # 6. Poll and write YAML
-    _poll_loop(
-        ipc,
-        yaml_path,
-        descriptions,
-        design,
-        interval=args.poll_interval,
-        placement_mode=args.placement_mode,
-    )
+    PlaceWithKicad(
+        script_path=pathlib.Path(args.script),
+        yaml_path=pathlib.Path(args.output) if args.output else None,
+        poll_interval=args.poll_interval,
+        no_open=args.no_open,
+    ).run()
 
 
 if __name__ == "__main__":
