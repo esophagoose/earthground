@@ -286,6 +286,8 @@ class Design:
                 #   First valid net set as net for all pins
                 net_name = [net.name for net in nets if net][0]
         for pin in list_of_pins:
+            if not isinstance(pin, cmp.Pin):
+                raise ValueError(f"Schematic connection error! Invalid pin: {type(pin)} {pin}")
             self.join_net(pin, net_name)
 
     def _get_bus_index(self, bus):
