@@ -3,7 +3,7 @@ import pytest
 import earthground.footprints.passives as passives
 from earthground.components import Capacitor, Component, Net, Pin, Resistor
 from earthground.library.integrated_circuits.io_expanders import tca9535pwr
-from earthground.schematic import Design, Ports
+from earthground.schematic import Design, Ports, SchematicValidationError
 
 
 def test_ports_initialization():
@@ -183,3 +183,16 @@ def test_printing():
     design.add_component(Resistor(1000))
     design.print_symbol()
     design.print()
+
+
+def test_validate_raises_schematic_validation_error_and_logs(caplog):
+    caplog.set_level("ERROR", logger="earthground.schematic")
+    design = Design("TestDesign")
+    design.add_component(Component())
+
+    with pytest.raises(SchematicValidationError) as excinfo:
+        design.validate()
+
+    assert excinfo.value.design_name == "TestDesign"
+    assert "No footprint" in str(excinfo.value)
+    assert "VALIDATION FAILED" in caplog.text

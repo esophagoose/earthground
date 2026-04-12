@@ -14,6 +14,8 @@ import earthground.layout as layout
 import earthground.schematic as sch
 from earthground.library.protocols import serial
 
+log = logging.getLogger(__name__)
+
 
 class GenericMicrocontroller(cmp.Component):
     """
@@ -48,13 +50,13 @@ class GenericMicrocontroller(cmp.Component):
                     f"Invalid peripheral type for {peripheral_name}: {type(peripheral)}"
                 )
             if any([p.name in self._used_pins for p in peripheral.as_dict().values()]):
-                logging.debug(f"Skipping {peripheral_name}{i}: pins are already used")
+                log.debug("Skipping %s%s: pins are already used", peripheral_name, i)
                 continue
-            logging.debug(f"Assigning {peripheral_name}{i}: pins are not used")
+            log.debug("Assigning %s%s: pins are not used", peripheral_name, i)
             for pin_name, pin in peripheral.as_dict().items():
                 net_name = f"{peripheral_name.upper()}{index}_{pin_name.upper()}"
                 if net_name in self._port_to_pin_name:
-                    logging.debug(f"Skipping {net_name}: pin is already assigned")
+                    log.debug("Skipping %s: pin is already assigned", net_name)
                     continue
                 self._port_to_pin_name[net_name] = pin.name
                 self._used_pins.append(pin.name)
@@ -69,9 +71,9 @@ class GenericMicrocontroller(cmp.Component):
             )
         for pin in pin_list:
             if pin.name in self._used_pins:
-                logging.debug(f"Skipping {pin.name}: pin is already used")
+                log.debug("Skipping %s: pin is already used", pin.name)
                 continue
-            logging.debug(f"Assigning {pin.name}: pin is not used")
+            log.debug("Assigning %s: pin is not used", pin.name)
             self._port_to_pin_name[f"{list_name.upper()}{index}"] = pin.name
             self._used_pins.append(pin.name)
             return self

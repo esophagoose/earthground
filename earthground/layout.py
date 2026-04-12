@@ -16,6 +16,9 @@ if TYPE_CHECKING:
     import earthground.schematic as sch_lib
 
 
+log = logging.getLogger(__name__)
+
+
 SCHEMATIC_WIDTH = 600
 GRID_SIZE = 0.5
 TEXT_HEIGHT = 1
@@ -128,7 +131,7 @@ class Layout:
                 f"Cannot get placement for {id}. Component not in {self.design.name}"
             )
         elif id in floating_components:
-            logging.warning(f"Component {id} is floating in {self.design.name}")
+            log.warning("Component %s is floating in %s", id, self.design.name)
             index = floating_components.index(id)
             x = 0
             for f in floating_components[:index]:
@@ -149,7 +152,7 @@ class Layout:
             )
         if not self.placement[id].id or self.design.components[id].virtual:
             if self.design.components[id].virtual and self.placement[id].id:
-                logging.warning(f"Placement ID is set but ignored on modules: {id}")
+                log.warning("Placement ID is set but ignored on modules: %s", id)
             return ComponentLayout(
                 id=Position(x=0, y=0, angle=0),
                 id_orientation=Orientation.CENTER,

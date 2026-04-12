@@ -15,6 +15,8 @@ import earthground.layout as layout_lib
 import earthground.schematic as sch_lib
 from earthground.importers.kicad import KicadFootprint
 
+log = logging.getLogger(__name__)
+
 
 def to_pos(coordinates, angle=0):
     return base.Position(X=coordinates[0], Y=coordinates[1], angle=angle)
@@ -73,7 +75,6 @@ def get_index_fptext(footprint: fp.Footprint) -> Optional[fp.FpText]:
     for item in footprint.graphicItems:
         if isinstance(item, fp.FpText) and item.type == "reference":
             return item
-
 
 def _ensure_kicad_net(
     exporter: "KicadExporter",
@@ -211,7 +212,7 @@ class KicadExporter:
             self.add_pours(pour)
 
         for via in schematic.layout.vias:
-            logging.info("Adding via: ", via)
+            log.info("Adding via: %s", via)
             self.add_via(via)
     
     def parse_footprint(
@@ -378,6 +379,8 @@ class KicadExporter:
                         f"{layer_prefix}.SilkS",
                     )
                     footprint.graphicItems.append(line)
+
+        footprint.properties["MPN"] = component.mpn or ""
 
         if _is_bottom_layer(layer):
             _mirror_footprint_geometry_across_y_axis(footprint)

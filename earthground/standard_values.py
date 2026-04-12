@@ -4,6 +4,9 @@ from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from typing import Optional, Union
 
+
+log = logging.getLogger(__name__)
+
 SI_MAP = {
     "p": Decimal("1e-12"),
     "n": Decimal("1e-9"),
@@ -92,9 +95,21 @@ def voltage_divider(
     r1 = find_closest_value(r_total - r2)
     vout_actual = vsupply * r2 / (r1 + r2)
     error = abs(vout - vout_actual) / vout * 100
-    logging.info(f"Voltage divider: {vsupply}V -> {vout}V, R1: {r1}, R2: {r2}")
-    logging.info(f"Output voltage: Expected {vout}V, Actual {vout_actual}V")
-    logging.info(f"Error: {error:.2f}%")
+    log.debug("Voltage divider: %sV -> %sV, R1: %s, R2: %s", vsupply, vout, r1, r2)
+    log.debug(
+        "Output voltage: expected %sV, actual %sV",
+        vout,
+        vout_actual,
+    )
+    if error > 3:
+        log.warning(
+            "Voltage divider error %.2f%% exceeds 3%% for %sV -> %sV",
+            error,
+            vsupply,
+            vout,
+        )
+    else:
+        log.debug("Error: %.2f%%", error)
     return (r1, r2)
 
 

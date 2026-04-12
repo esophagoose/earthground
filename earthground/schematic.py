@@ -6,6 +6,26 @@ import earthground.footprints.passives as passives
 import earthground.layout as layout_lib
 import earthground.standard_values as sv
 
+log = logging.getLogger(__name__)
+
+
+class SchematicError(Exception):
+    pass
+
+
+class SchematicValidationError(SchematicError):
+    def __init__(self, design_name: str, errors: List[str]):
+        self.design_name = design_name
+        self.errors = list(errors)
+        super().__init__(
+            f"Validation failed for {design_name}: " + "; ".join(self.errors)
+        )
+
+
+class SchematicConnectionError(SchematicError):
+    def __init__(self, message: str):
+        self.message = f"Schematic connection error: {message}"
+        super().__init__(self.message)
 
 class Ports:
     """
@@ -73,7 +93,7 @@ class Design:
         - Names already prefixed with this design's short_name_ are left unchanged.
         - All other names are prefixed with short_name_.
         """
-        if raw_name == "GND":
+        if raw_name == self.ground:
             return raw_name
         prefix = f"{self.short_name}_"
         if raw_name.startswith(prefix):
@@ -127,7 +147,7 @@ class Design:
         :return: The component that was added, with updated footprint if applicable.
         :rtype: Component
         """
-        logging.info(f"Adding component {component}")
+        log.debug(f"Adding component {component}")
         if isinstance(component, cmp.PASSIVE_TYPES):
             self.set_passive_footprint(component)
 
@@ -202,7 +222,7 @@ class Design:
         :type new_net_name: str
         :return: None
         """
-        logging.info(f"Overwriting net {old_net_name} to {new_net_name}")
+        log.debug(f"Changing net name from {old_net_name} to {new_net_name}")
         self.nets[new_net_name] = self.nets.pop(old_net_name)
         self.nets[new_net_name].name = new_net_name
 
@@ -287,7 +307,7 @@ class Design:
                 net_name = [net.name for net in nets if net][0]
         for pin in list_of_pins:
             if not isinstance(pin, cmp.Pin):
-                raise ValueError(f"Schematic connection error! Invalid pin: {type(pin)} {pin}")
+                raise SchematicConnectionError(f"Schematic connection error! Invalid pin: {type(pin)} {pin}")
             self.join_net(pin, net_name)
 
     def _get_bus_index(self, bus):
@@ -475,18 +495,18 @@ class Design:
             components.extend(list(module.components.values()))
         if not skip_footprint_check:
             for component in components:
-                logging.debug(f"Validated: {component}")
+                log.debug(f"Validated: {component}")
                 if not component.footprint and not component.virtual:
                     errors.append(f"No footprint: {component.name}")
         errors.extend(self._validate_design(check_no_single_connections))
         if errors:
             header = f" {self.name.upper()} VALIDATION FAILED "
-            logging.error("")
-            logging.error(header.center(60, "="))
+            log.error("")
+            log.error(header.center(60, "="))
             for e in errors:
-                logging.error(f" - {e}")
-            logging.error("")
-            assert not errors
+                log.error(f" - {e}")
+            log.error("")
+            raise SchematicValidationError(self.name, errors)
         return components
 
     def _validate_design(self, check_no_single_connections: bool):

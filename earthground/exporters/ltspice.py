@@ -10,6 +10,7 @@ import earthground.components as cmp
 import earthground.schematic as sch
 
 NEW_SECTION_COMMANDS = ["SYMATTR", "TEXT"]
+log = logging.getLogger(__name__)
 
 
 class LTspiceExporter:
@@ -64,7 +65,7 @@ class LTspiceExporter:
         if filename:
             with open(filename, "w") as f:
                 f.write(content)
-            logging.info(f"Exported LTspice schematic to {filename}")
+            log.info("Exported LTspice schematic to %s", filename)
         return content
 
     def _write_header(self):

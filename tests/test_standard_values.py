@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 
 from earthground.standard_values import (SiNumber, find_closest_ratio,
-                                         get_standard_values)
+                                         get_standard_values, voltage_divider)
 
 
 def test_get_standard_values():
@@ -44,3 +44,22 @@ def test_si_number():
     # Test incorrect unit
     with pytest.raises(ValueError):
         SiNumber("UNDEFINED", "Hz")
+
+
+def test_voltage_divider_logs_debug_when_error_within_threshold(caplog):
+    caplog.set_level("DEBUG", logger="earthground.standard_values")
+
+    voltage_divider(3.3, 0.9, 10)
+
+    assert "Voltage divider: 3.3V -> 0.9V" in caplog.text
+    assert "Error: 2.94%" in caplog.text
+    assert "exceeds 3%" not in caplog.text
+
+
+def test_voltage_divider_warns_when_error_exceeds_threshold(caplog):
+    caplog.set_level("DEBUG", logger="earthground.standard_values")
+
+    voltage_divider(3.3, 1.8, 10)
+
+    assert "Voltage divider: 3.3V -> 1.8V" in caplog.text
+    assert "Voltage divider error 3.70% exceeds 3%" in caplog.text
