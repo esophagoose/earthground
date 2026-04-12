@@ -22,6 +22,7 @@ def test_parse_footprint():
 
     assert isinstance(footprint, fp.Footprint)
     assert footprint.entryName == "RES_100.0Ω"
+    assert footprint.properties["MPN"] == ""
     assert footprint.pads[0].number == "1"
     # assert footprint.pads[0].net.name == "NET_A"
     # assert footprint.pads[0].position == fp.Position(X=-0.9125, Y=0)

@@ -75,6 +75,7 @@ def test_bottom_layer_native_smd_footprint_uses_bottom_layers_and_mirrored_text(
 def test_bottom_layer_imported_footprint_switches_text_and_smd_pad_layers():
     component = cmp.Component("U")
     component.name = "ImportedAsymmetric"
+    component.mpn = "IMP-123"
     component.pins = cmp.PinContainer.from_dict({1: "P1", 2: "P2"}, component)
     component.footprint = KicadFootprint(
         "Test",
@@ -120,6 +121,7 @@ def test_bottom_layer_imported_footprint_switches_text_and_smd_pad_layers():
     assert footprint.pads[1].position == base.Position(X=-1, Y=-2, angle=0)
     assert footprint.pads[0].layers == ["B.Cu", "B.Mask", "B.Paste"]
     assert footprint.pads[1].layers == ["B.Cu", "B.Mask", "B.Paste"]
+    assert footprint.properties["MPN"] == "IMP-123"
 
 
 def test_module_placement_on_bottom_layer_pushes_child_footprints_to_bottom():
@@ -253,3 +255,4 @@ def test_native_footprint_description_uses_component_mpn_when_available():
     )
 
     assert footprint.description == "RC0805FR-07100RL"
+    assert footprint.properties["MPN"] == "RC0805FR-07100RL"

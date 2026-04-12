@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pytest
 
 from earthground.standard_values import (SiNumber, find_closest_ratio,
@@ -24,12 +26,20 @@ def test_find_closest_ratio():
 def test_si_number():
     # Test initialization and string representation
     number = SiNumber(1000, "Ω")
-    assert str(number) == "1.0kΩ", "String representation should be 1kΩ"
-    assert repr(number) == "1.0kΩ", "String representation should be 1kΩ"
+    assert str(number) == "1kΩ", "String representation should be 1kΩ"
+    assert repr(number) == "1kΩ", "String representation should be 1kΩ"
 
-    # Test initialization with string and float representation
+    # Test initialization with string and Decimal representation
     number = SiNumber("1kΩ", "Ω")
-    assert number.value == 1000, "Value should be 1000 for 1kΩ"
+    assert number.value == Decimal("1000"), "Value should be 1000 for 1kΩ"
+
+    # Test float input is normalized through Decimal formatting
+    number = SiNumber(47e-9, "F")
+    assert str(number) == "47nF", "Float inputs should format without artifacts"
+
+    # Test fractional values preserve meaningful precision
+    number = SiNumber("47.1nF", "F")
+    assert str(number) == "47.1nF", "Fractional values should keep the decimal part"
 
     # Test incorrect unit
     with pytest.raises(ValueError):

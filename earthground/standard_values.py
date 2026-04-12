@@ -1,17 +1,18 @@
 import logging
 import math
+from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from typing import Optional, Union
 
 SI_MAP = {
-    "p": 1e-12,
-    "n": 1e-9,
-    "u": 1e-6,
-    "m": 1e-3,
-    "": 1,
-    "k": 1e3,
-    "M": 1e6,
-    "G": 1e9,
+    "p": Decimal("1e-12"),
+    "n": Decimal("1e-9"),
+    "u": Decimal("1e-6"),
+    "m": Decimal("1e-3"),
+    "": Decimal("1"),
+    "k": Decimal("1e3"),
+    "M": Decimal("1e6"),
+    "G": Decimal("1e9"),
 }
 
 STANDARD_VALUE_EXCEPTIONS = {
@@ -103,17 +104,23 @@ class SiNumber:
     def __init__(self, value, unit):
         if isinstance(value, str) and value.endswith(unit):
             value = value[: -len(unit)]
-        self.value = self._convert_to_float(value)
+        self.value = self._convert_to_decimal(value)
         self.unit = unit
 
-    def _convert_to_float(self, value):
+    def _convert_to_decimal(self, value):
         if isinstance(value, str):
             number, units = value[:-1], value[-1]
-            if value[-1] in SI_MAP:
-                return float(number) * SI_MAP[units]
-            else:
-                return float(value)
-        elif isinstance(value, (int, float)):
+            try:
+                if value[-1] in SI_MAP:
+                    return Decimal(number) * SI_MAP[units]
+                return Decimal(value)
+            except InvalidOperation as exc:
+                raise ValueError(f"Unsupported type: {value}") from exc
+        elif isinstance(value, int):
+            return Decimal(value)
+        elif isinstance(value, float):
+            return Decimal(str(value))
+        elif isinstance(value, Decimal):
             return value
         raise ValueError(f"Unsupported type: {value}")
 
@@ -121,11 +128,29 @@ class SiNumber:
         si_reversed = {v: k for k, v in SI_MAP.items()}
         for key in sorted(si_reversed.keys(), reverse=True):
             if self.value >= key:
-                return str(self.value / key) + si_reversed[key] + self.unit
-        return str(self.value) + self.unit
+                return (
+                    self._format_decimal(self.value / key)
+                    + si_reversed[key]
+                    + self.unit
+                )
+        return self._format_decimal(self.value) + self.unit
 
     def __repr__(self):
         return self.__str__()
+
+    def __float__(self):
+        return float(self.value)
+
+    @staticmethod
+    def _format_decimal(value: Decimal) -> str:
+        normalized = value.normalize()
+        if normalized == normalized.to_integral():
+            return format(normalized.quantize(Decimal("1")), "f")
+
+        text = format(normalized, "f")
+        if "." in text:
+            text = text.rstrip("0").rstrip(".")
+        return text
 
 
 def is_either_none(value1, value2):
