@@ -280,6 +280,14 @@ class KicadExporter:
                 try:
                     index = int(pad.number)
                 except (ValueError, TypeError):
+                    if not pad.number:
+                        print(f"Warning: Invalid pad number: {pad.number}")
+                        continue
+                    index = pad.number
+                try:
+                    pin = component.pins[index]
+                except (ValueError, TypeError):
+                    print(f"Warning: Invalid pin index: {index}")
                     continue
                 pin = component.pins[index]
                 net = schematic.pin_to_net.get(pin)
