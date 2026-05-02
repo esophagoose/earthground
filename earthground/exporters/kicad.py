@@ -27,7 +27,9 @@ def to_position(coordinates, angle=None):
 
 
 def shift(position: base.Position, offset: Tuple[float, float]) -> base.Position:
-    return base.Position(X=position.X + offset[0], Y=position.Y + offset[1], angle=position.angle)
+    return base.Position(
+        X=position.X + offset[0], Y=position.Y + offset[1], angle=position.angle
+    )
 
 
 def _to_kiutil_position(position: layout_lib.Position) -> base.Position:
@@ -67,6 +69,7 @@ def aperture_to_shape_size(aperture):
         return "circle", base.Position(aperture.diameter, aperture.diameter)
     raise NotImplementedError(f"Unsupported aperture: {aperture}")
 
+
 def get_index(fp: fp.Footprint) -> Optional[str]:
     return fp.properties.get("Reference", None)
 
@@ -75,6 +78,7 @@ def get_index_fptext(footprint: fp.Footprint) -> Optional[fp.FpText]:
     for item in footprint.graphicItems:
         if isinstance(item, fp.FpText) and item.type == "reference":
             return item
+
 
 def _ensure_kicad_net(
     exporter: "KicadExporter",
@@ -111,9 +115,11 @@ def _mirror_graphic_item_across_y_axis(item) -> None:
             item,
             "coordinates",
             [
-                _mirror_position_across_y_axis(position)
-                if isinstance(position, base.Position)
-                else position
+                (
+                    _mirror_position_across_y_axis(position)
+                    if isinstance(position, base.Position)
+                    else position
+                )
                 for position in coordinates
             ],
         )
@@ -141,7 +147,9 @@ def _apply_footprint_side(footprint: fp.Footprint, layer: layout_lib.Layer) -> N
 
 
 class KicadExporter:
-    def __init__(self, schematic: sch_lib.Design, pcb_path: Optional[pathlib.Path] = None):
+    def __init__(
+        self, schematic: sch_lib.Design, pcb_path: Optional[pathlib.Path] = None
+    ):
         """
         A class to export schematic designs to KiCad format.
 
@@ -156,13 +164,19 @@ class KicadExporter:
         else:
             self.board = kiutils.board.Board.create_new()
             self.schematic = schematic
-            self.assigned_layout: Dict[str, layout_lib.ComponentLayout] = schematic.layout.placement
+            self.assigned_layout: Dict[str, layout_lib.ComponentLayout] = (
+                schematic.layout.placement
+            )
             self._added_nets: Dict[str, base.Net] = {}
             inner_layers = list(range(self.schematic.layout.layer_count - 2))
-            self._layer_map = ["F.Cu"] + [f"In{i+2}.Cu" for i in inner_layers] + ["B.Cu"]
+            self._layer_map = (
+                ["F.Cu"] + [f"In{i+2}.Cu" for i in inner_layers] + ["B.Cu"]
+            )
             for i in inner_layers:
-                self.board.layers.append(kibrditems.LayerToken(ordinal=2*i+4, name=f"In{i+2}.Cu"))
-    
+                self.board.layers.append(
+                    kibrditems.LayerToken(ordinal=2 * i + 4, name=f"In{i+2}.Cu")
+                )
+
     def _collect_all_nets(self, schematic: sch_lib.Design) -> Dict[str, cmp.Net]:
         """
         Collect all nets from the design and all its modules recursively.
@@ -189,13 +203,13 @@ class KicadExporter:
             kicad_net = base.Net(number=i + net_index_start + 1, name=net.name)
             self.board.nets.append(kicad_net)
             self._added_nets[net.name] = kicad_net
-        
+
         for cid, (layout, component) in flattened_layout.items():
             if component.virtual:
                 continue
             f_pos = _to_kiutil_position(layout.component)
             id_pos = _to_kiutil_position(layout.id)
-            
+
             footprint = self.parse_footprint(
                 cid,
                 component,
@@ -214,7 +228,7 @@ class KicadExporter:
         for via in schematic.layout.vias:
             log.info("Adding via: %s", via)
             self.add_via(via)
-    
+
     def parse_footprint(
         self,
         cid: str | sch_lib.Design,
@@ -389,6 +403,9 @@ class KicadExporter:
                     footprint.graphicItems.append(line)
 
         footprint.properties["MPN"] = component.mpn or ""
+        footprint.properties["Manufacturer"] = (
+            getattr(component, "manufacturer", "") or ""
+        )
 
         if _is_bottom_layer(layer):
             _mirror_footprint_geometry_across_y_axis(footprint)
@@ -404,11 +421,13 @@ class KicadExporter:
 
     def draw_board_outline(self):
         outline = self.schematic.layout.outline
-        self.board.graphicItems.append(fp.GrRect(
-            start=to_pos((outline.x1, outline.y1)),
-            end=to_pos((outline.x2, outline.y2)),
-            layer="Edge.Cuts",
-        ))
+        self.board.graphicItems.append(
+            fp.GrRect(
+                start=to_pos((outline.x1, outline.y1)),
+                end=to_pos((outline.x2, outline.y2)),
+                layer="Edge.Cuts",
+            )
+        )
 
     def draw_fab_lines(self):
         for item in self.schematic.layout.fab:
@@ -424,7 +443,10 @@ class KicadExporter:
                 self.board.graphicItems.append(
                     fp.GrText(
                         text=item.text,
-                        position=to_pos((item.position.x, item.position.y), angle=item.position.angle),
+                        position=to_pos(
+                            (item.position.x, item.position.y),
+                            angle=item.position.angle,
+                        ),
                         layer="F.Fab",
                         effects=base.Effects(
                             font=base.Font(
@@ -440,26 +462,37 @@ class KicadExporter:
 
     def add_pours(self, config: layout_lib.PourLayer):
         outline = self.schematic.layout.outline
-        polygon = kizones.ZonePolygon(coordinates=[to_pos((outline.x1, outline.y1)), to_pos((outline.x2, outline.y1)), to_pos((outline.x2, outline.y2)), to_pos((outline.x1, outline.y2))])
+        polygon = kizones.ZonePolygon(
+            coordinates=[
+                to_pos((outline.x1, outline.y1)),
+                to_pos((outline.x2, outline.y1)),
+                to_pos((outline.x2, outline.y2)),
+                to_pos((outline.x1, outline.y2)),
+            ]
+        )
         kicad_net = _ensure_kicad_net(self, self.schematic, config.net_name)
-        self.board.zones.append(kizones.Zone(
-            net=kicad_net.number,
-            netName=kicad_net.name,
-            layers=[self._layer_map[config.layer - 1]],
-            hatch=kizones.Hatch(style='edge', pitch=0.5),
-            clearance=0.5,
-            minThickness=0.25,
-            polygons=[polygon])
+        self.board.zones.append(
+            kizones.Zone(
+                net=kicad_net.number,
+                netName=kicad_net.name,
+                layers=[self._layer_map[config.layer - 1]],
+                hatch=kizones.Hatch(style="edge", pitch=0.5),
+                clearance=0.5,
+                minThickness=0.25,
+                polygons=[polygon],
+            )
         )
 
     def add_via(self, config: layout_lib.ViaConfig):
-        self.board.traceItems.append(kibrditems.Via(
-            position=to_pos(config.location),
-            size=config.hole_size,
-            drill=config.drill_size,
-            layers=["F.Cu", "B.Cu"],
-            net=self._added_nets[config.net_name].number,
-        ))
+        self.board.traceItems.append(
+            kibrditems.Via(
+                position=to_pos(config.location),
+                size=config.hole_size,
+                drill=config.drill_size,
+                layers=["F.Cu", "B.Cu"],
+                net=self._added_nets[config.net_name].number,
+            )
+        )
 
     def save(self, output_folder="./generated_outputs/", overwrite=False):
         """

@@ -5,8 +5,9 @@ import earthground.exporters.kicad as kicad
 import earthground.footprints.passives as pfp
 import earthground.layout as layout_lib
 from earthground.importers.kicad import KicadFootprint
-from earthground.library.integrated_circuits.voltage_regulators.linear.lm317 import \
-    LM317AMDTX
+from earthground.library.integrated_circuits.voltage_regulators.linear.lm317 import (
+    LM317AMDTX,
+)
 from earthground.schematic import Design
 
 
@@ -76,6 +77,7 @@ def test_bottom_layer_imported_footprint_switches_text_and_smd_pad_layers():
     component = cmp.Component("U")
     component.name = "ImportedAsymmetric"
     component.mpn = "IMP-123"
+    component.manufacturer = "Imported Corp"
     component.pins = cmp.PinContainer.from_dict({1: "P1", 2: "P2"}, component)
     component.footprint = KicadFootprint(
         "Test",
@@ -122,6 +124,7 @@ def test_bottom_layer_imported_footprint_switches_text_and_smd_pad_layers():
     assert footprint.pads[0].layers == ["B.Cu", "B.Mask", "B.Paste"]
     assert footprint.pads[1].layers == ["B.Cu", "B.Mask", "B.Paste"]
     assert footprint.properties["MPN"] == "IMP-123"
+    assert footprint.properties["Manufacturer"] == "Imported Corp"
 
 
 def test_module_placement_on_bottom_layer_pushes_child_footprints_to_bottom():
@@ -245,6 +248,7 @@ def test_native_footprint_description_uses_component_mpn_when_available():
     component = cmp.Resistor(100)
     component.footprint = pfp.PassiveSmd(pfp.PassivePackage.R0805)
     component.mpn = "RC0805FR-07100RL"
+    component.manufacturer = "Yageo"
 
     footprint = _export_single_component(
         component,
@@ -256,3 +260,4 @@ def test_native_footprint_description_uses_component_mpn_when_available():
 
     assert footprint.description == "RC0805FR-07100RL"
     assert footprint.properties["MPN"] == "RC0805FR-07100RL"
+    assert footprint.properties["Manufacturer"] == "Yageo"
