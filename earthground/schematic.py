@@ -27,6 +27,7 @@ class SchematicConnectionError(SchematicError):
         self.message = f"Schematic connection error: {message}"
         super().__init__(self.message)
 
+
 class Ports:
     """
     Ports are the interface between modules and their parent.
@@ -223,6 +224,11 @@ class Design:
         :return: None
         """
         log.debug(f"Changing net name from {old_net_name} to {new_net_name}")
+        if old_net_name == new_net_name:
+            return
+        if new_net_name in self.nets:
+            self.merge_nets(old_net_name, new_net_name)
+            return
         self.nets[new_net_name] = self.nets.pop(old_net_name)
         self.nets[new_net_name].name = new_net_name
 
@@ -307,7 +313,9 @@ class Design:
                 net_name = [net.name for net in nets if net][0]
         for pin in list_of_pins:
             if not isinstance(pin, cmp.Pin):
-                raise SchematicConnectionError(f"Schematic connection error! Invalid pin: {type(pin)} {pin}")
+                raise SchematicConnectionError(
+                    f"Schematic connection error! Invalid pin: {type(pin)} {pin}"
+                )
             self.join_net(pin, net_name)
 
     def _get_bus_index(self, bus):

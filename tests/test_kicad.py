@@ -88,3 +88,28 @@ def test_add_pour_sets_zone_net_name():
     assert zone.netName == "GND"
     assert zone.net == exporter._added_nets["GND"].number
     assert zone.layers == ["B.Cu"]
+
+
+def test_kicad_export_keeps_module_port_connected_resistors_on_parent_net():
+    module = Design("LS", "LS", ports=["SIG", "GND"])
+    module.add_series_res(module.port["SIG"], "10k", module.port["GND"])
+    pulldown = module.add_component(cmp.Resistor("4.7k"))
+    module.connect([pulldown.pins[1], module.port["SIG"]], "SIG")
+    module.connect([pulldown.pins[2], module.port["GND"]], "GND")
+
+    design = Design("TEST")
+    level_shifter = design.add_module(module)
+    design.join_net(level_shifter.port["SIG"], "SIG_0")
+    design.join_net(level_shifter.port["GND"], "GND")
+
+    exporter = kicad.KicadExporter(design)
+    exporter.convert_to_kicad(design)
+
+    pad_nets_by_reference = {
+        kicad.get_index_fptext(footprint).text: [
+            pad.net.name if pad.net else None for pad in footprint.pads
+        ]
+        for footprint in exporter.board.footprints
+    }
+    assert pad_nets_by_reference["LS1_R1"][0] == "SIG_0"
+    assert pad_nets_by_reference["LS1_R2"][0] == "SIG_0"
