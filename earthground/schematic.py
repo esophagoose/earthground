@@ -184,6 +184,17 @@ class Design:
         self.nets[net.name].connections.add(pin)
         self.pin_to_net[pin] = net
 
+    def _sync_child_port_net(
+        self, pin: cmp.Pin, net_name: str, include_self: bool = False
+    ) -> None:
+        if not isinstance(pin.parent, Ports):
+            return
+        module_design: Design = pin.parent.parent
+        if not include_self and module_design is self:
+            return
+        if pin in module_design.pin_to_net:
+            module_design.change_net_name(module_design.pin_to_net[pin].name, net_name)
+
     def _get_net_name_from_pin(self, pin: cmp.Pin) -> str:
         if pin in self.pin_to_net:
             return self.pin_to_net[pin].name
@@ -201,12 +212,7 @@ class Design:
         :rtype: earthground.components.Net
         """
         # If the pin is a port, then the net inside the module should be changed
-        if isinstance(pin.parent, Ports):
-            module_design: Design = pin.parent.parent
-            if pin in module_design.pin_to_net:
-                module_design.change_net_name(
-                    module_design.pin_to_net[pin].name, net_name
-                )
+        self._sync_child_port_net(pin, net_name, include_self=True)
         if net_name not in self.nets:
             self.nets[net_name] = cmp.Net(net_name)
         net = self.nets[net_name]
@@ -226,11 +232,14 @@ class Design:
         log.debug(f"Changing net name from {old_net_name} to {new_net_name}")
         if old_net_name == new_net_name:
             return
+        old_net_connections = list(self.nets[old_net_name].connections)
         if new_net_name in self.nets:
             self.merge_nets(old_net_name, new_net_name)
-            return
-        self.nets[new_net_name] = self.nets.pop(old_net_name)
-        self.nets[new_net_name].name = new_net_name
+        else:
+            self.nets[new_net_name] = self.nets.pop(old_net_name)
+            self.nets[new_net_name].name = new_net_name
+        for pin in old_net_connections:
+            self._sync_child_port_net(pin, new_net_name)
 
     def _enforce_scoped_net_names(self) -> None:
         """
@@ -272,9 +281,10 @@ class Design:
 
         source_net = self.nets[source_net_name]
         target_net = self.nets[target_net_name]
+        source_connections = list(source_net.connections)
 
         # Move all pins from source net to target net
-        for pin in list(source_net.connections):
+        for pin in source_connections:
             # Update pin_to_net mapping
             self.pin_to_net[pin] = target_net
             target_net.connections.add(pin)
@@ -285,6 +295,9 @@ class Design:
         # Rename target net if a new name is provided
         if name and name != target_net_name:
             self.change_net_name(target_net_name, name)
+        else:
+            for pin in source_connections:
+                self._sync_child_port_net(pin, target_net_name)
 
     def connect(self, list_of_pins: List[cmp.Pin], net_name=None):
         """
