@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import earthground.layout as layout_lib
 from earthground.library.integrated_circuits.voltage_regulators.linear import lm317
 from earthground.tools.place_with_kicad import PlaceWithKicad
 
@@ -45,6 +46,20 @@ def test_changed_refs_reuses_position_changed_logic():
     assert PlaceWithKicad.changed_refs(old, new) == ["C1", "U1"]
 
 
+def test_position_to_yaml_entry_converts_kicad_angle_to_layout_angle():
+    pos = SimpleNamespace(x_mm=1.0, y_mm=2.0, angle_deg=-90.0, layer="F.Cu")
+
+    entry = PlaceWithKicad.position_to_yaml_entry("R1", pos, {"R1": "resistor"})
+
+    assert entry == {
+        "description": "resistor",
+        "layer": "TOP",
+        "x": 1.0,
+        "y": 2.0,
+        "rotation": 90.0,
+    }
+
+
 def test_changed_yaml_keys_collapses_module_child_to_parent():
     design = lm317.LM317AMDTX.generate_design(3.3)
     design.add_module(lm317.LM317AMDTX.generate_design(3.3))
@@ -69,7 +84,7 @@ def test_positions_to_yaml_dict_writes_module_entry_from_child_translation():
         positions[refdes] = SimpleNamespace(
             x_mm=layout.component.x,
             y_mm=layout.component.y + 5.0,
-            angle_deg=layout.component.angle,
+            angle_deg=-layout.component.angle,
             layer=layer,
         )
 
@@ -97,7 +112,7 @@ def test_positions_to_yaml_dict_prefers_changed_child_for_module_entry():
         positions[refdes] = SimpleNamespace(
             x_mm=layout.component.x,
             y_mm=layout.component.y + y_offset,
-            angle_deg=layout.component.angle,
+            angle_deg=-layout.component.angle,
             layer=layer,
         )
 
@@ -109,6 +124,36 @@ def test_positions_to_yaml_dict_prefers_changed_child_for_module_entry():
     )
 
     assert yaml_data["REG1"]["y"] == 5.0
+
+
+def test_positions_to_yaml_dict_infers_module_layout_rotation_from_kicad_angle():
+    design = lm317.LM317AMDTX.generate_design(3.3)
+    design.add_module(lm317.LM317AMDTX.generate_design(3.3))
+    descriptions = PlaceWithKicad.build_description_map(design)
+    module_spec = PlaceWithKicad.build_module_specs(design)["REG1"]
+    module_rotation = 90.0
+    module_translation = (10.0, 20.0)
+
+    positions = {}
+    for refdes, component_layout in module_spec.child_layouts.items():
+        rotated = component_layout.component.rotate(module_rotation)
+        layer = "B.Cu" if component_layout.layer == layout_lib.Layer.BOTTOM else "F.Cu"
+        positions[refdes] = SimpleNamespace(
+            x_mm=rotated.x + module_translation[0],
+            y_mm=rotated.y + module_translation[1],
+            angle_deg=-(component_layout.component.angle + module_rotation),
+            layer=layer,
+        )
+
+    yaml_data = PlaceWithKicad.positions_to_yaml_dict(
+        positions,
+        descriptions,
+        design=design,
+    )
+
+    assert yaml_data["REG1"]["x"] == 10.0
+    assert yaml_data["REG1"]["y"] == 20.0
+    assert yaml_data["REG1"]["rotation"] == 90.0
 
 
 def test_prune_module_child_entries_removes_existing_child_keys():

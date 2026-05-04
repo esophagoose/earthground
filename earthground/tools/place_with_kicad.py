@@ -43,9 +43,13 @@ class PlaceWithKicad:
     design: sch_lib.Design | None = dataclasses.field(default=None, init=False)
     descriptions: dict[str, str] = dataclasses.field(default_factory=dict, init=False)
     pcb_path: pathlib.Path | None = dataclasses.field(default=None, init=False)
-    module_specs: dict[str, ModulePlacementSpec] = dataclasses.field(default_factory=dict, init=False)
+    module_specs: dict[str, ModulePlacementSpec] = dataclasses.field(
+        default_factory=dict, init=False
+    )
     module_child_refdes: set[str] = dataclasses.field(default_factory=set, init=False)
-    child_to_module: dict[str, str] = dataclasses.field(default_factory=dict, init=False)
+    child_to_module: dict[str, str] = dataclasses.field(
+        default_factory=dict, init=False
+    )
 
     def __post_init__(self):
         self.script_path = pathlib.Path(self.script_path).resolve()
@@ -91,7 +95,9 @@ class PlaceWithKicad:
                     descriptions[refdes] = component.parent.name
                     walk(component.parent, prefix=f"{refdes}_")
                 elif not component.virtual:
-                    descriptions[refdes] = getattr(component, "description", "") or component.name
+                    descriptions[refdes] = (
+                        getattr(component, "description", "") or component.name
+                    )
 
         walk(design)
         return descriptions
@@ -134,6 +140,10 @@ class PlaceWithKicad:
         return float((round(angle / 90.0) * 90) % 360)
 
     @staticmethod
+    def kicad_angle_to_layout_angle(angle: float) -> float:
+        return float((-angle) % 360)
+
+    @staticmethod
     def angle_error(actual: float, expected: float) -> float:
         return abs(((actual - expected + 180) % 360) - 180)
 
@@ -151,7 +161,10 @@ class PlaceWithKicad:
             if not isinstance(component, cmp.ModuleComponent):
                 continue
             child_layouts = {}
-            for child_refdes, (component_layout, _child_component) in component.parent.layout.flatten().items():
+            for child_refdes, (
+                component_layout,
+                _child_component,
+            ) in component.parent.layout.flatten().items():
                 child_layouts[f"{refdes}_{child_refdes}"] = component_layout
             specs[refdes] = ModulePlacementSpec(
                 refdes=refdes,
@@ -186,28 +199,38 @@ class PlaceWithKicad:
         preferred_child_refdes: str | None = None,
     ) -> dict:
         if not spec.child_layouts:
-            raise ValueError(f"Module {spec.refdes} has no child footprints to infer placement from")
+            raise ValueError(
+                f"Module {spec.refdes} has no child footprints to infer placement from"
+            )
 
         child_refdes = preferred_child_refdes
         if child_refdes is None or child_refdes not in spec.child_layouts:
             child_refdes = next(iter(spec.child_layouts))
         if child_refdes not in positions:
-            raise ValueError(f"Module {spec.refdes} is missing child footprint {child_refdes}")
+            raise ValueError(
+                f"Module {spec.refdes} is missing child footprint {child_refdes}"
+            )
 
         component_layout = spec.child_layouts[child_refdes]
         current = positions[child_refdes]
         inferred_rotation = cls.round_to_right_angle(
-            current.angle_deg - component_layout.component.angle
+            cls.kicad_angle_to_layout_angle(current.angle_deg)
+            - component_layout.component.angle
         )
-        if cls.angle_error(
-            current.angle_deg,
-            component_layout.component.angle + inferred_rotation,
-        ) > 0.2:
+        if (
+            cls.angle_error(
+                cls.kicad_angle_to_layout_angle(current.angle_deg),
+                component_layout.component.angle + inferred_rotation,
+            )
+            > 0.2
+        ):
             raise ValueError(
                 f"Module {spec.refdes} child {child_refdes} rotation is not a rigid 90-degree transform"
             )
 
-        local_layer = "BOTTOM" if component_layout.layer == layout_lib.Layer.BOTTOM else "TOP"
+        local_layer = (
+            "BOTTOM" if component_layout.layer == layout_lib.Layer.BOTTOM else "TOP"
+        )
         current_layer = cls.layer_name(current.layer)
         inferred_layer = "TOP" if current_layer == local_layer else "BOTTOM"
 
@@ -249,7 +272,9 @@ class PlaceWithKicad:
 
         result = {}
         for refdes in sorted(positions):
-            result[refdes] = cls.position_to_yaml_entry(refdes, positions[refdes], descriptions)
+            result[refdes] = cls.position_to_yaml_entry(
+                refdes, positions[refdes], descriptions
+            )
         return result
 
     @classmethod
@@ -265,18 +290,26 @@ class PlaceWithKicad:
     ) -> dict:
         result = {}
         if module_specs is None or module_child_refdes is None:
-            module_specs, module_child_refdes, _child_to_module = cls.build_module_metadata(design)
+            module_specs, module_child_refdes, _child_to_module = (
+                cls.build_module_metadata(design)
+            )
 
         for refdes in sorted(positions):
             if refdes in module_child_refdes:
                 continue
-            result[refdes] = cls.position_to_yaml_entry(refdes, positions[refdes], descriptions)
+            result[refdes] = cls.position_to_yaml_entry(
+                refdes, positions[refdes], descriptions
+            )
 
         for refdes in sorted(module_specs):
             result[refdes] = cls.infer_module_yaml_entry(
                 module_specs[refdes],
                 positions,
-                preferred_child_refdes=None if preferred_children_by_module is None else preferred_children_by_module.get(refdes),
+                preferred_child_refdes=(
+                    None
+                    if preferred_children_by_module is None
+                    else preferred_children_by_module.get(refdes)
+                ),
             )
         return result
 
@@ -291,7 +324,9 @@ class PlaceWithKicad:
         if child_to_module is None:
             if design is None:
                 raise ValueError("design or child_to_module is required")
-            _module_specs, _module_child_refdes, child_to_module = cls.build_module_metadata(design)
+            _module_specs, _module_child_refdes, child_to_module = (
+                cls.build_module_metadata(design)
+            )
 
         return {child_to_module.get(refdes, refdes) for refdes in changed_refs}
 
@@ -309,13 +344,15 @@ class PlaceWithKicad:
         return preferred
 
     @classmethod
-    def position_to_yaml_entry(cls, refdes: str, pos, descriptions: dict[str, str]) -> dict:
+    def position_to_yaml_entry(
+        cls, refdes: str, pos, descriptions: dict[str, str]
+    ) -> dict:
         return {
             "description": descriptions.get(refdes, ""),
             "layer": cls.layer_name(pos.layer),
             "x": round(pos.x_mm, 3),
             "y": round(pos.y_mm, 3),
-            "rotation": round(pos.angle_deg, 1),
+            "rotation": round(cls.kicad_angle_to_layout_angle(pos.angle_deg), 1),
         }
 
     @staticmethod
@@ -334,7 +371,9 @@ class PlaceWithKicad:
         return dict(data)
 
     @staticmethod
-    def merge_yaml_changes(existing_data: dict, snapshot_data: dict, changed_keys: set[str]) -> dict:
+    def merge_yaml_changes(
+        existing_data: dict, snapshot_data: dict, changed_keys: set[str]
+    ) -> dict:
         merged = dict(existing_data)
         for refdes in sorted(changed_keys):
             if refdes in snapshot_data:
@@ -352,7 +391,9 @@ class PlaceWithKicad:
         if module_child_refdes is None:
             if design is None:
                 raise ValueError("design or module_child_refdes is required")
-            _module_specs, module_child_refdes, _child_to_module = cls.build_module_metadata(design)
+            _module_specs, module_child_refdes, _child_to_module = (
+                cls.build_module_metadata(design)
+            )
         return {
             refdes: value
             for refdes, value in data.items()
@@ -389,8 +430,8 @@ class PlaceWithKicad:
         print(f"Loading design from {self.script_path}...")
         self.design = self.load_design_from_script(self.script_path)
         self.descriptions = self.build_description_map(self.design)
-        self.module_specs, self.module_child_refdes, self.child_to_module = self.build_module_metadata(
-            self.design
+        self.module_specs, self.module_child_refdes, self.child_to_module = (
+            self.build_module_metadata(self.design)
         )
         print(f"  Design: {self.design.name}")
         print(f"  Components: {len(self.descriptions)}")
@@ -435,9 +476,11 @@ class PlaceWithKicad:
 
                     if last_positions:
                         try:
-                            preferred_children_by_module = self.preferred_children_by_module(
-                                changed,
-                                child_to_module=self.child_to_module,
+                            preferred_children_by_module = (
+                                self.preferred_children_by_module(
+                                    changed,
+                                    child_to_module=self.child_to_module,
+                                )
                             )
                             snapshot_data = self.positions_to_yaml_dict(
                                 current,
@@ -455,7 +498,9 @@ class PlaceWithKicad:
                             changed,
                             child_to_module=self.child_to_module,
                         )
-                        yaml_data = self.merge_yaml_changes(yaml_data, snapshot_data, changed_keys)
+                        yaml_data = self.merge_yaml_changes(
+                            yaml_data, snapshot_data, changed_keys
+                        )
                         yaml_data = self.prune_module_child_entries(
                             yaml_data,
                             module_child_refdes=self.module_child_refdes,
@@ -497,19 +542,21 @@ class PlaceWithKicad:
 def main():
     parser = argparse.ArgumentParser(
         description="Run an earthground design script, open KiCad, and "
-                    "write a YAML placement file as you arrange footprints.",
+        "write a YAML placement file as you arrange footprints.",
     )
     parser.add_argument(
         "script",
         help="Path to a Python script that creates a Design object.",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         default=None,
         help="Output YAML path (default: <script_name>.yaml next to the script).",
     )
     parser.add_argument(
-        "--poll-interval", "-p",
+        "--poll-interval",
+        "-p",
         type=float,
         default=1.0,
         help="Seconds between position polls (default: 1.0).",
