@@ -81,13 +81,16 @@ class KicadFootprint(ft.BaseFootprint):
 class KicadImporter:
     def __init__(
         self,
-        additional_lib_paths: Optional[List[Union[str, pathlib.Path]]] = None,
+        additional_lib_paths: List[Union[str, pathlib.Path]] = [],
     ):
         """
         :param additional_lib_paths: Extra directories that contain ``*.pretty``
             footprint libraries (same layout as KiCad's ``footprints/`` root).
             These are searched before the default KiCad install path.
         """
+        if not isinstance(additional_lib_paths, list):
+            raise ValueError("additional_lib_paths must be a list")
+
         self.lib_paths: List[pathlib.Path] = []
         if additional_lib_paths:
             self.lib_paths.extend(pathlib.Path(p) for p in additional_lib_paths)

@@ -16,6 +16,7 @@ class Width(enum.Enum):
 
     NARROW = 5.4  # Narrow body SOIC (3.9mm body width)
     WIDE = 7.5  # Wide body SOIC (7.5mm body width)
+    WIDE_10MM = 10.0  # Wide body SOIC (10.0mm body width)
 
 
 PADS = {
@@ -24,6 +25,7 @@ PADS = {
     (1.5, 0.7): ap_lib.ApertureRectangle(1.5, 0.7),  # Wider pad
     (1.6, 0.6): ap_lib.ApertureRectangle(1.6, 0.6),  # Longer pad
     (1.4, 0.6): ap_lib.ApertureRectangle(1.4, 0.6),  # Shorter pad
+    (2, 0.6): ap_lib.ApertureRectangle(2, 0.6),  # Wide pad
 }
 
 
