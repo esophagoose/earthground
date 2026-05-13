@@ -6,6 +6,8 @@ from typing import Any, Literal, Optional
 
 import earthground.components as cmp
 import earthground.layout as layout_lib
+import earthground.footprint_types as ft
+import earthground.schematic as sch_lib
 
 ContactPosition = int | str
 ContactValue = Any
@@ -18,11 +20,9 @@ __all__ = [
     "ConnectorEndpoint",
     "ConnectorInterface",
     "Contact",
+    "BoardToBoardInterface",
     "InterfaceError",
     "PinMap",
-    "PlacementPattern",
-    "PlacementSlot",
-    "PlacementTransform",
     "Signal",
 ]
 
@@ -275,70 +275,113 @@ class ConnectorInterface:
         )
 
 
-@dataclasses.dataclass(frozen=True)
-class PlacementSlot:
-    position: layout_lib.Position
-    layer: layout_lib.Layer = layout_lib.Layer.TOP
+class BoardToBoardInterface:
+    """Higher-level helper for multi-connector board-to-board interfaces."""
 
-
-@dataclasses.dataclass(frozen=True)
-class PlacementTransform:
-    rotation: float = 0
-
-    @classmethod
-    def identity(cls) -> "PlacementTransform":
-        return cls()
-
-
-class PlacementPattern:
     def __init__(
-        self, name: str, slots: Mapping[str, layout_lib.Position | PlacementSlot]
-    ):
-        if not name:
-            raise InterfaceError("PlacementPattern name cannot be empty")
-        if not slots:
-            raise InterfaceError("PlacementPattern slots cannot be empty")
-        self.name = name
-        self.slots = {
-            slot_name: (
-                slot
-                if isinstance(slot, PlacementSlot)
-                else PlacementSlot(position=slot)
-            )
-            for slot_name, slot in slots.items()
-        }
-
-    def place(
         self,
-        design,
-        endpoints_by_slot: Mapping[str, ConnectorEndpoint | cmp.Component],
-        origin: layout_lib.Position,
-        transform: PlacementTransform = PlacementTransform.identity(),
+        connectors: list[ConnectorInterface],
+        placement: Mapping[str, layout_lib.Position],
+        outline: ft.BoundingBox,
     ) -> None:
-        for slot_name, endpoint_or_component in endpoints_by_slot.items():
-            if slot_name not in self.slots:
-                raise InterfaceError(f"Unknown placement slot: {slot_name}")
-            component = (
-                endpoint_or_component.component
-                if isinstance(endpoint_or_component, ConnectorEndpoint)
-                else endpoint_or_component
+        if not connectors:
+            raise InterfaceError("BoardToBoardInterface connectors cannot be empty")
+        connector_names = [connector.name for connector in connectors]
+        if len(connector_names) != len(set(connector_names)):
+            raise InterfaceError(
+                "BoardToBoardInterface connector interface names must be unique"
             )
-            refdes = _component_key(design, component)
-            slot = self.slots[slot_name]
-            rotation = origin.angle + transform.rotation
-            relative = slot.position.rotate(transform.rotation)
-            relative = relative.rotate(origin.angle)
-            absolute = relative.translate(origin.x, origin.y)
-            absolute = layout_lib.Position(
-                x=absolute.x,
-                y=absolute.y,
-                angle=slot.position.angle + rotation,
+        placement_names = set(placement)
+        expected_names = set(connector_names)
+        if placement_names != expected_names:
+            missing = sorted(expected_names - placement_names)
+            extra = sorted(placement_names - expected_names)
+            raise InterfaceError(
+                "BoardToBoardInterface placement must cover connector names exactly. "
+                f"Missing: {missing}; extra: {extra}"
             )
+        self.connectors = connectors
+        self.placement = dict(placement)
+        self.outline = outline
+
+    def add_to_host(
+        self,
+        design: sch_lib.Design,
+        origin: layout_lib.Position = layout_lib.Position(0, 0, 0),
+    ) -> dict[str, ConnectorEndpoint]:
+        endpoints = self._add_endpoints(
+            design,
+            role="host",
+            origin=origin,
+            layer=layout_lib.Layer.TOP,
+        )
+        self._add_host_outline(design, origin)
+        return endpoints
+
+    def add_to_mezzanine(
+        self,
+        design: sch_lib.Design,
+        origin: layout_lib.Position = layout_lib.Position(0, 0, 0),
+    ) -> dict[str, ConnectorEndpoint]:
+        return self._add_endpoints(
+            design,
+            role="mate",
+            origin=origin,
+            layer=layout_lib.Layer.BOTTOM,
+        )
+
+    def _add_endpoints(
+        self,
+        design: sch_lib.Design,
+        *,
+        role: EndpointRole,
+        origin: layout_lib.Position,
+        layer: layout_lib.Layer,
+    ) -> dict[str, ConnectorEndpoint]:
+        endpoints: dict[str, ConnectorEndpoint] = {}
+        for connector in self.connectors:
+            endpoint = connector.host() if role == "host" else connector.mate()
+            design.add_component(endpoint.component)
+            endpoint.join_declared_nets(design)
+            refdes = _component_key(design, endpoint.component)
             design.layout.placement[refdes] = layout_lib.Placement(
-                position=absolute,
+                position=_resolve_relative_position(
+                    self.placement[connector.name],
+                    origin,
+                ),
                 id=None,
-                layer=slot.layer,
+                layer=layer,
             )
+            endpoints[connector.name] = endpoint
+        return endpoints
+
+    def _add_host_outline(
+        self,
+        design: sch_lib.Design,
+        origin: layout_lib.Position,
+    ) -> None:
+        corners = [
+            layout_lib.Position(self.outline.x1, self.outline.y1, 0),
+            layout_lib.Position(self.outline.x2, self.outline.y1, 0),
+            layout_lib.Position(self.outline.x2, self.outline.y2, 0),
+            layout_lib.Position(self.outline.x1, self.outline.y2, 0),
+        ]
+        corners = [_resolve_relative_position(corner, origin) for corner in corners]
+        for start, end in zip(corners, corners[1:] + corners[:1]):
+            design.layout.silk.append(layout_lib.SilkLine(start=start, end=end))
+
+
+def _resolve_relative_position(
+    relative: layout_lib.Position,
+    origin: layout_lib.Position,
+) -> layout_lib.Position:
+    transformed = relative.rotate(origin.angle)
+    absolute = transformed.translate(origin.x, origin.y)
+    return layout_lib.Position(
+        x=absolute.x,
+        y=absolute.y,
+        angle=relative.angle + origin.angle,
+    )
 
 
 def _normalize_contact(position: ContactPosition, value: ContactValue) -> Contact:

@@ -71,17 +71,23 @@ class FabLine(NamedTuple):
     end: Position
 
 
+class Layer(enum.Enum):
+    TOP = enum.auto()
+    BOTTOM = enum.auto()
+
+
+class SilkLine(NamedTuple):
+    start: Position
+    end: Position
+    layer: Layer = Layer.TOP
+
+
 class FabText(NamedTuple):
     text: str
     position: Position
     height: float = 1.0
     width: float = 1.0
     thickness: Optional[float] = None
-
-
-class Layer(enum.Enum):
-    TOP = enum.auto()
-    BOTTOM = enum.auto()
 
 
 class Orientation(enum.Enum):
@@ -120,6 +126,7 @@ class Layout:
         self.traces: list[Any] = []
         self.vias: list[ViaConfig] = []
         self.pours: list[PourLayer] = []
+        self.silk: list[SilkLine] = []
         self.fab: list[FabLine | FabText] = []
 
     def get_placement(self, id: str) -> ComponentLayout:

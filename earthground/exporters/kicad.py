@@ -460,6 +460,16 @@ class KicadExporter:
             else:
                 raise TypeError(f"Unsupported fab item: {type(item)}")
 
+    def draw_silkscreen_lines(self):
+        for item in self.schematic.layout.silk:
+            self.board.graphicItems.append(
+                fp.GrLine(
+                    start=to_pos((item.start.x, item.start.y)),
+                    end=to_pos((item.end.x, item.end.y)),
+                    layer=f"{_side_prefix(item.layer)}.SilkS",
+                )
+            )
+
     def add_pours(self, config: layout_lib.PourLayer):
         outline = self.schematic.layout.outline
         polygon = kizones.ZonePolygon(
@@ -508,5 +518,6 @@ class KicadExporter:
         self.convert_to_kicad(self.schematic)
         self.draw_board_outline()
         self.draw_fab_lines()
+        self.draw_silkscreen_lines()
         self.board.to_file(path)
         print(f"{"Overwrote" if overwrite else "Wrote"} board file: {path}")

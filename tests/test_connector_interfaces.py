@@ -7,14 +7,21 @@ from earthground.exporters.kicad import KicadExporter
 from earthground.assembly import Assembly, AssemblyValidationError
 from earthground.library.connectors.fpc.te_2328702 import TE_2328702
 from earthground.interfaces import (
+    BoardToBoardInterface,
     NC,
     ConnectorInterface,
     InterfaceError,
     PinMap,
-    PlacementPattern,
     Signal,
 )
 from earthground.schematic import Design
+
+
+def placement_for(design, component):
+    for refdes, candidate in design.components.items():
+        if candidate is component:
+            return design.layout.placement[refdes]
+    raise AssertionError(f"Component not found in design: {component}")
 
 
 def connector_with_numeric_mounting_pad(pin_count: int):
@@ -275,31 +282,70 @@ def test_assembly_rejects_connected_no_connect_pins():
         assembly.validate()
 
 
-def test_placement_pattern_places_connectors_with_shared_relative_spacing():
-    interface = ConnectorInterface(
-        "stack",
-        {1: "A", 2: "B"},
-        host_connector=lambda: conn.standard_0_1_inch_header(pin_count=2),
-    )
-    host = Design("Host")
-    endpoint_a = interface.host()
-    endpoint_b = interface.host()
-    host.add_component(endpoint_a.component)
-    host.add_component(endpoint_b.component)
-
-    pattern = PlacementPattern(
-        "dual_stack",
+def test_board2board_interface_adds_host_and_mezzanine_sides():
+    power = ConnectorInterface(
+        "power",
         {
-            "left": layout_lib.Position(x=0, y=0, angle=0),
-            "right": layout_lib.Position(x=20, y=0, angle=180),
+            1: Signal("GND_1", net_name="GND"),
+            2: Signal("P3V3", net_name="P3V3"),
         },
+        host_connector=lambda: conn.standard_0_1_inch_header(pin_count=2),
+        mate_connector=lambda: conn.standard_0_1_inch_header(pin_count=2),
+        pin_map=PinMap.reversed(),
     )
-    pattern.place(
+    debug = ConnectorInterface(
+        "debug",
+        {1: "SWDIO", 2: "SWCLK"},
+        host_connector=lambda: conn.standard_0_1_inch_header(pin_count=2),
+        mate_connector=lambda: conn.standard_0_1_inch_header(pin_count=2),
+    )
+    interface = BoardToBoardInterface(
+        [power, debug],
+        {
+            "power": layout_lib.Position(x=0, y=0, angle=0),
+            "debug": layout_lib.Position(x=20, y=0, angle=180),
+        },
+        outline=layout_lib.BoundingBox(x1=-5, y1=-4, x2=25, y2=4),
+    )
+
+    host = Design("Host")
+    host_endpoints = interface.add_to_host(
         host,
-        {"left": endpoint_a, "right": endpoint_b},
         origin=layout_lib.Position(x=100, y=50, angle=90),
     )
 
-    placements = list(host.layout.placement.values())
-    assert placements[0].position == layout_lib.Position(x=100, y=50, angle=90)
-    assert placements[1].position == layout_lib.Position(x=100, y=70, angle=270)
+    assert set(host_endpoints) == {"power", "debug"}
+    assert host_endpoints["power"].role == "host"
+    assert host_endpoints["power"].pin("GND_1").index == 1
+    assert host.pin_to_net[host_endpoints["power"].pin("GND_1")].name == "GND"
+    assert host.pin_to_net[host_endpoints["power"].pin("P3V3")].name == "P3V3"
+    assert placement_for(
+        host,
+        host_endpoints["debug"].component,
+    ) == layout_lib.Placement(
+        position=layout_lib.Position(x=100, y=70, angle=270),
+        layer=layout_lib.Layer.TOP,
+    )
+    assert len(host.layout.silk) == 4
+    assert host.layout.silk[0] == layout_lib.SilkLine(
+        start=layout_lib.Position(x=104, y=45, angle=90),
+        end=layout_lib.Position(x=104, y=75, angle=90),
+    )
+
+    exporter = KicadExporter(host)
+    exporter.draw_silkscreen_lines()
+    assert len(exporter.board.graphicItems) == 4
+    assert exporter.board.graphicItems[0].layer == "F.SilkS"
+
+    mezzanine = Design("Mezzanine")
+    mate_endpoints = interface.add_to_mezzanine(mezzanine)
+
+    assert mate_endpoints["power"].role == "mate"
+    assert mate_endpoints["power"].pin("GND_1").index == 2
+    assert (
+        placement_for(
+            mezzanine,
+            mate_endpoints["power"].component,
+        ).layer
+        == layout_lib.Layer.BOTTOM
+    )
