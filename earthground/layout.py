@@ -66,14 +66,15 @@ class PourLayer(NamedTuple):
     layer: int
 
 
-class FabLine(NamedTuple):
-    start: Position
-    end: Position
-
-
 class Layer(enum.Enum):
     TOP = enum.auto()
     BOTTOM = enum.auto()
+
+
+class FabLine(NamedTuple):
+    start: Position
+    end: Position
+    layer: Layer = Layer.TOP
 
 
 class SilkLine(NamedTuple):
@@ -88,6 +89,7 @@ class FabText(NamedTuple):
     height: float = 1.0
     width: float = 1.0
     thickness: Optional[float] = None
+    layer: Layer = Layer.TOP
 
 
 class Orientation(enum.Enum):
@@ -115,6 +117,25 @@ class ComponentLayout(NamedTuple):
 def round_to_nearest(x: float, step: float) -> float:
     """Round x to the nearest given float step."""
     return math.ceil(x / step) * step
+
+
+def combine_layer(parent_layer: Layer, child_layer: Layer) -> Layer:
+    if parent_layer == Layer.TOP:
+        return child_layer
+    return Layer.BOTTOM if child_layer == Layer.TOP else Layer.TOP
+
+
+def rotate_position(position: Position, angle: float) -> Position:
+    rotation_radians = math.radians(angle)
+    cos_a = math.cos(rotation_radians)
+    sin_a = math.sin(rotation_radians)
+    new_x = position.x * cos_a - position.y * sin_a
+    new_y = position.x * sin_a + position.y * cos_a
+    return Position(x=new_x, y=new_y, angle=position.angle + angle)
+
+
+def transform_position(position: Position, origin: Position) -> Position:
+    return rotate_position(position, origin.angle).translate(origin.x, origin.y)
 
 
 class Layout:
@@ -227,20 +248,6 @@ class Layout:
         """
         Flatten the layout into a dictionary of component layouts.
         """
-
-        def combine_layer(parent_layer: Layer, child_layer: Layer) -> Layer:
-            if parent_layer == Layer.TOP:
-                return child_layer
-            return Layer.BOTTOM if child_layer == Layer.TOP else Layer.TOP
-
-        def rotate_position(position: Position, angle: float) -> Position:
-            rotation_radians = math.radians(angle)
-            cos_a = math.cos(rotation_radians)
-            sin_a = math.sin(rotation_radians)
-            new_x = position.x * cos_a - position.y * sin_a
-            new_y = position.x * sin_a + position.y * cos_a
-            return Position(x=new_x, y=new_y, angle=position.angle + angle)
-
         flattened = {}
         for cid, component in self.design.components.items():
             if isinstance(component, cmp.ModuleComponent):
@@ -273,4 +280,53 @@ class Layout:
             print(
                 f"WARNING: Components in layout but not used in  {self.design.name}: {unused_cids}"
             )
+        return flattened
+
+    def flatten_silk(self) -> list[SilkLine]:
+        flattened = list(self.silk)
+        for cid, component in self.design.components.items():
+            if not isinstance(component, cmp.ModuleComponent):
+                continue
+            module_layout = self.get_placement(cid)
+            module_position = module_layout.component
+            for item in component.parent.layout.flatten_silk():
+                flattened.append(
+                    SilkLine(
+                        start=transform_position(item.start, module_position),
+                        end=transform_position(item.end, module_position),
+                        layer=combine_layer(module_layout.layer, item.layer),
+                    )
+                )
+        return flattened
+
+    def flatten_fab(self) -> list[FabLine | FabText]:
+        flattened: list[FabLine | FabText] = list(self.fab)
+        for cid, component in self.design.components.items():
+            if not isinstance(component, cmp.ModuleComponent):
+                continue
+            module_layout = self.get_placement(cid)
+            module_position = module_layout.component
+            for item in component.parent.layout.flatten_fab():
+                layer = combine_layer(module_layout.layer, item.layer)
+                if isinstance(item, FabLine):
+                    flattened.append(
+                        FabLine(
+                            start=transform_position(item.start, module_position),
+                            end=transform_position(item.end, module_position),
+                            layer=layer,
+                        )
+                    )
+                elif isinstance(item, FabText):
+                    flattened.append(
+                        FabText(
+                            text=item.text,
+                            position=transform_position(item.position, module_position),
+                            height=item.height,
+                            width=item.width,
+                            thickness=item.thickness,
+                            layer=layer,
+                        )
+                    )
+                else:
+                    raise TypeError(f"Unsupported fab item: {type(item)}")
         return flattened

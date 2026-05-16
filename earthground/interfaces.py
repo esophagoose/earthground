@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 from collections.abc import Callable, Mapping
 from typing import Any, Literal, Optional
 
@@ -8,6 +9,8 @@ import earthground.components as cmp
 import earthground.layout as layout_lib
 import earthground.footprint_types as ft
 import earthground.schematic as sch_lib
+
+log = logging.getLogger(__name__)
 
 ContactPosition = int | str
 ContactValue = Any
@@ -165,6 +168,13 @@ class ConnectorEndpoint:
             raise InterfaceError("Endpoint component must be added to a design first")
         for contact in self.interface.signal_contacts:
             signal = contact.signal
+            if signal.net_name not in design.nets:
+                log.error(
+                    "Declared net %s does not exist before joining signal %s on %s",
+                    signal.net_name,
+                    signal.name,
+                    self.component,
+                )
             design.join_net(self.component.pins.by_name(signal.name), signal.net_name)
 
 
@@ -304,40 +314,31 @@ class BoardToBoardInterface:
         self.placement = dict(placement)
         self.outline = outline
 
-    def add_to_host(
-        self,
-        design: sch_lib.Design,
-        origin: layout_lib.Position = layout_lib.Position(0, 0, 0),
-    ) -> dict[str, ConnectorEndpoint]:
-        endpoints = self._add_endpoints(
-            design,
+    def add_to_host(self) -> sch_lib.Design:
+        return self._build_module(
+            name="BoardToBoardHost",
+            short_name="B2BH",
             role="host",
-            origin=origin,
             layer=layout_lib.Layer.TOP,
         )
-        self._add_host_outline(design, origin)
-        return endpoints
 
-    def add_to_mezzanine(
-        self,
-        design: sch_lib.Design,
-        origin: layout_lib.Position = layout_lib.Position(0, 0, 0),
-    ) -> dict[str, ConnectorEndpoint]:
-        return self._add_endpoints(
-            design,
+    def add_to_mezzanine(self) -> sch_lib.Design:
+        return self._build_module(
+            name="BoardToBoardMezzanine",
+            short_name="B2BM",
             role="mate",
-            origin=origin,
             layer=layout_lib.Layer.BOTTOM,
         )
 
-    def _add_endpoints(
-        self,
-        design: sch_lib.Design,
-        *,
-        role: EndpointRole,
-        origin: layout_lib.Position,
-        layer: layout_lib.Layer,
-    ) -> dict[str, ConnectorEndpoint]:
+    def _build_module(
+        self, *, name: str, short_name: str, role: EndpointRole, layer: layout_lib.Layer
+    ) -> sch_lib.Design:
+        net_names = self._declared_net_names()
+        design = sch_lib.Design(name, short_name, ports=net_names)
+        for net_name in net_names:
+            if net_name not in design.nets:
+                design.add_net(net_name)
+            design.join_net(design.port[net_name], net_name)
         endpoints: dict[str, ConnectorEndpoint] = {}
         for connector in self.connectors:
             endpoint = connector.host() if role == "host" else connector.mate()
@@ -345,43 +346,35 @@ class BoardToBoardInterface:
             endpoint.join_declared_nets(design)
             refdes = _component_key(design, endpoint.component)
             design.layout.placement[refdes] = layout_lib.Placement(
-                position=_resolve_relative_position(
-                    self.placement[connector.name],
-                    origin,
-                ),
+                position=self.placement[connector.name],
                 id=None,
                 layer=layer,
             )
             endpoints[connector.name] = endpoint
-        return endpoints
+        self._add_outline(design, layer)
+        design.connector_endpoints = endpoints
+        return design
 
-    def _add_host_outline(
-        self,
-        design: sch_lib.Design,
-        origin: layout_lib.Position,
-    ) -> None:
+    def _declared_net_names(self) -> list[str]:
+        net_names = []
+        for connector in self.connectors:
+            for contact in connector.signal_contacts:
+                net_name = contact.signal.net_name
+                if net_name not in net_names:
+                    net_names.append(net_name)
+        return net_names
+
+    def _add_outline(self, design: sch_lib.Design, layer: layout_lib.Layer) -> None:
         corners = [
             layout_lib.Position(self.outline.x1, self.outline.y1, 0),
             layout_lib.Position(self.outline.x2, self.outline.y1, 0),
             layout_lib.Position(self.outline.x2, self.outline.y2, 0),
             layout_lib.Position(self.outline.x1, self.outline.y2, 0),
         ]
-        corners = [_resolve_relative_position(corner, origin) for corner in corners]
         for start, end in zip(corners, corners[1:] + corners[:1]):
-            design.layout.silk.append(layout_lib.SilkLine(start=start, end=end))
-
-
-def _resolve_relative_position(
-    relative: layout_lib.Position,
-    origin: layout_lib.Position,
-) -> layout_lib.Position:
-    transformed = relative.rotate(origin.angle)
-    absolute = transformed.translate(origin.x, origin.y)
-    return layout_lib.Position(
-        x=absolute.x,
-        y=absolute.y,
-        angle=relative.angle + origin.angle,
-    )
+            design.layout.silk.append(
+                layout_lib.SilkLine(start=start, end=end, layer=layer)
+            )
 
 
 def _normalize_contact(position: ContactPosition, value: ContactValue) -> Contact:

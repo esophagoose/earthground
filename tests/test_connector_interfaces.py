@@ -198,6 +198,26 @@ def test_kicad_export_maps_interface_pins_to_physical_pads():
     assert nets_by_pad == {"1": "SWDIO", "2": "SWCLK"}
 
 
+def test_join_declared_nets_logs_error_for_missing_net(caplog):
+    interface = ConnectorInterface(
+        "debug",
+        {1: Signal("SWDIO", net_name="DEBUG_SWDIO")},
+        host_connector=lambda: conn.standard_0_1_inch_header(pin_count=1),
+    )
+    design = Design("Debug")
+    endpoint = interface.host()
+    design.add_component(endpoint.component)
+    caplog.set_level("ERROR", logger="earthground.interfaces")
+
+    endpoint.join_declared_nets()
+
+    assert (
+        "Declared net DEBUG_SWDIO does not exist before joining signal SWDIO"
+        in caplog.text
+    )
+    assert "DEBUG_SWDIO" in design.nets
+
+
 def test_custom_pin_map_must_cover_contacts_exactly():
     with pytest.raises(InterfaceError, match="cover interface positions exactly"):
         ConnectorInterface(
@@ -309,25 +329,30 @@ def test_board2board_interface_adds_host_and_mezzanine_sides():
     )
 
     host = Design("Host")
-    host_endpoints = interface.add_to_host(
-        host,
-        origin=layout_lib.Position(x=100, y=50, angle=90),
+    host_module = interface.add_to_host()
+    host.add_module(host_module)
+    host.join_net(host_module.port["GND"], "GND")
+    host.join_net(host_module.port["P3V3"], "P3V3")
+    host.join_net(host_module.port["SWDIO"], "SWDIO")
+    host.join_net(host_module.port["SWCLK"], "SWCLK")
+    host.layout.placement["B2BH1"] = layout_lib.Placement(
+        position=layout_lib.Position(x=100, y=50, angle=90),
+        layer=layout_lib.Layer.TOP,
     )
+    host_endpoints = host_module.connector_endpoints
 
     assert set(host_endpoints) == {"power", "debug"}
     assert host_endpoints["power"].role == "host"
     assert host_endpoints["power"].pin("GND_1").index == 1
-    assert host.pin_to_net[host_endpoints["power"].pin("GND_1")].name == "GND"
-    assert host.pin_to_net[host_endpoints["power"].pin("P3V3")].name == "P3V3"
-    assert placement_for(
-        host,
-        host_endpoints["debug"].component,
-    ) == layout_lib.Placement(
-        position=layout_lib.Position(x=100, y=70, angle=270),
-        layer=layout_lib.Layer.TOP,
+    assert host_module.pin_to_net[host_endpoints["power"].pin("GND_1")].name == "GND"
+    assert host_module.pin_to_net[host_endpoints["power"].pin("P3V3")].name == "P3V3"
+    flattened_layout = host.layout.flatten()
+    assert flattened_layout["B2BH1_J2"][0].component == layout_lib.Position(
+        x=100, y=70, angle=270
     )
-    assert len(host.layout.silk) == 4
-    assert host.layout.silk[0] == layout_lib.SilkLine(
+    assert flattened_layout["B2BH1_J2"][0].layer == layout_lib.Layer.TOP
+    assert len(host_module.layout.silk) == 4
+    assert host.layout.flatten_silk()[0] == layout_lib.SilkLine(
         start=layout_lib.Position(x=104, y=45, angle=90),
         end=layout_lib.Position(x=104, y=75, angle=90),
     )
@@ -338,14 +363,13 @@ def test_board2board_interface_adds_host_and_mezzanine_sides():
     assert exporter.board.graphicItems[0].layer == "F.SilkS"
 
     mezzanine = Design("Mezzanine")
-    mate_endpoints = interface.add_to_mezzanine(mezzanine)
+    mate_module = interface.add_to_mezzanine()
+    mezzanine.add_module(mate_module)
+    mate_endpoints = mate_module.connector_endpoints
 
     assert mate_endpoints["power"].role == "mate"
     assert mate_endpoints["power"].pin("GND_1").index == 2
     assert (
-        placement_for(
-            mezzanine,
-            mate_endpoints["power"].component,
-        ).layer
+        placement_for(mate_module, mate_endpoints["power"].component).layer
         == layout_lib.Layer.BOTTOM
     )
