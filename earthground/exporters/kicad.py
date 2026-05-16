@@ -75,9 +75,76 @@ def get_index(fp: fp.Footprint) -> Optional[str]:
 
 
 def get_index_fptext(footprint: fp.Footprint) -> Optional[fp.FpText]:
+    return get_fptext(footprint, "reference")
+
+
+def get_fptext(footprint: fp.Footprint, text_type: str) -> Optional[fp.FpText]:
     for item in footprint.graphicItems:
-        if isinstance(item, fp.FpText) and item.type == "reference":
+        if isinstance(item, fp.FpText) and item.type == text_type:
             return item
+
+
+def _set_fptext_hidden(footprint: fp.Footprint, predicate, hide: bool) -> None:
+    for item in footprint.graphicItems:
+        if isinstance(item, fp.FpText) and predicate(item):
+            item.hide = hide
+
+
+def _hide_silkscreen_text(footprint: fp.Footprint) -> None:
+    _set_fptext_hidden(
+        footprint,
+        lambda item: isinstance(item.layer, str) and item.layer.endswith(".SilkS"),
+        True,
+    )
+
+
+def _hide_fab_text(footprint: fp.Footprint) -> None:
+    _set_fptext_hidden(
+        footprint,
+        lambda item: isinstance(item.layer, str) and item.layer.endswith(".Fab"),
+        True,
+    )
+
+
+def _set_text_justify(text: fp.FpText, justify_options: dict) -> None:
+    if text.effects is None:
+        text.effects = base.Effects()
+    text.effects.justify = base.Justify(**justify_options)
+
+
+def _sync_reference_text(
+    footprint: fp.Footprint,
+    *,
+    cid: str,
+    id_position: base.Position,
+    layer_prefix: str,
+    justify_options: dict,
+    add_silkscreen_text: bool,
+) -> None:
+    if not add_silkscreen_text:
+        _hide_silkscreen_text(footprint)
+        return
+
+    ref_text = get_index_fptext(footprint)
+    if ref_text is None:
+        footprint.graphicItems.append(
+            fp.FpText(
+                type="reference",
+                text=cid,
+                position=id_position,
+                layer=f"{layer_prefix}.SilkS",
+                effects=base.Effects(
+                    font=base.Font(height=0.75, width=0.75, thickness=0.12),
+                    justify=base.Justify(**justify_options),
+                ),
+            )
+        )
+        return
+
+    ref_text.text = cid
+    ref_text.position = id_position
+    ref_text.layer = f"{layer_prefix}.SilkS"
+    _set_text_justify(ref_text, justify_options)
 
 
 def _ensure_kicad_net(
@@ -148,7 +215,11 @@ def _apply_footprint_side(footprint: fp.Footprint, layer: layout_lib.Layer) -> N
 
 class KicadExporter:
     def __init__(
-        self, schematic: sch_lib.Design, pcb_path: Optional[pathlib.Path] = None
+        self,
+        schematic: sch_lib.Design,
+        pcb_path: Optional[pathlib.Path] = None,
+        add_silkscreen_text: bool = True,
+        add_fab_text: bool = True,
     ):
         """
         A class to export schematic designs to KiCad format.
@@ -159,6 +230,8 @@ class KicadExporter:
         :type positions: dict
         :type board_path: Optional[pathlib.Path or str]
         """
+        self.add_silkscreen_text = add_silkscreen_text
+        self.add_fab_text = add_fab_text
         if pcb_path:
             self.board = kiutils.board.Board.from_file(pcb_path)
         else:
@@ -218,6 +291,8 @@ class KicadExporter:
                 component.parent,
                 layout.id_orientation,
                 layout.layer,
+                add_silkscreen_text=self.add_silkscreen_text,
+                add_fab_text=self.add_fab_text,
             )
             self.board.footprints.append(footprint)
 
@@ -238,6 +313,8 @@ class KicadExporter:
         schematic: Optional[sch_lib.Design] = None,
         id_orientation: layout_lib.Orientation = layout_lib.Orientation.CENTER,
         layer: layout_lib.Layer = layout_lib.Layer.TOP,
+        add_silkscreen_text: bool = True,
+        add_fab_text: bool = True,
     ) -> fp.Footprint:
         """
         Convert an earthground footprint into a KiCad footprint.
@@ -291,17 +368,21 @@ class KicadExporter:
 
             # Re-map pad nets based on the schematic connectivity.
             for pad in footprint.pads:
+                if pad.type in ("np_thru_hole"):
+                    continue
                 try:
                     index = int(pad.number)
                 except (ValueError, TypeError):
                     if not pad.number:
-                        print(f"Warning: Invalid pad number: {pad.number}")
+                        print(
+                            f"Warning: Invalid pad number ({pad.number}) in {component.name}"
+                        )
                         continue
                     index = pad.number
                 try:
                     pin = component.pins[index]
                 except (ValueError, TypeError):
-                    print(f"Warning: Invalid pin index: {index}")
+                    print(f"Warning: Invalid pin index ({index}) in {component.name}")
                     continue
                 pin = component.pins[index]
                 net = schematic.pin_to_net.get(pin)
@@ -309,26 +390,16 @@ class KicadExporter:
                     pad.net = _ensure_kicad_net(self, schematic, net.name)
                 pad.layers = _map_pad_layers(pad.layers, layer_prefix)
 
-            # Update or add the reference text to match cid and id_position.
-            ref_text = get_index_fptext(footprint)
-            if ref_text is not None:
-                ref_text.text = cid
-                ref_text.position = id_position
-                ref_text.layer = f"{layer_prefix}.SilkS"
-                ref_text.effects.justify = base.Justify(**justify_options)
-            else:
-                footprint.graphicItems.append(
-                    fp.FpText(
-                        type="reference",
-                        text=cid,
-                        position=id_position,
-                        layer=f"{layer_prefix}.SilkS",
-                        effects=base.Effects(
-                            font=base.Font(height=0.75, width=0.75, thickness=0.12),
-                            justify=base.Justify(**justify_options),
-                        ),
-                    )
-                )
+            _sync_reference_text(
+                footprint,
+                cid=cid,
+                id_position=id_position,
+                layer_prefix=layer_prefix,
+                justify_options=justify_options,
+                add_silkscreen_text=add_silkscreen_text,
+            )
+            if not add_fab_text:
+                _hide_fab_text(footprint)
 
             # If the component is rotated by 90° or 270°, swap pad width/height.
             # This matches how earthground's native footprints behave and keeps
@@ -373,25 +444,16 @@ class KicadExporter:
                     )
                 )
 
-            ref_text = get_index_fptext(footprint)
-            if ref_text is not None:
-                ref_text.text = cid
-                ref_text.position = id_position
-                ref_text.layer = f"{layer_prefix}.SilkS"
-                ref_text.effects.justify = base.Justify(**justify_options)
-            else:
-                footprint.graphicItems.append(
-                    fp.FpText(
-                        type="reference",
-                        text=cid,
-                        position=id_position,
-                        layer=f"{layer_prefix}.SilkS",
-                        effects=base.Effects(
-                            font=base.Font(height=0.75, width=0.75, thickness=0.12),
-                            justify=base.Justify(**justify_options),
-                        ),
-                    )
-                )
+            _sync_reference_text(
+                footprint,
+                cid=cid,
+                id_position=id_position,
+                layer_prefix=layer_prefix,
+                justify_options=justify_options,
+                add_silkscreen_text=add_silkscreen_text,
+            )
+            if not add_fab_text:
+                _hide_fab_text(footprint)
             for polysilk in component.footprint.silk:
                 for i in range(len(polysilk) - 1):
                     previous, current = polysilk[i : i + 2]
@@ -430,13 +492,13 @@ class KicadExporter:
         )
 
     def draw_fab_lines(self):
-        for item in self.schematic.layout.fab:
+        for item in self.schematic.layout.flatten_fab():
             if isinstance(item, layout_lib.FabLine):
                 self.board.graphicItems.append(
                     fp.GrLine(
                         start=to_pos((item.start.x, item.start.y)),
                         end=to_pos((item.end.x, item.end.y)),
-                        layer="F.Fab",
+                        layer=f"{_side_prefix(item.layer)}.Fab",
                     )
                 )
             elif isinstance(item, layout_lib.FabText):
@@ -447,7 +509,7 @@ class KicadExporter:
                             (item.position.x, item.position.y),
                             angle=item.position.angle,
                         ),
-                        layer="F.Fab",
+                        layer=f"{_side_prefix(item.layer)}.Fab",
                         effects=base.Effects(
                             font=base.Font(
                                 height=item.height,
@@ -461,7 +523,7 @@ class KicadExporter:
                 raise TypeError(f"Unsupported fab item: {type(item)}")
 
     def draw_silkscreen_lines(self):
-        for item in self.schematic.layout.silk:
+        for item in self.schematic.layout.flatten_silk():
             self.board.graphicItems.append(
                 fp.GrLine(
                     start=to_pos((item.start.x, item.start.y)),
