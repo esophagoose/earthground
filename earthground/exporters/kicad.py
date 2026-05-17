@@ -368,7 +368,7 @@ class KicadExporter:
 
             # Re-map pad nets based on the schematic connectivity.
             for pad in footprint.pads:
-                if pad.type in ("np_thru_hole"):
+                if pad.type == "np_thru_hole":
                     continue
                 try:
                     index = int(pad.number)

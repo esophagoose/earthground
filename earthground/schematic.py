@@ -73,6 +73,7 @@ class Design:
         self.short_name = short_name
         if not short_name:
             self.short_name = self.name
+        self._net_scope = self.short_name
         self.components: Dict[str, cmp.Component] = {}
         self.modules: List[Design] = []
         self.nets: Dict[str, cmp.Net] = {}
@@ -91,12 +92,12 @@ class Design:
         Return the scoped net name for this design.
 
         - Global nets like GND are left unchanged.
-        - Names already prefixed with this design's short_name_ are left unchanged.
-        - All other names are prefixed with short_name_.
+        - Names already prefixed with this design's net scope are left unchanged.
+        - All other names are prefixed with the design's net scope.
         """
         if raw_name == self.ground:
             return raw_name
-        prefix = f"{self.short_name}_"
+        prefix = f"{self._net_scope}_"
         if raw_name.startswith(prefix):
             return raw_name
         return f"{prefix}{raw_name}"
@@ -122,11 +123,14 @@ class Design:
         if module.short_name not in self._module_names:
             self._module_names[module.short_name] = 0
         self._module_names[module.short_name] += 1
+        old_short_name = module.short_name
         # Assign a unique, stable short_name for this module instance
-        module.short_name = (
-            f"{module.short_name}{self._module_names[module.short_name]}"
-        )
-        # Ensure all existing module nets are scoped with the module's short_name
+        module.short_name = f"{old_short_name}{self._module_names[old_short_name]}"
+        if self.port.symbol.is_in_design:
+            module._update_net_scope(f"{self._net_scope}_{module.short_name}")
+        else:
+            module._update_net_scope(module.short_name)
+        # Ensure all existing module nets are scoped with the module's net scope
         module._enforce_scoped_net_names()
         if self.default_passive_size:
             for component in module.components.values():
@@ -243,17 +247,41 @@ class Design:
 
     def _enforce_scoped_net_names(self) -> None:
         """
-        Ensure all non-global nets in this design are scoped with short_name_.
+        Ensure all non-global nets in this design are scoped with its net scope.
 
         This is primarily used for modules so that, once added to a parent,
         all of their internal nets are uniquely namespaced. Global nets like
         GND are not modified.
         """
+        for module in self.modules:
+            module._enforce_scoped_net_names()
+
         # Work on a snapshot of keys since we may rename during iteration
         for net_name in list(self.nets.keys()):
             scoped = self.scoped_net_name(net_name)
             if scoped != net_name:
                 self.change_net_name(net_name, scoped)
+
+    def _update_net_scope(self, new_scope: str) -> None:
+        """
+        Update the private net scope for this design and nested child modules.
+
+        This deliberately does not change short_name, which is also used for
+        module symbols and flattened component reference designators.
+        """
+        old_scope = self._net_scope
+        self._net_scope = new_scope
+        old_prefix = f"{old_scope}_"
+        new_prefix = f"{new_scope}_"
+        for net_name in list(self.nets.keys()):
+            if net_name.startswith(old_prefix):
+                self.change_net_name(
+                    net_name,
+                    net_name.replace(old_prefix, new_prefix, 1),
+                )
+
+        for module in self.modules:
+            module._update_net_scope(f"{new_scope}_{module.short_name}")
 
     def merge_nets(
         self, source_net_name: str, target_net_name: str, name: Optional[str] = None

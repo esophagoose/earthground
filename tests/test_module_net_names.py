@@ -20,6 +20,34 @@ def _build_switch() -> Design:
     return design
 
 
+def _build_child_with_internal_net() -> Design:
+    design = Design("Child", "CH")
+    resistor = design.add_component(Resistor("1k"))
+    design.join_net(resistor.pins[1], "INTERNAL")
+    return design
+
+
+def _build_child_with_ported_net() -> Design:
+    design = Design("Child", "CH", ports=["OUT"])
+    resistor = design.add_component(Resistor("1k"))
+    design.connect([resistor.pins[1], design.port["OUT"]], "INTERNAL")
+    return design
+
+
+def _build_parent_with_child_modules() -> Design:
+    design = Design("Parent", "PARENT")
+    design.add_module(_build_child_with_internal_net())
+    design.add_module(_build_child_with_internal_net())
+    return design
+
+
+def _build_parent_with_ported_child() -> Design:
+    design = Design("Parent", "PARENT", ports=["OUT"])
+    child = design.add_module(_build_child_with_ported_net())
+    design.connect([child.port["OUT"], design.port["OUT"]], "LOCAL")
+    return design
+
+
 def _build_switched_supply() -> Design:
     design = Design("SwitchedSupply", "VS", ports=["VIN", "SAFE_3V3", "GND"])
     load_switch = design.add_module(_build_switch())
@@ -119,6 +147,66 @@ def test_adding_nested_module_propagates_scoped_net_names_through_child_ports():
     assert "VS1_3V3_SW" in load_switch.nets
     assert supply.pin_to_net[limit.pins[1]].name == "VS1_3V3_SW"
     assert load_switch.pin_to_net[load_switch_component.pins[2]].name == "VS1_3V3_SW"
+
+
+def test_repeated_nested_modules_scope_child_internal_nets():
+    top = Design("Top", "TOP")
+    parent1 = top.add_module(_build_parent_with_child_modules())
+    parent2 = top.add_module(_build_parent_with_child_modules())
+
+    assert [module.short_name for module in parent1.modules] == ["CH1", "CH2"]
+    assert [module.short_name for module in parent2.modules] == ["CH1", "CH2"]
+    assert "PARENT1_CH1_INTERNAL" in parent1.modules[0].nets
+    assert "PARENT1_CH2_INTERNAL" in parent1.modules[1].nets
+    assert "PARENT2_CH1_INTERNAL" in parent2.modules[0].nets
+    assert "PARENT2_CH2_INTERNAL" in parent2.modules[1].nets
+
+    flatten(top)
+
+    assert "PARENT1_CH1_INTERNAL" in top.nets
+    assert "PARENT1_CH2_INTERNAL" in top.nets
+    assert "PARENT2_CH1_INTERNAL" in top.nets
+    assert "PARENT2_CH2_INTERNAL" in top.nets
+    assert "CH1_INTERNAL" not in top.nets
+    assert "CH2_INTERNAL" not in top.nets
+    assert any(refdes.endswith("_CH1_PARENT1") for refdes in top.components)
+    assert any(refdes.endswith("_CH1_PARENT2") for refdes in top.components)
+    assert not any("_PARENT1_CH1_PARENT1" in refdes for refdes in top.components)
+
+
+def test_nested_modules_added_after_parent_instantiation_scope_child_nets():
+    top = Design("Top", "TOP")
+    parent1 = top.add_module(Design("Parent", "PARENT"))
+    parent2 = top.add_module(Design("Parent", "PARENT"))
+
+    parent1.add_module(_build_child_with_internal_net())
+    parent2.add_module(_build_child_with_internal_net())
+
+    assert "PARENT1_CH1_INTERNAL" in parent1.modules[0].nets
+    assert "PARENT2_CH1_INTERNAL" in parent2.modules[0].nets
+
+    flatten(top)
+
+    assert "PARENT1_CH1_INTERNAL" in top.nets
+    assert "PARENT2_CH1_INTERNAL" in top.nets
+    assert "CH1_INTERNAL" not in top.nets
+
+
+def test_nested_port_connected_nets_still_merge_through_parent_ports():
+    top = Design("Top", "TOP")
+    parent1 = top.add_module(_build_parent_with_ported_child())
+    parent2 = top.add_module(_build_parent_with_ported_child())
+    top.join_net(parent1.port["OUT"], "TOP1")
+    top.join_net(parent2.port["OUT"], "TOP2")
+    parent1_resistor = parent1.modules[0].components["R1"]
+    parent2_resistor = parent2.modules[0].components["R1"]
+
+    flatten(top)
+
+    assert parent1_resistor.pins[1] in top.nets["TOP1"].connections
+    assert parent2_resistor.pins[1] in top.nets["TOP2"].connections
+    assert parent1_resistor.pins[1] not in top.nets["TOP2"].connections
+    assert parent2_resistor.pins[1] not in top.nets["TOP1"].connections
 
 
 def test_merge_nets_propagates_target_name_through_child_ports():
