@@ -121,30 +121,29 @@ def _sync_reference_text(
     justify_options: dict,
     add_silkscreen_text: bool,
 ) -> None:
-    if not add_silkscreen_text:
-        _hide_silkscreen_text(footprint)
-        return
-
     ref_text = get_index_fptext(footprint)
     if ref_text is None:
-        footprint.graphicItems.append(
-            fp.FpText(
-                type="reference",
-                text=cid,
-                position=id_position,
-                layer=f"{layer_prefix}.SilkS",
-                effects=base.Effects(
-                    font=base.Font(height=0.75, width=0.75, thickness=0.12),
-                    justify=base.Justify(**justify_options),
-                ),
-            )
+        ref_text = fp.FpText(
+            type="reference",
+            text=cid,
+            position=id_position,
+            layer=f"{layer_prefix}.SilkS",
+            effects=base.Effects(
+                font=base.Font(height=0.75, width=0.75, thickness=0.12),
+                justify=base.Justify(**justify_options),
+            ),
         )
-        return
+        footprint.graphicItems.append(ref_text)
 
     ref_text.text = cid
     ref_text.position = id_position
     ref_text.layer = f"{layer_prefix}.SilkS"
     _set_text_justify(ref_text, justify_options)
+    if not add_silkscreen_text:
+        _hide_silkscreen_text(footprint)
+        ref_text.hide = True
+    else:
+        ref_text.hide = False
 
 
 def _ensure_kicad_net(

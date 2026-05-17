@@ -4,6 +4,7 @@ import earthground.components as cmp
 import earthground.exporters.kicad as kicad
 import earthground.footprints.passives as pfp
 import earthground.layout as layout_lib
+from earthground.importers.kicad import KicadFootprint
 from earthground.schematic import Design
 
 
@@ -54,6 +55,40 @@ def test_parse_footprint_can_skip_silkscreen_text():
     assert silk_text
     assert all(item.hide for item in silk_text)
     assert any(not item.hide for item in fab_text)
+
+
+def test_hidden_imported_reference_text_still_gets_component_refdes():
+    design = Design("TEST")
+    component = cmp.Component("U")
+    component.name = "Imported"
+    component.footprint = KicadFootprint(
+        "Test",
+        "Imported",
+        """
+        (footprint "Imported"
+          (version 20240108)
+          (generator "test")
+          (layer "F.Cu")
+          (fp_text reference "REF**" (at 0 1 0) (layer "F.SilkS")
+            (effects (font (size 1 1) (thickness 0.15))))
+          (fp_text value "Imported" (at 0 -1 0) (layer "F.Fab")
+            (effects (font (size 1 1) (thickness 0.15))))
+        )
+        """.strip(),
+    )
+    design.add_component(component)
+
+    footprint = kicad.KicadExporter(design).parse_footprint(
+        "U99",
+        component,
+        schematic=design,
+        add_silkscreen_text=False,
+    )
+    reference = kicad.get_index_fptext(footprint)
+
+    assert reference.text == "U99"
+    assert reference.layer == "F.SilkS"
+    assert reference.hide is True
 
 
 def test_parse_footprint_can_skip_fab_text():
