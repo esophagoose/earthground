@@ -558,6 +558,41 @@ class Design:
             raise SchematicValidationError(self.name, errors)
         return components
 
+    def _resolved_net_connections(self) -> Dict[str, set[cmp.Pin]]:
+        """
+        Return flattened net connection sets without modifying the design.
+
+        Child nets are first merged by name, matching ``flatten()``, and are
+        then merged into their parent nets through connected module ports.
+        """
+        resolved = {
+            net_name: set(net.connections) for net_name, net in self.nets.items()
+        }
+
+        for module in self.modules:
+            module_connections = module._resolved_net_connections()
+            port_net_mappings = {}
+            for port_name in module.port.names:
+                port = module.port[port_name]
+                parent_net = self.pin_to_net.get(port)
+                module_net = module.pin_to_net.get(port)
+                if module_net and parent_net:
+                    port_net_mappings[module_net.name] = parent_net.name
+
+            for net_name, connections in module_connections.items():
+                resolved.setdefault(net_name, set()).update(connections)
+
+            for module_net_name, parent_net_name in port_net_mappings.items():
+                if (
+                    module_net_name not in resolved
+                    or parent_net_name not in resolved
+                    or module_net_name == parent_net_name
+                ):
+                    continue
+                resolved[parent_net_name].update(resolved.pop(module_net_name))
+
+        return resolved
+
     def _validate_design(self, check_no_single_connections: bool):
         errors = []
         default = set(vars(Ports([], self)))
@@ -565,10 +600,10 @@ class Design:
         if port_diff:
             errors.append(f"Ports changed after initialization! {port_diff}")
         if check_no_single_connections:
-            for net in self.nets.values():
-                if len(net.connections) != 1:
+            for net_name, connections in self._resolved_net_connections().items():
+                if len(connections) != 1:
                     continue
-                errors.append(f"Single connection! {net} - {net.connections}")
+                errors.append(f"Single connection! Net<{net_name}> - {connections}")
         return errors
 
     def print_symbol(self):

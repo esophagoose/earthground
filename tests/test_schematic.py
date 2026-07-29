@@ -6,6 +6,27 @@ from earthground.library.integrated_circuits.io_expanders import tca9535pwr
 from earthground.schematic import Design, Ports, SchematicValidationError
 
 
+def _capture_design_state(design):
+    return {
+        "components": tuple(design.components.items()),
+        "component_state": tuple(
+            (
+                component,
+                component.parent,
+                component.refdes,
+                component.refdes_postfix,
+            )
+            for component in design.components.values()
+        ),
+        "modules": tuple(design.modules),
+        "nets": tuple(
+            (name, net, frozenset(net.connections)) for name, net in design.nets.items()
+        ),
+        "pin_to_net": tuple(design.pin_to_net.items()),
+        "children": tuple(_capture_design_state(module) for module in design.modules),
+    }
+
+
 def test_ports_initialization():
     design = Design("PortsTest", ports=["p1", "P2", "P3"])
     ports = design.port
@@ -196,3 +217,65 @@ def test_validate_raises_schematic_validation_error_and_logs(caplog):
     assert excinfo.value.design_name == "TestDesign"
     assert "No footprint" in str(excinfo.value)
     assert "VALIDATION FAILED" in caplog.text
+
+
+def test_validate_reports_single_connection_in_flat_design():
+    design = Design("TestDesign")
+    resistor = design.add_component(Resistor("1k"))
+    design.join_net(resistor.pins[1], "DANGLING")
+
+    with pytest.raises(SchematicValidationError) as excinfo:
+        design.validate(
+            skip_footprint_check=True,
+            check_no_single_connections=True,
+        )
+
+    assert excinfo.value.errors == [
+        f"Single connection! Net<DANGLING> - {{{resistor.pins[1]!r}}}"
+    ]
+
+
+def test_validate_resolves_module_connections_without_mutating_design():
+    parent = Design("Parent")
+    module = parent.add_module(Design("Module", "MOD", ports=["OUT"]))
+    parent.join_net(module.port["OUT"], "PARENT_OUT")
+
+    resistor = module.add_component(Resistor("1k"))
+    module.connect([resistor.pins[1], module.port["OUT"]], "MODULE_OUT")
+
+    state_before_validation = _capture_design_state(parent)
+
+    parent.validate(
+        skip_footprint_check=True,
+        check_no_single_connections=True,
+    )
+
+    assert _capture_design_state(parent) == state_before_validation
+
+
+def test_validate_reports_nested_single_connection_without_mutating_design():
+    leaf = Design("Leaf", "LEAF", ports=["OUT"])
+    resistor = leaf.add_component(Resistor("1k"))
+    leaf.connect([resistor.pins[1], leaf.port["OUT"]], "LEAF_OUT")
+    leaf.join_net(resistor.pins[2], "DANGLING")
+
+    middle = Design("Middle", "MID", ports=["OUT"])
+    leaf = middle.add_module(leaf)
+    middle.connect([leaf.port["OUT"], middle.port["OUT"]], "MIDDLE_OUT")
+
+    top = Design("Top", "TOP")
+    middle = top.add_module(middle)
+    top.join_net(middle.port["OUT"], "TOP_OUT")
+
+    state_before_validation = _capture_design_state(top)
+
+    with pytest.raises(SchematicValidationError) as excinfo:
+        top.validate(
+            skip_footprint_check=True,
+            check_no_single_connections=True,
+        )
+
+    assert len(excinfo.value.errors) == 1
+    assert "Net<MID1_LEAF1_DANGLING>" in excinfo.value.errors[0]
+    assert repr(resistor.pins[2]) in excinfo.value.errors[0]
+    assert _capture_design_state(top) == state_before_validation
