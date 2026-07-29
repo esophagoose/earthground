@@ -2,6 +2,7 @@ import dataclasses
 import enum
 import logging
 import math
+from collections import namedtuple
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, NamedTuple, Optional, Tuple
 
@@ -54,14 +55,41 @@ class Position(NamedTuple):
         return Position(self.x + x, self.y + y, self.angle)
 
 
-class ViaConfig(NamedTuple):
+_ViaConfigBase = namedtuple(
+    "ViaConfig",
+    ["location", "net_name", "hole_size", "drill_size"],
+)
+
+
+class _ValidatedNetTuple:
+    __slots__ = ()
+
+    def __new__(cls, *args, **kwargs):
+        value = super().__new__(cls, *args, **kwargs)
+        cmp.validate_net_name(value.net_name, owner=f"{cls.__name__}()")
+        return value
+
+    @classmethod
+    def _make(cls, iterable):
+        return cls(*tuple(iterable))
+
+    def _replace(self, **kwargs):
+        return type(self)(*super()._replace(**kwargs))
+
+
+class ViaConfig(_ValidatedNetTuple, _ViaConfigBase):
+    __slots__ = ()
     location: Position
     net_name: str
     hole_size: float
     drill_size: float
 
 
-class PourLayer(NamedTuple):
+_PourLayerBase = namedtuple("PourLayer", ["net_name", "layer"])
+
+
+class PourLayer(_ValidatedNetTuple, _PourLayerBase):
+    __slots__ = ()
     net_name: str
     layer: int
 

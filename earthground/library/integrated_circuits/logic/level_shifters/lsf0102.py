@@ -118,8 +118,8 @@ class LSF0102(cmp.Component):
 
 def generate_design(
     mpn: LSF0102PartNumbers,
-    r_bias=cmp.Resistor("200k"),
-    c_filter=cmp.Capacitor("0.1uF", 10),
+    r_bias=None,
+    c_filter=None,
 ):
     """
     Generate the reference design for the LSF0102 level translator as shown in the provided schematic.
@@ -129,22 +129,23 @@ def generate_design(
 
     ports = ["VA", "VB", "A1", "A2", "B1", "B2", "GND"]
     design = sch.Design("Lsf0102ReferenceDesign", "LSF0102", ports)
+    r_bias = r_bias or cmp.Resistor("200k")
+    c_filter = c_filter or cmp.Capacitor("0.1uF", 10)
     lsf = LSF0102(mpn)
     design.add_component(lsf)
+    design.add_component(r_bias)
 
     # Power supply net
     design.connect(
         [lsf.pins.by_name("VREF_B"), lsf.pins.by_name("EN"), r_bias.pins[1]], "VREF_B"
     )
     design.add_decoupling_capacitor(c_filter, "VREF_B")
-    design.connect([r_bias.pins[2], design.port.vb])
-    design.connect([lsf.pins.by_name("VREF_A"), design.port.va])
-    design.connect([lsf.pins.by_name("GND"), design.port.gnd])
+    design.connect([r_bias.pins[2], design.port["VB"]])
+    design.connect([lsf.pins.by_name("VREF_A"), design.port["VA"]])
+    design.connect([lsf.pins.by_name("GND"), design.port["GND"]])
 
     # Ports output for reference
-    design.port.a1 = lsf.pins.by_name("A1")
-    design.port.a2 = lsf.pins.by_name("A2")
-    design.port.b1 = lsf.pins.by_name("B1")
-    design.port.b2 = lsf.pins.by_name("B2")
+    for port_name in ["A1", "A2", "B1", "B2"]:
+        design.connect([lsf.pins.by_name(port_name), design.port[port_name]], port_name)
 
     return design

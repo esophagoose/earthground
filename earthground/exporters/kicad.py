@@ -151,6 +151,7 @@ def _ensure_kicad_net(
     schematic: sch_lib.Design,
     net_name: str,
 ) -> base.Net:
+    net_name = cmp.validate_net_name(net_name, owner="_ensure_kicad_net()")
     if net_name in exporter._added_nets:
         return exporter._added_nets[net_name]
     kicad_net = base.Net(number=len(exporter.board.nets) + 1, name=net_name)
@@ -555,13 +556,17 @@ class KicadExporter:
         )
 
     def add_via(self, config: layout_lib.ViaConfig):
+        net_name = cmp.validate_net_name(
+            config.net_name,
+            owner="add_via()",
+        )
         self.board.traceItems.append(
             kibrditems.Via(
                 position=to_pos(config.location),
                 size=config.hole_size,
                 drill=config.drill_size,
                 layers=["F.Cu", "B.Cu"],
-                net=self._added_nets[config.net_name].number,
+                net=self._added_nets[net_name].number,
             )
         )
 

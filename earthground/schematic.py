@@ -166,7 +166,7 @@ class Design:
             return component
         raise ValueError(f"Component is already in the design! {component}")
 
-    def add_net(self, name) -> cmp.Net:
+    def add_net(self, name: str) -> cmp.Net:
         """
         Creates a net in the design and returns it.
 
@@ -175,6 +175,9 @@ class Design:
         :return: The newly created net.
         :rtype: earthground.components.Net
         """
+        name = cmp.validate_net_name(name, owner="add_net()", argument="name")
+        if name in self.nets:
+            raise ValueError(f"add_net() net '{name}' already exists")
         net = cmp.Net(name)
         self.nets[name] = net
         return net
@@ -204,6 +207,39 @@ class Design:
             return self.pin_to_net[pin].name
         return f"AutoNet_{pin.name}"
 
+    def _pin_belongs_to_design(self, pin: cmp.Pin) -> bool:
+        if isinstance(pin.parent, Ports):
+            port_design = pin.parent.parent
+            if port_design is self:
+                return True
+            return any(module is port_design for module in self.modules)
+        if not isinstance(pin.parent, cmp.Component):
+            return False
+        return pin.parent.parent is self and any(
+            component is pin.parent for component in self.components.values()
+        )
+
+    def _validate_pin(self, pin: object, owner: str) -> None:
+        if not isinstance(pin, cmp.Pin):
+            raise TypeError(
+                f"{owner} argument 'pin' must be a Pin, got {type(pin).__name__}"
+            )
+        if not self._pin_belongs_to_design(pin):
+            raise SchematicConnectionError(
+                f"{owner} pin does not belong to design '{self.name}': {pin}"
+            )
+
+    def _validate_connection_arguments(
+        self,
+        owner: str,
+        pins=(),
+        net_names=(),
+    ) -> None:
+        for pin in pins:
+            self._validate_pin(pin, owner)
+        for net_name in net_names:
+            cmp.validate_net_name(net_name, owner=owner)
+
     def join_net(self, pin: cmp.Pin, net_name: str) -> cmp.Net:
         """
         Joins a pin to a specified net by its name. If the net does not exist, it is created.
@@ -212,9 +248,12 @@ class Design:
         :type pin: earthground.components.Pin
         :param net_name: The name of the net to which the pin will be joined.
         :type net_name: str
+        :raises TypeError: If ``pin`` is not a Pin or ``net_name`` is not a string.
         :return: The net to which the pin was successfully joined.
         :rtype: earthground.components.Net
         """
+        self._validate_connection_arguments("join_net()", [pin], [net_name])
+
         # If the pin is a port, then the net inside the module should be changed
         self._sync_child_port_net(pin, net_name, include_self=True)
         if net_name not in self.nets:
@@ -233,7 +272,14 @@ class Design:
         :type new_net_name: str
         :return: None
         """
+        cmp.validate_net_names(
+            "change_net_name()",
+            old_net_name=old_net_name,
+            new_net_name=new_net_name,
+        )
         log.debug(f"Changing net name from {old_net_name} to {new_net_name}")
+        if old_net_name not in self.nets:
+            raise KeyError(f"Net '{old_net_name}' does not exist in design")
         if old_net_name == new_net_name:
             return
         old_net_connections = list(self.nets[old_net_name].connections)
@@ -298,6 +344,13 @@ class Design:
         :return: None
         :raises KeyError: If either source_net_name or target_net_name doesn't exist in the design.
         """
+        names = {
+            "source_net_name": source_net_name,
+            "target_net_name": target_net_name,
+        }
+        if name is not None:
+            names["name"] = name
+        cmp.validate_net_names("merge_nets()", **names)
         if source_net_name not in self.nets:
             raise KeyError(f"Source net '{source_net_name}' does not exist in design")
         if target_net_name not in self.nets:
@@ -321,13 +374,17 @@ class Design:
         del self.nets[source_net_name]
 
         # Rename target net if a new name is provided
-        if name and name != target_net_name:
+        if name is not None and name != target_net_name:
             self.change_net_name(target_net_name, name)
         else:
             for pin in source_connections:
                 self._sync_child_port_net(pin, target_net_name)
 
-    def connect(self, list_of_pins: List[cmp.Pin], net_name=None):
+    def connect(
+        self,
+        list_of_pins: List[cmp.Pin],
+        net_name: Optional[str] = None,
+    ) -> None:
         """
         Connects a list of pins to a specified net. If no net name is provided, it automatically generates a net name.
 
@@ -343,7 +400,25 @@ class Design:
         :returns: None
         """
 
-        if not net_name:
+        if not isinstance(list_of_pins, list):
+            raise TypeError(
+                f"connect() argument 'list_of_pins' must be a list, "
+                f"got {type(list_of_pins).__name__}"
+            )
+        if not list_of_pins:
+            raise ValueError("connect() argument 'list_of_pins' cannot be empty")
+        invalid_pins = [pin for pin in list_of_pins if not isinstance(pin, cmp.Pin)]
+        if invalid_pins:
+            invalid_pin = invalid_pins[0]
+            raise SchematicConnectionError(
+                f"Invalid pin: {type(invalid_pin).__name__} {invalid_pin}"
+            )
+        self._validate_connection_arguments(
+            "connect()",
+            list_of_pins,
+            [] if net_name is None else [net_name],
+        )
+        if net_name is None:
             nets = [self.pin_to_net.get(p) for p in list_of_pins]
             if not any(nets):
                 # All pins don't have a net associated with them
@@ -353,10 +428,6 @@ class Design:
                 #   First valid net set as net for all pins
                 net_name = [net.name for net in nets if net][0]
         for pin in list_of_pins:
-            if not isinstance(pin, cmp.Pin):
-                raise SchematicConnectionError(
-                    f"Schematic connection error! Invalid pin: {type(pin)} {pin}"
-                )
             self.join_net(pin, net_name)
 
     def _get_bus_index(self, bus):
@@ -417,10 +488,17 @@ class Design:
         """
         Helper function to automatically add a pullup resistor to a pin
         """
+        self._validate_connection_arguments("add_pullup_resistor()", [pin], [net_name])
         if not isinstance(ohms, cmp.Resistor):
             res = self.add_component(cmp.Resistor(ohms))
         else:
             res = ohms
+            if not res.is_in_design:
+                self.add_component(res)
+            elif res.parent is not self:
+                raise ValueError(
+                    "add_pullup_resistor() resistor belongs to another design"
+                )
         self.join_net(res.pins[1], net_name)
         self.connect([res.pins[2], pin])
         return res
@@ -446,7 +524,13 @@ class Design:
         :return: The resistor component added in series.
         :rtype: earthground.components.Resistor
         """
-        net_name = net_name or self._get_net_name_from_pin(pin1)
+        self._validate_connection_arguments(
+            "add_series_res()",
+            [pin1, pin2],
+            [] if net_name is None else [net_name],
+        )
+        if net_name is None:
+            net_name = self._get_net_name_from_pin(pin1)
         res = ohms
         if not isinstance(ohms, cmp.Resistor):
             res = cmp.Resistor(ohms)
@@ -472,6 +556,14 @@ class Design:
         """
         Helper function to automatically add a voltage divider to a pin
         """
+        names = {"ground_net_name": ground_net_name}
+        if output_net_name is not None:
+            names["output_net_name"] = output_net_name
+        self._validate_connection_arguments(
+            "add_voltage_divider()",
+            [input_pin, output_pin],
+            names.values(),
+        )
         r1, r2 = sv.voltage_divider(1, divider, resistance)
         res1 = self.add_component(cmp.Resistor(r1))
         res2 = self.add_component(cmp.Resistor(r2))
@@ -480,20 +572,27 @@ class Design:
         self.join_net(res2.pins[2], ground_net_name)
 
     def add_decoupling_capacitor(
-        self, capacitor: cmp.Capacitor, net_name=None, ground_net_name="GND"
-    ):
+        self,
+        capacitor: cmp.Capacitor,
+        net_name: str,
+        ground_net_name: str = "GND",
+    ) -> None:
         """
         Helper function to automatically add a decoupling capacitor to a pin
 
         :param capacitor: The decoupling capacitor to add.
-        :param net_name: (Optional) The name of the net to which the capacitor will be connected. If not provided, it will be determined based on the pin.
+        :param net_name: The name of the net to which the capacitor will be connected.
         :type capacitor: earthground.components.Capacitor
-        :type net_name: Optional[str]
+        :type net_name: str
         :return: None
         """
         if not isinstance(capacitor, cmp.Capacitor):
             raise ValueError(f"Invalid capacitor: {type(capacitor)} {capacitor}")
-        net_name = net_name or self._get_net_name_from_pin(self)
+        cmp.validate_net_names(
+            "add_decoupling_capacitor()",
+            net_name=net_name,
+            ground_net_name=ground_net_name,
+        )
         self.add_component(capacitor)
         self.join_net(capacitor.pins[1], net_name)
         self.join_net(capacitor.pins[2], ground_net_name)
@@ -511,12 +610,30 @@ class Design:
         :return: None
         :raises ValueError: If a port name doesn't exist in the design
         """
+        if not isinstance(port_connections, dict):
+            raise TypeError(
+                f"set_ports() argument 'port_connections' must be a dict, "
+                f"got {type(port_connections).__name__}"
+            )
         for port_name, connection in port_connections.items():
             if port_name not in self.port.names:
                 raise ValueError(
                     f"Port '{port_name}' does not exist in design '{self.name}'"
                 )
+            if isinstance(connection, str):
+                cmp.validate_net_names("set_ports()", connection=connection)
+            elif isinstance(connection, cmp.Pin):
+                self._validate_connection_arguments(
+                    "set_ports()",
+                    [connection],
+                )
+            else:
+                raise ValueError(
+                    f"Invalid connection type for port '{port_name}': "
+                    f"{type(connection)}"
+                )
 
+        for port_name, connection in port_connections.items():
             port_pin = self.port[port_name]
             if isinstance(connection, str):
                 # Connect port to a net name
@@ -532,10 +649,6 @@ class Design:
                     net_name = f"{self.short_name}_{port_name}"
                     self.join_net(port_pin, net_name)
                     self.join_net(connection, net_name)
-            else:
-                raise ValueError(
-                    f"Invalid connection type for port '{port_name}': {type(connection)}"
-                )
 
     def validate(self, skip_footprint_check=False, check_no_single_connections=False):
         errors = []
@@ -566,7 +679,9 @@ class Design:
         then merged into their parent nets through connected module ports.
         """
         resolved = {
-            net_name: set(net.connections) for net_name, net in self.nets.items()
+            net_name: set(net.connections)
+            for net_name, net in self.nets.items()
+            if isinstance(net_name, str) and isinstance(net, cmp.Net)
         }
 
         for module in self.modules:
@@ -599,11 +714,62 @@ class Design:
         port_diff = set(vars(self.port).keys()) - set(self._ports) - default
         if port_diff:
             errors.append(f"Ports changed after initialization! {port_diff}")
-        if check_no_single_connections:
-            for net_name, connections in self._resolved_net_connections().items():
-                if len(connections) != 1:
+
+        connected_pins = {}
+        for net_key, net in self.nets.items():
+            if not isinstance(net_key, str) or not net_key:
+                errors.append(
+                    f"Invalid net registry key: {net_key!r} ({type(net_key).__name__})"
+                )
+            if not isinstance(net, cmp.Net):
+                errors.append(f"Invalid net value at {net_key!r}: {type(net).__name__}")
+                continue
+            if not isinstance(net.name, str) or not net.name:
+                errors.append(f"Invalid net name at {net_key!r}: {net.name!r}")
+            elif net_key != net.name:
+                errors.append(
+                    f"Net registry key/name mismatch: {net_key!r} != {net.name!r}"
+                )
+            for pin in net.connections:
+                if not isinstance(pin, cmp.Pin):
+                    errors.append(f"Invalid {type(pin).__name__} on net {net_key!r}")
                     continue
-                errors.append(f"Single connection! Net<{net_name}> - {connections}")
+                if not self._pin_belongs_to_design(pin):
+                    errors.append(f"Net pin not owned by design '{self.name}': {pin}")
+                if pin in connected_pins and connected_pins[pin] is not net:
+                    errors.append(
+                        f"Pin appears on multiple nets: {pin} "
+                        f"({connected_pins[pin].name!r}, {net.name!r})"
+                    )
+                connected_pins[pin] = net
+                if self.pin_to_net.get(pin) is not net:
+                    errors.append(f"pin_to_net mismatch: {pin} on {net.name!r}")
+
+        for pin, net in self.pin_to_net.items():
+            if not isinstance(pin, cmp.Pin):
+                errors.append(f"Invalid pin_to_net key: {pin!r} ({type(pin).__name__})")
+                continue
+            if not isinstance(net, cmp.Net):
+                errors.append(
+                    f"Invalid pin_to_net value for {pin}: {type(net).__name__}"
+                )
+                continue
+            registered_net = (
+                self.nets.get(net.name)
+                if isinstance(net.name, str) and net.name
+                else None
+            )
+            if registered_net is not net:
+                errors.append(f"pin_to_net references an unregistered net: {pin}")
+            if pin not in net.connections:
+                errors.append(f"pin_to_net connection missing from net: {pin}")
+
+        if check_no_single_connections:
+            errors.extend(
+                f"Single connection! Net<{net_name}> - {connections}"
+                for net_name, connections in self._resolved_net_connections().items()
+                if len(connections) == 1
+            )
         return errors
 
     def print_symbol(self):

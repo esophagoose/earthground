@@ -1,4 +1,5 @@
 import kiutils.footprint as fp
+import pytest
 
 import earthground.components as cmp
 import earthground.exporters.kicad as kicad
@@ -226,6 +227,39 @@ def test_add_pour_sets_zone_net_name():
     assert zone.netName == "GND"
     assert zone.net == exporter._added_nets["GND"].number
     assert zone.layers == ["B.Cu"]
+
+
+def test_layout_net_references_reject_non_string_names():
+    design = Design("TEST")
+    component = design.add_component(cmp.Component())
+    pin = cmp.Pin("CB", 1, component)
+
+    with pytest.raises(TypeError, match="PourLayer.*net_name.*str.*Pin"):
+        layout_lib.PourLayer(net_name=pin, layer=1)
+    with pytest.raises(TypeError, match="ViaConfig.*net_name.*str.*Pin"):
+        layout_lib.ViaConfig(
+            location=layout_lib.Position(0, 0, 0),
+            net_name=pin,
+            hole_size=0.6,
+            drill_size=0.3,
+        )
+
+
+def test_layout_net_references_preserve_named_tuple_behavior():
+    position = layout_lib.Position(1, 2, 0)
+    via = layout_lib.ViaConfig(position, "GND", 0.6, 0.3)
+    pour = layout_lib.PourLayer("GND", 1)
+
+    assert tuple(via) == (position, "GND", 0.6, 0.3)
+    assert tuple(pour) == ("GND", 1)
+    assert via[1] == "GND"
+    assert pour[0] == "GND"
+    assert pour._replace(layer=2) == layout_lib.PourLayer("GND", 2)
+
+    with pytest.raises(TypeError, match="PourLayer.*net_name.*str.*object"):
+        pour._replace(net_name=object())
+    with pytest.raises(TypeError, match="ViaConfig.*net_name.*str.*object"):
+        layout_lib.ViaConfig._make((position, object(), 0.6, 0.3))
 
 
 def test_kicad_export_keeps_module_port_connected_resistors_on_parent_net():

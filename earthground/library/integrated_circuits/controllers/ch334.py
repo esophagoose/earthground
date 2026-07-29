@@ -43,7 +43,7 @@ class CH334F(cmp.Component):
         )
 
         self.i2c = serial.I2C(
-            sda=self.pins.by_name("LED4"), scl=self.pins.by_name("LED")
+            sda=self.pins.by_name("LED4"), scl=self.pins.by_name("LED3")
         )
         self.downstream_usb = [
             serial.USB(dm=self.pins.by_name("DM1"), dp=self.pins.by_name("DP1")),
@@ -61,11 +61,12 @@ def bus_powered_design(xtal_12mhz: cmp.Component):
     design = sch_lib.Design("BusPoweredHub", "BPH", ports)
     design.default_passive_size = "0402"
     hub = design.add_component(CH334F())
-    design.add_decoupling_cap(hub.pins.by_name("VDD33"), cmp.Capacitor(1, 10))
-    design.add_decoupling_cap(hub.pins.by_name("VDD33"), cmp.Capacitor(10, 10))
-    design.add_decoupling_cap(hub.pins.by_name("V5"), cmp.Capacitor(1, 10))
-    design.add_decoupling_cap(hub.pins.by_name("V5"), cmp.Capacitor(10, 10))
+    hub.pins.by_name("VDD33").add_decoupling_capacitor(cmp.Capacitor("1u", 10))
+    hub.pins.by_name("VDD33").add_decoupling_capacitor(cmp.Capacitor("10u", 10))
+    hub.pins.by_name("V5").add_decoupling_capacitor(cmp.Capacitor("1u", 10))
+    hub.pins.by_name("V5").add_decoupling_capacitor(cmp.Capacitor("10u", 10))
     assert xtal_12mhz.frequency == 12.0, "Invalid xtal freq! requires 12MHz"
-    design.connect(hub.pins.by_name("XI"), xtal_12mhz.pins[1])
-    design.connect(hub.pins.by_name("XO"), xtal_12mhz.pins[2])
+    design.add_component(xtal_12mhz)
+    design.connect([hub.pins.by_name("XI"), xtal_12mhz.pins[1]])
+    design.connect([hub.pins.by_name("XO"), xtal_12mhz.pins[2]])
     return design

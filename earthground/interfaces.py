@@ -34,6 +34,13 @@ class InterfaceError(ValueError):
     pass
 
 
+def _validate_signal_name(value: object, argument: str) -> str:
+    try:
+        return cmp.validate_net_name(value, owner="Signal()", argument=argument)
+    except ValueError as exc:
+        raise InterfaceError(f"Signal {argument} cannot be empty") from exc
+
+
 class _NoConnect:
     def __repr__(self) -> str:
         return "NC"
@@ -50,10 +57,16 @@ class Signal:
     metadata: Mapping[str, Any] = dataclasses.field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not self.name:
-            raise InterfaceError("Signal name cannot be empty")
+        name = _validate_signal_name(self.name, "name")
+        object.__setattr__(self, "name", name)
         if self.net_name is None:
-            object.__setattr__(self, "net_name", self.name)
+            object.__setattr__(self, "net_name", name)
+        else:
+            object.__setattr__(
+                self,
+                "net_name",
+                _validate_signal_name(self.net_name, "net_name"),
+            )
 
 
 @dataclasses.dataclass(frozen=True)

@@ -76,6 +76,17 @@ def test_signal_to_pin_returns_canonical_contact_position():
         interface.signal_to_pin("NC_3")
 
 
+def test_signal_rejects_invalid_names():
+    with pytest.raises(TypeError, match="Signal.*name.*str.*object"):
+        Signal(object())
+    with pytest.raises(InterfaceError, match="Signal name cannot be empty"):
+        Signal("")
+    with pytest.raises(TypeError, match="Signal.*net_name.*str.*object"):
+        Signal("BOOT", net_name=object())
+    with pytest.raises(InterfaceError, match="Signal net_name cannot be empty"):
+        Signal("BOOT", net_name="")
+
+
 def test_straight_mapping_uses_contact_keys_not_first_n_numeric_pads():
     interface = ConnectorInterface(
         "wide_board_io",

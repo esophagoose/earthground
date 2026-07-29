@@ -28,12 +28,14 @@ class AP7330(cmp.Component):
     @classmethod
     def reference_design(cls, output_voltage, schematic_name="AP7330_Reference"):
         design = schematic.Design(schematic_name)
-        ldo = cls()
-        design.add_decoupling_cap(ldo.pins.by_name("VIN"), cmp.Capacitor("1u", 10))
-        design.add_decoupling_cap(ldo.pins.by_name("VOUT"), cmp.Capacitor("1u", 10))
+        ldo = design.add_component(cls())
+        ldo.pins.by_name("VIN").add_decoupling_capacitor(cmp.Capacitor("1u", 10))
+        ldo.pins.by_name("VOUT").add_decoupling_capacitor(cmp.Capacitor("1u", 10))
         r1, r2 = ldo.get_adj_resistors(output_voltage)
-        design.connect(ldo.pins.by_name("VOUT"), r1.pins.by_name(1))
-        design.connect(ldo.pins.by_name("ADJ"), r1.pins.by_name(2))
-        design.connect(ldo.pins.by_name("ADJ"), r2.pins.by_name(1))
-        design.connect(ldo.pins.by_name("GND"), r2.pins.by_name(2))
+        design.add_component(r1)
+        design.add_component(r2)
+        design.connect([ldo.pins.by_name("VOUT"), r1.pins[1]])
+        design.connect([ldo.pins.by_name("ADJ"), r1.pins[2]])
+        design.connect([ldo.pins.by_name("ADJ"), r2.pins[1]])
+        design.connect([ldo.pins.by_name("GND"), r2.pins[2]])
         return design

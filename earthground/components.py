@@ -7,8 +7,30 @@ if TYPE_CHECKING:
     import earthground.schematic as sch
 
 
+def validate_net_name(
+    value: object,
+    *,
+    owner: str,
+    argument: str = "net_name",
+) -> str:
+    """Return a valid net name or raise before it can enter design state."""
+    if not isinstance(value, str):
+        raise TypeError(
+            f"{owner} argument '{argument}' must be a str, "
+            f"got {type(value).__name__}"
+        )
+    if not value:
+        raise ValueError(f"{owner} argument '{argument}' cannot be empty")
+    return value
+
+
+def validate_net_names(owner: str, **names: object) -> None:
+    for argument, value in names.items():
+        validate_net_name(value, owner=owner, argument=argument)
+
+
 class Net:
-    def __init__(self, name="UNASSIGNED") -> None:
+    def __init__(self, name: str = "UNASSIGNED") -> None:
         """
          Net represents an electrical connection between pins in a circuit
 
@@ -16,8 +38,17 @@ class Net:
         :type name: str, optional
         """
 
+        self._name = ""
         self.name = name
         self.connections: Set["Pin"] = set()
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @name.setter
+    def name(self, value: str) -> None:
+        self._name = validate_net_name(value, owner="Net()", argument="name")
 
     def __repr__(self) -> str:
         return f"Net<{self.name}>"
@@ -77,7 +108,19 @@ class Pin:
             self.parent, Component
         ), "Component must be in a design before adding decoupling capacitor!"
         design: sch.Design = self.parent.parent
-        net_name = net_name or design._get_net_name_from_pin(self)
+        if not isinstance(capacitor, Capacitor):
+            raise TypeError(
+                f"add_decoupling_capacitor() argument 'capacitor' must be a "
+                f"Capacitor, got {type(capacitor).__name__}"
+            )
+        names = {"ground_net_name": ground_net_name}
+        if net_name is not None:
+            names["net_name"] = net_name
+        validate_net_names(
+            "add_decoupling_capacitor()",
+            **names,
+        )
+        net_name = design._get_net_name_from_pin(self) if net_name is None else net_name
         design.add_component(capacitor)
         design.join_net(self, net_name)
         design.join_net(capacitor.pins[1], net_name)
@@ -154,21 +197,30 @@ class Component:
         if not self._placed:
             raise ValueError("Component must be placed before setting pin nets!")
         if isinstance(nets, dict):
-            for pin_name, net_name in nets.items():
-                if net_name is None:
-                    continue
-                if isinstance(net_name, Pin):
-                    self.parent.connect([self.pins.by_name(pin_name), net_name])
-                else:
-                    self.parent.join_net(self.pins.by_name(pin_name), net_name)
-            return self
+            items = ((self.pins.by_name(name), value) for name, value in nets.items())
         elif isinstance(nets, list):
-            for i, net_name in enumerate(nets):
-                if net_name is None:
-                    continue
-                self.parent.join_net(self.pins.by_index(i + 1), net_name)
-            return self
-        raise ValueError("Invalid type for nets")
+            items = (
+                (self.pins.by_index(index), value)
+                for index, value in enumerate(nets, start=1)
+            )
+        else:
+            raise ValueError("Invalid type for nets")
+
+        connections = [(pin, value) for pin, value in items if value is not None]
+        validate_net_names(
+            "set_pins()",
+            **{
+                f"net_name_{index}": value
+                for index, (_, value) in enumerate(connections)
+                if not isinstance(value, Pin)
+            },
+        )
+        for pin, connection in connections:
+            if isinstance(connection, Pin):
+                self.parent.connect([pin, connection])
+            else:
+                self.parent.join_net(pin, connection)
+        return self
 
     def print(self):
         pad = max([len(p.name) for p in self.pins]) + 2

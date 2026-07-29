@@ -3,7 +3,12 @@ import pytest
 import earthground.footprints.passives as passives
 from earthground.components import Capacitor, Component, Net, Pin, Resistor
 from earthground.library.integrated_circuits.io_expanders import tca9535pwr
-from earthground.schematic import Design, Ports, SchematicValidationError
+from earthground.schematic import (
+    Design,
+    Ports,
+    SchematicConnectionError,
+    SchematicValidationError,
+)
 
 
 def _capture_design_state(design):
@@ -78,6 +83,30 @@ def test_add_net():
     assert "VCC" in design.nets
 
 
+def test_net_name_must_be_a_nonempty_string():
+    with pytest.raises(TypeError, match="Net.*name.*str.*object"):
+        Net(object())
+    with pytest.raises(ValueError, match="Net.*name.*cannot be empty"):
+        Net("")
+
+    net = Net("VCC")
+    with pytest.raises(TypeError, match="Net.*name.*str.*object"):
+        net.name = object()
+    assert net.name == "VCC"
+
+
+def test_add_net_rejects_invalid_or_duplicate_names_without_mutating_design():
+    design = Design("TestDesign")
+    original_ground = design.nets["GND"]
+
+    with pytest.raises(TypeError, match="add_net.*name.*str.*object"):
+        design.add_net(object())
+    with pytest.raises(ValueError, match="net 'GND' already exists"):
+        design.add_net("GND")
+
+    assert design.nets == {"GND": original_ground}
+
+
 def test_connect():
     design = Design("TestDesign")
     component = design.add_component(Component())
@@ -129,6 +158,173 @@ def test_connect_assigned_net():
     design.connect([pin1, pin2])
     assert pin1 in design.nets[net].connections
     assert pin2 in design.nets[net].connections
+
+
+def test_join_net_rejects_pin_as_net_name_without_mutating_design():
+    design = Design("TestDesign")
+    capacitor = design.add_component(Capacitor(1e-6, 50))
+    buck = design.add_component(Component())
+    cb_pin = Pin("CB", 1, buck)
+
+    with pytest.raises(
+        TypeError,
+        match=r"join_net\(\) argument 'net_name' must be a str, got Pin",
+    ):
+        design.join_net(capacitor.pins[1], cb_pin)
+
+    assert set(design.nets) == {"GND"}
+    assert capacitor.pins[1] not in design.pin_to_net
+    assert cb_pin not in design.pin_to_net
+
+
+def test_join_net_rejects_pin_from_unplaced_component():
+    design = Design("TestDesign")
+    unplaced = Resistor(1000)
+
+    with pytest.raises(SchematicConnectionError, match="does not belong"):
+        design.join_net(unplaced.pins[1], "VCC")
+
+    assert set(design.nets) == {"GND"}
+    assert unplaced.pins[1] not in design.pin_to_net
+
+
+def test_join_net_rejects_pin_from_another_design():
+    first = Design("First")
+    second = Design("Second")
+    resistor = second.add_component(Resistor(1000))
+
+    with pytest.raises(SchematicConnectionError, match="does not belong"):
+        first.join_net(resistor.pins[1], "VCC")
+
+    assert set(first.nets) == {"GND"}
+    assert resistor.pins[1] not in first.pin_to_net
+
+
+def test_change_net_name_rejects_invalid_name_without_mutating_design():
+    design = Design("TestDesign")
+    original_net = design.add_net("BOOT")
+
+    with pytest.raises(TypeError, match="change_net_name.*new_net_name.*str.*object"):
+        design.change_net_name("BOOT", object())
+
+    assert design.nets["BOOT"] is original_net
+    assert set(design.nets) == {"GND", "BOOT"}
+
+
+def test_merge_nets_rejects_invalid_result_name_without_mutating_design():
+    design = Design("TestDesign")
+    source = design.add_net("SOURCE")
+    target = design.add_net("TARGET")
+
+    with pytest.raises(TypeError, match="merge_nets.*name.*str.*object"):
+        design.merge_nets("SOURCE", "TARGET", name=object())
+
+    assert design.nets["SOURCE"] is source
+    assert design.nets["TARGET"] is target
+
+
+@pytest.mark.parametrize("net_name", [0, False, object()])
+def test_connect_rejects_non_string_net_name_without_mutating_design(net_name):
+    design = Design("TestDesign")
+    resistor = design.add_component(Resistor(1000))
+
+    with pytest.raises(TypeError, match="connect.*net_name.*str"):
+        design.connect([resistor.pins[1]], net_name)
+
+    assert set(design.nets) == {"GND"}
+    assert resistor.pins[1] not in design.pin_to_net
+
+
+def test_connect_rejects_empty_net_name_without_mutating_design():
+    design = Design("TestDesign")
+    resistor = design.add_component(Resistor(1000))
+
+    with pytest.raises(ValueError, match="connect.*net_name.*cannot be empty"):
+        design.connect([resistor.pins[1]], "")
+
+    assert set(design.nets) == {"GND"}
+    assert resistor.pins[1] not in design.pin_to_net
+
+
+def test_connect_validates_every_pin_before_mutating_design():
+    design = Design("TestDesign")
+    resistor = design.add_component(Resistor(1000))
+
+    with pytest.raises(SchematicConnectionError, match="Invalid pin: object"):
+        design.connect([resistor.pins[1], object()], "PARTIAL")
+
+    assert "PARTIAL" not in design.nets
+    assert resistor.pins[1] not in design.pin_to_net
+
+
+def test_set_pins_validates_every_net_name_before_mutating_design():
+    design = Design("TestDesign")
+    resistor = design.add_component(Resistor(1000))
+
+    with pytest.raises(TypeError, match="set_pins.*net_name.*str.*object"):
+        resistor.set_pins(["VALID", object()])
+
+    assert set(design.nets) == {"GND"}
+    assert resistor.pins[1] not in design.pin_to_net
+    assert resistor.pins[2] not in design.pin_to_net
+
+
+def test_connection_helpers_validate_before_adding_components():
+    design = Design("TestDesign")
+    component = design.add_component(Component())
+    pin1 = Pin("ONE", 1, component)
+    pin2 = Pin("TWO", 2, component)
+    original_components = dict(design.components)
+
+    with pytest.raises(TypeError, match="add_series_res.*net_name.*str.*Pin"):
+        design.add_series_res(pin1, 1000, pin2, net_name=pin2)
+
+    capacitor = Capacitor(1e-6, 50)
+    with pytest.raises(
+        TypeError,
+        match="add_decoupling_capacitor.*net_name.*str.*Pin",
+    ):
+        pin1.add_decoupling_capacitor(capacitor, net_name=pin2)
+
+    assert design.components == original_components
+    assert not capacitor.is_in_design
+    assert set(design.nets) == {"GND"}
+
+
+def test_add_pullup_resistor_places_supplied_resistor():
+    design = Design("TestDesign")
+    target = design.add_component(Resistor(1000))
+    pullup = Resistor("10k")
+
+    result = design.add_pullup_resistor(target.pins[1], pullup, "VCC")
+
+    assert result is pullup
+    assert pullup.is_in_design
+    assert pullup in design.components.values()
+    assert design.pin_to_net[pullup.pins[1]].name == "VCC"
+    assert design.pin_to_net[pullup.pins[2]] is design.pin_to_net[target.pins[1]]
+
+
+def test_design_decoupling_helper_requires_explicit_net_name():
+    design = Design("Power")
+    capacitor = Capacitor("100n", 10)
+
+    with pytest.raises(TypeError, match="missing 1 required positional argument"):
+        design.add_decoupling_capacitor(capacitor)
+
+    assert not capacitor.is_in_design
+    assert set(design.nets) == {"GND"}
+
+
+def test_set_ports_validates_every_connection_before_mutating_design():
+    design = Design("TestDesign", ports=["GOOD", "BAD"])
+
+    with pytest.raises(ValueError, match="Invalid connection type for port 'BAD'"):
+        design.set_ports({"GOOD": "VALID", "BAD": object()})
+
+    assert set(design.nets) == {"GND"}
+    assert design.port["GOOD"] not in design.pin_to_net
+    assert design.port["BAD"] not in design.pin_to_net
 
 
 def test_add_module():
@@ -279,3 +475,42 @@ def test_validate_reports_nested_single_connection_without_mutating_design():
     assert "Net<MID1_LEAF1_DANGLING>" in excinfo.value.errors[0]
     assert repr(resistor.pins[2]) in excinfo.value.errors[0]
     assert _capture_design_state(top) == state_before_validation
+
+
+def test_validate_rejects_corrupt_net_registry():
+    design = Design("TestDesign")
+    resistor = design.add_component(Resistor(1000))
+    design.join_net(resistor.pins[1], "SIGNAL")
+    connected_net = design.nets["SIGNAL"]
+    design.nets["SIGNAL"] = Net("SIGNAL")
+
+    with pytest.raises(SchematicValidationError) as excinfo:
+        design.validate(skip_footprint_check=True)
+
+    assert "unregistered net" in str(excinfo.value)
+    assert design.pin_to_net[resistor.pins[1]] is connected_net
+
+
+def test_validate_rejects_non_string_net_registry_key():
+    design = Design("TestDesign")
+    malformed_key = object()
+    design.nets[malformed_key] = Net("MALFORMED")
+
+    with pytest.raises(SchematicValidationError) as excinfo:
+        design.validate(skip_footprint_check=True)
+
+    assert "Invalid net registry key" in str(excinfo.value)
+    assert "key/name mismatch" in str(excinfo.value)
+
+
+def test_validate_rejects_connection_to_unplaced_component():
+    design = Design("TestDesign")
+    resistor = Resistor(1000)
+    net = design.add_net("SIGNAL")
+    net.connections.add(resistor.pins[1])
+    design.pin_to_net[resistor.pins[1]] = net
+
+    with pytest.raises(SchematicValidationError) as excinfo:
+        design.validate(skip_footprint_check=True)
+
+    assert "not owned by design" in str(excinfo.value)
