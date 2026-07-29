@@ -107,6 +107,75 @@ def test_add_net_rejects_invalid_or_duplicate_names_without_mutating_design():
     assert design.nets == {"GND": original_ground}
 
 
+def test_net_registry_views_are_read_only_and_live():
+    design = Design("TestDesign")
+    component = design.add_component(Component())
+    pin = Pin("1", 1, component)
+    nets_view = design.nets
+    pin_to_net_view = design.pin_to_net
+
+    design.join_net(pin, "SIGNAL")
+
+    assert design.nets is nets_view
+    assert design.pin_to_net is pin_to_net_view
+    assert nets_view.get("SIGNAL") is design.nets["SIGNAL"]
+    assert dict(nets_view.items())["SIGNAL"] is design.nets["SIGNAL"]
+    assert "SIGNAL" in nets_view.keys()
+    assert design.nets["SIGNAL"] in nets_view.values()
+    assert pin_to_net_view.get(pin) is design.nets["SIGNAL"]
+    assert len(nets_view) == 2
+    assert sorted(nets_view) == ["GND", "SIGNAL"]
+
+    with pytest.raises(TypeError):
+        design.nets["OTHER"] = Net("OTHER")
+    with pytest.raises(TypeError):
+        del design.nets["SIGNAL"]
+    with pytest.raises(AttributeError):
+        design.nets.pop("SIGNAL")
+    with pytest.raises(AttributeError):
+        design.nets.clear()
+    with pytest.raises(AttributeError):
+        design.nets = {}
+
+    with pytest.raises(TypeError):
+        design.pin_to_net[pin] = design.nets["GND"]
+    with pytest.raises(TypeError):
+        del design.pin_to_net[pin]
+    with pytest.raises(AttributeError):
+        design.pin_to_net.pop(pin)
+    with pytest.raises(AttributeError):
+        design.pin_to_net.clear()
+    with pytest.raises(AttributeError):
+        design.pin_to_net = {}
+
+
+def test_mutating_apis_preserve_registered_net_identity():
+    design = Design("TestDesign")
+    component = design.add_component(Component())
+    pin1 = Pin("1", 1, component)
+    pin2 = Pin("2", 2, component)
+
+    def assert_registry_invariant():
+        assert all(
+            design.nets.get(net.name) is net for net in design.pin_to_net.values()
+        )
+
+    design.add_net("UNUSED")
+    assert_registry_invariant()
+
+    design.join_net(pin1, "SIGNAL")
+    assert_registry_invariant()
+
+    design.connect([pin2], "SECOND")
+    assert_registry_invariant()
+
+    design.change_net_name("UNUSED", "RENAMED")
+    assert_registry_invariant()
+
+    design.merge_nets("SECOND", "SIGNAL")
+    assert_registry_invariant()
+
+
 def test_connect():
     design = Design("TestDesign")
     component = design.add_component(Component())
@@ -482,7 +551,7 @@ def test_validate_rejects_corrupt_net_registry():
     resistor = design.add_component(Resistor(1000))
     design.join_net(resistor.pins[1], "SIGNAL")
     connected_net = design.nets["SIGNAL"]
-    design.nets["SIGNAL"] = Net("SIGNAL")
+    design._nets["SIGNAL"] = Net("SIGNAL")
 
     with pytest.raises(SchematicValidationError) as excinfo:
         design.validate(skip_footprint_check=True)
@@ -494,7 +563,7 @@ def test_validate_rejects_corrupt_net_registry():
 def test_validate_rejects_non_string_net_registry_key():
     design = Design("TestDesign")
     malformed_key = object()
-    design.nets[malformed_key] = Net("MALFORMED")
+    design._nets[malformed_key] = Net("MALFORMED")
 
     with pytest.raises(SchematicValidationError) as excinfo:
         design.validate(skip_footprint_check=True)
@@ -508,7 +577,7 @@ def test_validate_rejects_connection_to_unplaced_component():
     resistor = Resistor(1000)
     net = design.add_net("SIGNAL")
     net.connections.add(resistor.pins[1])
-    design.pin_to_net[resistor.pins[1]] = net
+    design._pin_to_net[resistor.pins[1]] = net
 
     with pytest.raises(SchematicValidationError) as excinfo:
         design.validate(skip_footprint_check=True)

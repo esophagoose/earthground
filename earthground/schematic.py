@@ -1,5 +1,6 @@
 import logging
-from typing import Dict, List, Optional, Union
+from types import MappingProxyType
+from typing import Dict, List, Mapping, Optional, Union
 
 import earthground.components as cmp
 import earthground.footprints.passives as passives
@@ -76,8 +77,10 @@ class Design:
         self._net_scope = self.short_name
         self.components: Dict[str, cmp.Component] = {}
         self.modules: List[Design] = []
-        self.nets: Dict[str, cmp.Net] = {}
-        self.pin_to_net: Dict[cmp.Pin, cmp.Net] = {}
+        self._nets: Dict[str, cmp.Net] = {}
+        self._pin_to_net: Dict[cmp.Pin, cmp.Net] = {}
+        self._nets_view = MappingProxyType(self._nets)
+        self._pin_to_net_view = MappingProxyType(self._pin_to_net)
         self.busses = {}
         self.default_passive_size = "0603"
         self.port = Ports(ports, self)
@@ -86,6 +89,16 @@ class Design:
         self._ports = ports
         self._module_names: Dict[str, int] = {}
         self._cid_map: Dict[str, int] = {}
+
+    @property
+    def nets(self) -> Mapping[str, cmp.Net]:
+        """Read-only net registry; mutate it through Design's net APIs."""
+        return self._nets_view
+
+    @property
+    def pin_to_net(self) -> Mapping[cmp.Pin, cmp.Net]:
+        """Read-only pin registry; mutate it through Design's net APIs."""
+        return self._pin_to_net_view
 
     def scoped_net_name(self, raw_name: str) -> str:
         """
@@ -179,7 +192,7 @@ class Design:
         if name in self.nets:
             raise ValueError(f"add_net() net '{name}' already exists")
         net = cmp.Net(name)
-        self.nets[name] = net
+        self._nets[name] = net
         return net
 
     def _add_to_net(self, pin: cmp.Pin, net: cmp.Net):
@@ -189,7 +202,7 @@ class Design:
                 return
             return self.change_net_name(old_net.name, net.name)
         self.nets[net.name].connections.add(pin)
-        self.pin_to_net[pin] = net
+        self._pin_to_net[pin] = net
 
     def _sync_child_port_net(
         self, pin: cmp.Pin, net_name: str, include_self: bool = False
@@ -257,7 +270,7 @@ class Design:
         # If the pin is a port, then the net inside the module should be changed
         self._sync_child_port_net(pin, net_name, include_self=True)
         if net_name not in self.nets:
-            self.nets[net_name] = cmp.Net(net_name)
+            self._nets[net_name] = cmp.Net(net_name)
         net = self.nets[net_name]
         self._add_to_net(pin, net)
         return self.nets[net_name]
@@ -286,8 +299,8 @@ class Design:
         if new_net_name in self.nets:
             self.merge_nets(old_net_name, new_net_name)
         else:
-            self.nets[new_net_name] = self.nets.pop(old_net_name)
-            self.nets[new_net_name].name = new_net_name
+            self._nets[new_net_name] = self._nets.pop(old_net_name)
+            self._nets[new_net_name].name = new_net_name
         for pin in old_net_connections:
             self._sync_child_port_net(pin, new_net_name)
 
@@ -367,11 +380,11 @@ class Design:
         # Move all pins from source net to target net
         for pin in source_connections:
             # Update pin_to_net mapping
-            self.pin_to_net[pin] = target_net
+            self._pin_to_net[pin] = target_net
             target_net.connections.add(pin)
 
         # Remove the source net
-        del self.nets[source_net_name]
+        del self._nets[source_net_name]
 
         # Rename target net if a new name is provided
         if name is not None and name != target_net_name:
@@ -861,12 +874,12 @@ def flatten(design) -> "Design":
         # Move all nets to parent first
         for net_name, net in list(module.nets.items()):
             if net_name not in design.nets:
-                design.nets[net_name] = net
+                design._nets[net_name] = net
             else:
                 # Net already exists, merge connections
                 existing_net = design.nets[net_name]
                 for pin in list(net.connections):
-                    design.pin_to_net[pin] = existing_net
+                    design._pin_to_net[pin] = existing_net
                     existing_net.connections.add(pin)
 
         # Copy pin_to_net mappings from module to parent (excluding port pins)
@@ -875,7 +888,7 @@ def flatten(design) -> "Design":
             if pin not in port_symbol_pins:
                 net_name = net.name
                 if net_name in design.nets:
-                    design.pin_to_net[pin] = design.nets[net_name]
+                    design._pin_to_net[pin] = design.nets[net_name]
 
         # Merge nets through ports (this updates pin_to_net for all pins in merged nets)
         for module_net_name, parent_net_name in port_net_mappings.items():

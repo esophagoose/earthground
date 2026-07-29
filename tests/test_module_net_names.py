@@ -101,6 +101,7 @@ def test_flatten_merges_port_connected_nets_into_parent_net():
     # from the module into the parent during flattening.
     assert "NET2" in parent.nets
     assert any(pin is resistor.pins[2] for pin in parent.nets["NET2"].connections)
+    assert all(parent.nets.get(net.name) is net for net in parent.pin_to_net.values())
 
 
 def test_connecting_port_to_existing_net_merges_all_existing_connections():
