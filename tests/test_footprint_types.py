@@ -1,3 +1,4 @@
+import pytest
 import pygerber.aperture as ap_lib
 
 import earthground.footprint_types as ft
@@ -52,3 +53,24 @@ def test_get_dual_side_locations():
     ]
     result = list(ft.get_dual_side_locations(count, width, pitch))
     assert result == expected_locations
+
+
+def test_get_bbox_accounts_for_rotation_and_negative_coordinates():
+    footprint = ft.BaseFootprint()
+    footprint.pads = {
+        "1": ft.Pad(
+            location=[-10, -10],
+            aperture=ap_lib.ApertureRectangle(
+                width=4,
+                height=2,
+                rotation=90,
+            ),
+        )
+    }
+
+    bbox = footprint.get_bbox()
+
+    assert bbox.x1 == pytest.approx(-11)
+    assert bbox.y1 == pytest.approx(-12)
+    assert bbox.x2 == pytest.approx(-9)
+    assert bbox.y2 == pytest.approx(-8)

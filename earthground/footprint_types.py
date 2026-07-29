@@ -48,13 +48,23 @@ class BaseFootprint:
 
     def get_bbox(self) -> BoundingBox:
         min_x, min_y = float("inf"), float("inf")
-        max_x, max_y = 0, 0
+        max_x, max_y = float("-inf"), float("-inf")
         for pad in self.pads.values():
             if isinstance(pad.aperture, ap_lib.ApertureCircle):
                 r = pad.aperture.r
                 hw, hh = r, r
             elif isinstance(pad.aperture, ap_lib.ApertureRectangle):
-                hw, hh = pad.aperture.width / 2, pad.aperture.height / 2
+                angle = math.radians(pad.aperture.rotation)
+                cos_angle = abs(math.cos(angle))
+                sin_angle = abs(math.sin(angle))
+                hw = (
+                    cos_angle * pad.aperture.width / 2
+                    + sin_angle * pad.aperture.height / 2
+                )
+                hh = (
+                    sin_angle * pad.aperture.width / 2
+                    + cos_angle * pad.aperture.height / 2
+                )
             min_x = min(min_x, pad.location[0] - hw)
             min_y = min(min_y, pad.location[1] - hh)
             max_x = max(max_x, pad.location[0] + hw)

@@ -4,6 +4,7 @@ from typing import List, Optional, Union
 
 import kiutils.footprint as kfp
 import kiutils.utils.sexpr as sexpr_utils
+import pygerber.aperture as ap_lib
 
 import earthground.footprint_types as ft
 from earthground.footprint_types import BoundingBox
@@ -15,14 +16,46 @@ DEFAULT_FOOTPRINT_PATH = {
 }
 
 
+def _aperture_from_kicad_pad(pad: kfp.Pad) -> ap_lib.Aperture:
+    """Convert KiCad pad geometry into Earthground's aperture model."""
+    width = pad.size.X
+    height = pad.size.Y
+    rotation = pad.position.angle or 0
+
+    if pad.shape == "circle":
+        return ap_lib.ApertureCircle(diameter=width)
+    if pad.shape == "roundrect":
+        radius = (pad.roundrectRatio or 0) * min(width, height)
+        return ap_lib.ApertureRectangle(
+            width=width,
+            height=height,
+            radius=radius,
+            rotation=rotation,
+        )
+    if pad.shape == "oval":
+        return ap_lib.ApertureRectangle.from_obround(
+            width=width,
+            height=height,
+            rotation=rotation,
+        )
+
+    # Rectangles map exactly. Shapes without an equivalent Earthground
+    # aperture (custom, trapezoid, chamfered rectangles, or future KiCad
+    # shapes) are represented by their rotated bounding rectangle for
+    # analysis. The original S-expression remains authoritative for export.
+    return ap_lib.ApertureRectangle(
+        width=width,
+        height=height,
+        rotation=rotation,
+    )
+
+
 class KicadFootprint(ft.BaseFootprint):
     """
     Wrapper for a KiCad .kicad_mod footprint.
 
-    Stores the original S-expression and lazily computes an approximate bounding
-    box for placement using the KiCad pad geometry. Pads are not expanded into
-    earthground's internal pad model because KiCad footprints are exported
-    verbatim via kiutils in the KiCad exporter.
+    Stores the original S-expression for verbatim KiCad export and exposes
+    electrical pad geometry through earthground's internal pad model.
     """
 
     def __init__(self, library: str, footprint_name: str, sexp: str):
@@ -30,52 +63,23 @@ class KicadFootprint(ft.BaseFootprint):
         self.name = footprint_name
         self.description = footprint_name
         self.sexp = sexp
-        self._bbox: Optional[BoundingBox] = None
+
+        parsed = sexpr_utils.parse_sexp(self.sexp)
+        kicad_fp = kfp.Footprint.from_sexpr(parsed)
+        for pad in kicad_fp.pads:
+            if not pad.number or pad.type == "np_thru_hole":
+                continue
+            self.pads[pad.number] = ft.Pad(
+                location=[pad.position.X, pad.position.Y],
+                aperture=_aperture_from_kicad_pad(pad),
+            )
 
     def get_bbox(self) -> BoundingBox:
-        """
-        Approximate bounding box using the KiCad footprint pads.
-
-        This avoids the default BaseFootprint implementation, which assumes
-        an internal pad list and would return an invalid (inf) bounding box
-        for imported KiCad footprints with no pads populated in earthground.
-        """
-        if self._bbox is not None:
-            return self._bbox
-
-        try:
-            parsed = sexpr_utils.parse_sexp(self.sexp)
-            kicad_fp = kfp.Footprint.from_sexpr(parsed)
-        except Exception:
-            # Fallback: treat as a small 1×1 mm symbol at the origin.
-            self._bbox = BoundingBox(-0.5, -0.5, 0.5, 0.5)
-            return self._bbox
-
-        if not kicad_fp.pads:
+        """Return the electrical pad bounds, or a small padless fallback."""
+        if not self.pads:
             # No pads: use a conservative 1×1 mm box at origin.
-            self._bbox = BoundingBox(-0.5, -0.5, 0.5, 0.5)
-            return self._bbox
-
-        min_x, min_y = float("inf"), float("inf")
-        max_x, max_y = float("-inf"), float("-inf")
-
-        for pad in kicad_fp.pads:
-            pos = pad.position  # kiutils.items.common.Position
-            size = pad.size  # Position(width, height)
-            hw = size.X / 2.0
-            hh = size.Y / 2.0
-            min_x = min(min_x, pos.X - hw)
-            min_y = min(min_y, pos.Y - hh)
-            max_x = max(max_x, pos.X + hw)
-            max_y = max(max_y, pos.Y + hh)
-
-        # Sanity fallback if something went wrong in the loop.
-        if not all(map(lambda v: v == v, [min_x, min_y, max_x, max_y])):  # NaN check
-            self._bbox = BoundingBox(-0.5, -0.5, 0.5, 0.5)
-        else:
-            self._bbox = BoundingBox(min_x, min_y, max_x, max_y)
-
-        return self._bbox
+            return BoundingBox(-0.5, -0.5, 0.5, 0.5)
+        return super().get_bbox()
 
 
 class KicadImporter:
