@@ -22,6 +22,10 @@ from earthground.cli.lcsc.cli import (
     configure_lcsc_parser,
     run_parsed_args as run_lcsc_args,
 )
+from earthground.cli.update_footprints import (
+    configure_update_footprints_parser,
+    run_parsed_args as run_update_footprints_args,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
         "catalog", help="Manage and query the KiCad footprint catalog"
     )
     configure_catalog_parser(catalog)
+
+    update_footprints = kicad_commands.add_parser(
+        "update-footprints",
+        help="Update every PCB footprint from an Earthground design",
+    )
+    configure_update_footprints_parser(update_footprints)
 
     lcsc = commands.add_parser("lcsc", help="Query the LCSC component database")
     configure_lcsc_parser(lcsc)
@@ -76,6 +86,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return run_skills_args(args)
     if args.earthground_command == "lcsc":
         return run_lcsc_args(args)
+    if args.kicad_command == "update-footprints":
+        return run_update_footprints_args(args)
     return run_parsed_args(args)
 
 
