@@ -2,6 +2,8 @@ import logging
 from typing import Dict, List, Optional, Union
 
 import earthground.components as cmp
+import earthground.erc as erc
+from earthground.erc import ElectricalCheck, ElectricalReport
 import earthground.footprints.passives as passives
 import earthground.layout as layout_lib
 import earthground.standard_values as sv
@@ -26,6 +28,7 @@ class SchematicConnectionError(SchematicError):
     def __init__(self, message: str):
         self.message = f"Schematic connection error: {message}"
         super().__init__(self.message)
+
 
 class Ports:
     """
@@ -84,6 +87,26 @@ class Design:
         self._ports = ports
         self._module_names: Dict[str, int] = {}
         self._cid_map: Dict[str, int] = {}
+        self._declared_rails: Dict[str, sv.ValueBounds] = {}
+        self._external_drives: Dict[str, Optional[sv.ValueBounds]] = {}
+        self._ambient: Optional[sv.ValueBounds] = None
+
+    def declare_rail(self, name: str, voltage: sv.ValueBounds) -> None:
+        sv.require_bounds(voltage, "V", "Rail voltage")
+        if name == self.ground and voltage != sv.volts(0, typ=0, max=0):
+            raise ValueError("GND is an implicit exact 0 V rail")
+        self._declared_rails[name] = voltage
+
+    def declare_external_drive(
+        self, name: str, voltage: Optional[sv.ValueBounds] = None
+    ) -> None:
+        if voltage is not None:
+            sv.require_bounds(voltage, "V", "External-drive voltage")
+        self._external_drives[name] = voltage
+
+    def declare_ambient(self, temperature: sv.ValueBounds) -> None:
+        sv.require_bounds(temperature, "°C", "Ambient temperature")
+        self._ambient = temperature
 
     def scoped_net_name(self, raw_name: str) -> str:
         """
@@ -225,6 +248,12 @@ class Design:
         log.debug(f"Changing net name from {old_net_name} to {new_net_name}")
         self.nets[new_net_name] = self.nets.pop(old_net_name)
         self.nets[new_net_name].name = new_net_name
+        if old_net_name in self._declared_rails:
+            self._declared_rails[new_net_name] = self._declared_rails.pop(old_net_name)
+        if old_net_name in self._external_drives:
+            self._external_drives[new_net_name] = self._external_drives.pop(
+                old_net_name
+            )
 
     def _enforce_scoped_net_names(self) -> None:
         """
@@ -239,6 +268,11 @@ class Design:
             scoped = self.scoped_net_name(net_name)
             if scoped != net_name:
                 self.change_net_name(net_name, scoped)
+        for declarations in (self._declared_rails, self._external_drives):
+            for net_name in list(declarations):
+                scoped = self.scoped_net_name(net_name)
+                if scoped != net_name:
+                    declarations[scoped] = declarations.pop(net_name)
 
     def merge_nets(
         self, source_net_name: str, target_net_name: str, name: Optional[str] = None
@@ -307,7 +341,9 @@ class Design:
                 net_name = [net.name for net in nets if net][0]
         for pin in list_of_pins:
             if not isinstance(pin, cmp.Pin):
-                raise SchematicConnectionError(f"Schematic connection error! Invalid pin: {type(pin)} {pin}")
+                raise SchematicConnectionError(
+                    f"Schematic connection error! Invalid pin: {type(pin)} {pin}"
+                )
             self.join_net(pin, net_name)
 
     def _get_bus_index(self, bus):
@@ -488,7 +524,18 @@ class Design:
                     f"Invalid connection type for port '{port_name}': {type(connection)}"
                 )
 
-    def validate(self, skip_footprint_check=False, check_no_single_connections=False):
+    def check_electrical(self) -> ElectricalReport:
+        return erc.check_design(self)
+
+    def electrical_coverage(self):
+        return erc.electrical_coverage(self)
+
+    def validate(
+        self,
+        skip_footprint_check=False,
+        check_no_single_connections=False,
+        check_electrical=False,
+    ):
         errors = []
         components = list(self.components.values())
         for module in self.modules:
@@ -499,6 +546,13 @@ class Design:
                 if not component.footprint and not component.virtual:
                     errors.append(f"No footprint: {component.name}")
         errors.extend(self._validate_design(check_no_single_connections))
+        if check_electrical:
+            report = self.check_electrical()
+            errors.extend(
+                str(check)
+                for check in report.checks
+                if check.status is not sv.CheckStatus.PASS
+            )
         if errors:
             header = f" {self.name.upper()} VALIDATION FAILED "
             log.error("")

@@ -2,30 +2,12 @@ import enum
 from collections import namedtuple
 
 import earthground.components as cmp
+from earthground.ratings import Ratings
 import earthground.schematic as sch
 import earthground.standard_values as sv
 
 COMPONENT_CREATOR_VERSION = "0.0.1"
 
-AbsMax = namedtuple("AbsMax", ["vi", "vi_o", "i_channel", "i_ik", "tj", "tstg"])
-Recommended = namedtuple(
-    "Recommended",
-    [
-        "vi_o",
-        "vref_a",
-        "vref_b",
-        "v_en",
-        "i_pass",
-        "ta",
-        "vik",
-        "i_ih",
-        "i_cc",
-        "ci_ref",
-        "ci_en",
-        "cio_off",
-        "cio_on",
-    ],
-)
 PartNumberParams = namedtuple(
     "PartNumberParams",
     ["package_drawing", "package_type"],
@@ -75,32 +57,28 @@ class LSF0102(cmp.Component):
     applications.
     """
 
-    abs_max = AbsMax(
-        vi=sv.ValueBounds(min=-0.5, max=7, units="V"),  # Input voltage
-        vi_o=sv.ValueBounds(min=-0.5, max=7, units="V"),  # Input/output voltage
-        i_channel=sv.ValueBounds(max=128, units="mA"),  # Continuous channel current
-        i_ik=sv.ValueBounds(max=-50, units="mA"),  # Input clamp current
-        tj=sv.ValueBounds(max=150, units="°C"),  # Junction Temperature
-        tstg=sv.ValueBounds(min=-65, max=150, units="°C"),  # Storage temperature range
+    abs_max = Ratings(
+        vi=sv.volts(-0.5, max=7),  # Input voltage
+        vi_o=sv.volts(-0.5, max=7),  # Input/output voltage
+        i_channel=sv.ValueBounds("mA", min=sv.UNBOUNDED, max=128),
+        i_ik=sv.ValueBounds("mA", min=sv.UNBOUNDED, max=-50),
+        tj=sv.celsius(min=sv.UNBOUNDED, max=150),
+        tstg=sv.celsius(-65, max=150),
     )
-    recommended = Recommended(
-        vi_o=sv.ValueBounds(min=0, max=5.5, units="V"),  # Input/output voltage
-        vref_a=sv.ValueBounds(min=0.95, max=5.5, units="V"),  # Reference voltage
-        vref_b=sv.ValueBounds(min=1.8, max=5.5, units="V"),  # Reference voltage
-        v_en=sv.ValueBounds(min=0, max=5.5, units="V"),  # Enable voltage
-        i_pass=sv.ValueBounds(max=64, units="mA"),  # Pass transistor current
-        ta=sv.ValueBounds(
-            min=-40, max=125, units="°C"
-        ),  # Operating free-air temperature
-        vik=sv.ValueBounds(max=-1.2, units="V"),  # I = -18mA, I, VEN = 0
-        i_ih=sv.ValueBounds(max=5.0, units="µA"),  # VI = 5V, VEN = 0
-        i_cc=sv.ValueBounds(
-            typ=6, units="µA"
-        ),  # VREF_B = VEN = 5.5V, VREF_A = 4.5V, I O = 0, V I = VCC or GND
-        ci_ref=sv.ValueBounds(typ=11, units="pF"),  # VI = 3V or 0
-        ci_en=sv.ValueBounds(typ=11, units="pF"),  # VI = 3V or 0
-        cio_off=sv.ValueBounds(typ=4.0, max=6.0, units="pF"),  # VO = 3V or 0
-        cio_on=sv.ValueBounds(typ=10.5, max=12.5, units="pF"),  # VO = 3V or 0, VEN = 3V
+    recommended = Ratings(
+        vi_o=sv.volts(0, max=5.5),
+        vref_a=sv.volts(0.95, max=5.5),
+        vref_b=sv.volts(1.8, max=5.5),
+        v_en=sv.volts(0, max=5.5),
+        i_pass=sv.ValueBounds("mA", min=sv.UNBOUNDED, max=64),
+        ta=sv.celsius(-40, max=125),
+        vik=sv.volts(min=sv.UNBOUNDED, max=-1.2),
+        i_ih=sv.ValueBounds("µA", min=sv.UNBOUNDED, max=5),
+        i_cc=sv.ValueBounds("µA", typ=6),
+        ci_ref=sv.ValueBounds("pF", typ=11),
+        ci_en=sv.ValueBounds("pF", typ=11),
+        cio_off=sv.ValueBounds("pF", typ=4, max=6),
+        cio_on=sv.ValueBounds("pF", typ=10.5, max=12.5),
     )
 
     def __init__(self, full_part_number: LSF0102PartNumbers):
@@ -111,9 +89,40 @@ class LSF0102(cmp.Component):
         self.lead_time = 6.0
         self.state = "Active"
         self.parameters = full_part_number.value
-        self.pins = cmp.PinContainer.from_dict(PINOUT["LEADED"], self)
+        pinout = PINOUT["LEADED"]
         if full_part_number.value.package_type == "DSBGA":
-            self.pins = cmp.PinContainer.from_dict(PINOUT["BGA"], self)
+            pinout = PINOUT["BGA"]
+        specs = {}
+        for index, name in pinout.items():
+            if name in ("A1", "A2", "B1", "B2"):
+                spec = cmp.DigitalPinSpec.bidirectional(
+                    name=name,
+                    voltage_abs_max=self.abs_max["vi_o"],
+                    voltage_operating=self.recommended["vi_o"],
+                )
+            elif name == "EN":
+                spec = cmp.DigitalPinSpec.input(
+                    name=name,
+                    voltage_abs_max=self.abs_max["vi"],
+                    voltage_operating=self.recommended["v_en"],
+                )
+            elif name == "GND":
+                spec = cmp.PowerPinSpec(
+                    name=name,
+                    role=cmp.PowerRole.GROUND,
+                    abs_max=sv.volts(0, typ=0, max=0),
+                    voltage=sv.volts(0, typ=0, max=0),
+                )
+            else:
+                rating = "vref_a" if name == "VREF_A" else "vref_b"
+                spec = cmp.PowerPinSpec(
+                    name=name,
+                    role=cmp.PowerRole.INPUT,
+                    abs_max=self.abs_max["vi"],
+                    voltage=self.recommended[rating],
+                )
+            specs[index] = spec
+        self.pins = cmp.PinContainer.from_dict(specs, self)
 
 
 def generate_design(
