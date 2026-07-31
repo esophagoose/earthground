@@ -3,6 +3,8 @@ from types import MappingProxyType
 from typing import Dict, Iterator, List, Mapping, Optional, Union
 
 import earthground.components as cmp
+import earthground.erc as erc
+from earthground.erc import ElectricalCheck, ElectricalReport
 import earthground.footprints.passives as passives
 import earthground.layout as layout_lib
 import earthground.standard_values as sv
@@ -89,6 +91,26 @@ class Design:
         self._ports = ports
         self._module_names: Dict[str, int] = {}
         self._cid_map: Dict[str, int] = {}
+        self._declared_rails: Dict[str, sv.ValueBounds] = {}
+        self._external_drives: Dict[str, Optional[sv.ValueBounds]] = {}
+        self._ambient: Optional[sv.ValueBounds] = None
+
+    def declare_rail(self, name: str, voltage: sv.ValueBounds) -> None:
+        sv.require_bounds(voltage, "V", "Rail voltage")
+        if name == self.ground and voltage != sv.volts(0, typ=0, max=0):
+            raise ValueError("GND is an implicit exact 0 V rail")
+        self._declared_rails[name] = voltage
+
+    def declare_external_drive(
+        self, name: str, voltage: Optional[sv.ValueBounds] = None
+    ) -> None:
+        if voltage is not None:
+            sv.require_bounds(voltage, "V", "External-drive voltage")
+        self._external_drives[name] = voltage
+
+    def declare_ambient(self, temperature: sv.ValueBounds) -> None:
+        sv.require_bounds(temperature, "°C", "Ambient temperature")
+        self._ambient = temperature
 
     @property
     def nets(self) -> Mapping[str, cmp.Net]:
@@ -303,6 +325,12 @@ class Design:
             self._nets[new_net_name].name = new_net_name
         for pin in old_net_connections:
             self._sync_child_port_net(pin, new_net_name)
+        if old_net_name in self._declared_rails:
+            self._declared_rails[new_net_name] = self._declared_rails.pop(old_net_name)
+        if old_net_name in self._external_drives:
+            self._external_drives[new_net_name] = self._external_drives.pop(
+                old_net_name
+            )
 
     def _enforce_scoped_net_names(self) -> None:
         """
@@ -320,6 +348,11 @@ class Design:
             scoped = self.scoped_net_name(net_name)
             if scoped != net_name:
                 self.change_net_name(net_name, scoped)
+        for declarations in (self._declared_rails, self._external_drives):
+            for net_name in list(declarations):
+                scoped = self.scoped_net_name(net_name)
+                if scoped != net_name:
+                    declarations[scoped] = declarations.pop(net_name)
 
     def _update_net_scope(self, new_scope: str) -> None:
         """
@@ -680,7 +713,18 @@ class Design:
         for design in self.iter_designs():
             yield from design.components.values()
 
-    def validate(self, skip_footprint_check=False, check_no_single_connections=False):
+    def check_electrical(self) -> ElectricalReport:
+        return erc.check_design(self)
+
+    def electrical_coverage(self):
+        return erc.electrical_coverage(self)
+
+    def validate(
+        self,
+        skip_footprint_check=False,
+        check_no_single_connections=False,
+        check_electrical=False,
+    ):
         errors = []
         components = list(self.iter_components())
         if not skip_footprint_check:
@@ -691,6 +735,13 @@ class Design:
         errors.extend(self._validate_design(check_no_single_connections))
         for module in self.iter_modules():
             errors.extend(module._validate_design(False))
+        if check_electrical:
+            report = self.check_electrical()
+            errors.extend(
+                str(check)
+                for check in report.checks
+                if check.status is not sv.CheckStatus.PASS
+            )
         if errors:
             header = f" {self.name.upper()} VALIDATION FAILED "
             log.error("")

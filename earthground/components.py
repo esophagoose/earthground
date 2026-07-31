@@ -1,6 +1,36 @@
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Set
 
 import earthground.footprint_types as ft
+from earthground.pins import (
+    AnalogPinRatings,
+    AnalogPinSpec,
+    BasePinRatings,
+    BasePinSpec,
+    ConnectionPolicy,
+    DifferentialInterfaceSpec,
+    DifferentialPolarity,
+    DigitalMode,
+    DigitalPinRatings,
+    DigitalPinSpec,
+    DriveStyle,
+    ErcCharacteristics,
+    InternalDigitalFeatures,
+    NoConnectPinSpec,
+    PassivePinSpec,
+    Pin,
+    PinContainer,
+    PinDirection,
+    PinInterfaceRef,
+    PinSpec,
+    PowerPinSpec,
+    PowerRole,
+    RelativeThreshold,
+    SignalDomain,
+    UnspecifiedPinSpec,
+    UnusedPolicy,
+    pin_sort_key,
+)
+from earthground.ratings import Ratings
 import earthground.standard_values as sv
 
 if TYPE_CHECKING:
@@ -57,78 +87,10 @@ class Net:
         return f"Net<{self.name}>"
 
 
-class Pin:
-    def __init__(self, name: str, index: str, parent: "Component"):
-        """
-        Initializes a new Pin for a component
-
-        :param name: The name of the pin.
-        :type name: str
-        :param index: The index of the pin within the component.
-        :type index: str
-        :param parent: The component this pin is part of.
-        :type parent: Component
-        """
-
-        self.name = name
-        self.index = index
-        self.parent = parent
-
-    def __str__(self):
-        return f"{self.parent}.{self.index} ({self.name})"
-
-    def __repr__(self):
-        return f"{self.parent}.{self.index} ({self.name})"
-
-    def __hash__(self):
-        return hash((self.name, self.index, self.parent))
-
-    def __eq__(self, other):
-        if not isinstance(other, Pin):
-            return False
-        return self.name == other.name and (hash(self.parent) == hash(other.parent))
-
-    @property
-    def net(self):
-        return self.parent.parent.pin_to_net[self]
-
-    def add_decoupling_capacitor(
-        self, capacitor: "Capacitor", net_name=None, ground_net_name="GND"
-    ):
-        """
-        Helper function to automatically add a decoupling capacitor to a pin
-
-        :param capacitor: The decoupling capacitor to add.
-        :param net_name: (Optional) The name of the net to which the capacitor will be connected. If not provided, it will be determined based on the pin.
-        :type capacitor: earthground.components.Capacitor
-        :type net_name: Optional[str]
-        :return: None
-        """
-        assert isinstance(
-            self.parent, Component
-        ), "Component must be in a design before adding decoupling capacitor!"
-        design: sch.Design = self.parent.parent
-        if not isinstance(capacitor, Capacitor):
-            raise TypeError(
-                f"add_decoupling_capacitor() argument 'capacitor' must be a "
-                f"Capacitor, got {type(capacitor).__name__}"
-            )
-        names = {"ground_net_name": ground_net_name}
-        if net_name is not None:
-            names["net_name"] = net_name
-        validate_net_names(
-            "add_decoupling_capacitor()",
-            **names,
-        )
-        net_name = design._get_net_name_from_pin(self) if net_name is None else net_name
-        design.add_component(capacitor)
-        design.join_net(self, net_name)
-        design.join_net(capacitor.pins[1], net_name)
-        design.join_net(capacitor.pins[2], ground_net_name)
-
-
 class Component:
     REFDES_MAP = {}
+    abs_max = Ratings()
+    recommended = Ratings()
 
     def __init__(self, refdes_prefix="U"):
         """
@@ -146,6 +108,7 @@ class Component:
         self.type = self.__class__.__name__
         self.parameters = {}
         self.pins = PinContainer()
+        self.interfaces: Dict[str, DifferentialInterfaceSpec] = {}
         self.parent: Optional["Component"] = None
         self.footprint: ft.BaseFootprint = None
         self.virtual = False
@@ -255,7 +218,7 @@ class Resistor(Component):
             self.value = sv.SiNumber(value, "Ω")
         self.name = f"RES_{self.value}"
         self.description = self.name
-        self.pins = PinContainer.from_count(2, self)
+        self.pins = PinContainer.from_count(2, self, spec_class=PassivePinSpec)
         self.refdes_prefix = "R"
         self.parameters = {}
         self.package_size = None
@@ -280,7 +243,7 @@ class Capacitor(Component):
         self.voltage = sv.SiNumber(voltage, "V")
         self.name = f"CAP_{self.value}_{self.voltage}"
         self.description = self.name
-        self.pins = PinContainer.from_count(2, self)
+        self.pins = PinContainer.from_count(2, self, spec_class=PassivePinSpec)
         self.refdes_prefix = "C"
         self.package_size = None
         for key, val in kwargs.items():
@@ -304,148 +267,10 @@ class Inductor(Component):
             self.value = value
         self.name = f"IND_{self.value}"
         self.description = self.name
-        self.pins = PinContainer.from_count(2, self)
+        self.pins = PinContainer.from_count(2, self, spec_class=PassivePinSpec)
         self.package_size = None
         for key, val in kwargs.items():
             setattr(self, key, val)
 
 
 PASSIVE_TYPES = (Resistor, Capacitor, Inductor)
-
-
-class PinContainer:
-    def __init__(self, pins: List[Pin] = []):
-        """
-        Container for managing a set of pins.
-
-        :param pins: A list of :class:`Pin` objects to be managed.
-        :type pins: List[:class:`Pin`]
-        """
-        self._pins = frozenset(pins)  # TODO: make this ordered
-        self.names = {p.name: p for p in pins}
-        self.indicies = {p.index: p for p in pins}
-
-    @classmethod
-    def from_dict(cls, pin_dict, parent):
-        """
-        Creates a PinContainer from a dictionary mapping pin names to pin indices.
-
-        :param pin_dict: A dictionary where keys are pin names and values are their corresponding indices.
-        :type pin_dict: dict
-        :param parent: The parent component to which the pins belong.
-        :type parent: Component
-        :return: An instance of :class:`PinContainer` populated with :class:`Pin` objects based on the provided dictionary.
-        :rtype: PinContainer
-        """
-        return cls([Pin(n, i, parent) for i, n in pin_dict.items()])
-
-    @classmethod
-    def from_list(cls, pin_list, parent):
-        """
-        Creates a PinContainer from a list of pin names, assigning indices sequentially
-
-        :param pin_list: A list of pin names for which :class:`Pin` objects will be created.
-        :type pin_list: List[str]
-        :param parent: The parent component to which the pins belong.
-        :type parent: Component
-        :return: An instance of :class:`PinContainer` populated with :class:`Pin` objects.
-        :rtype: PinContainer
-        """
-        return cls([Pin(n, i, parent) for i, n in enumerate(pin_list)])
-
-    @classmethod
-    def from_count(cls, pin_count: int, parent: Component):
-        """
-        Creates a PinContainer with a specified number of pins, numbered sequentially.
-
-        :param pin_count: The number of pins to create.
-        :type pin_count: int
-        :param parent: The parent component to which the pins belong.
-        :type parent: Component
-        :return: An instance of :class:`PinContainer` populated with sequentially numbered :class:`Pin` objects.
-        :rtype: PinContainer
-        """
-        return cls([Pin(str(i), i, parent) for i in range(1, pin_count + 1)])
-
-    def __getitem__(self, index):
-        return self.by_index(index)
-
-    def __iter__(self) -> Pin:
-        return iter(self._pins)
-
-    def __len__(self):
-        return len(self._pins)
-
-    def by_name(self, name):
-        """
-        Returns the pin with the specified name.
-
-        :param name: The name of the pin to retrieve.
-        :type name: str
-        :raises ValueError: If the pin name does not exist.
-        :return: The :class:`Pin` object with the specified name.
-        :rtype: Pin
-        """
-        if name in self.names:
-            return self.names[name]
-        raise ValueError(f"Unknown name: {name} in {self.names.keys()}")
-
-    def by_index(self, index):
-        """
-        Returns the pin with the specified index.
-
-        :param index: The index of the pin to retrieve.
-        :type index: int
-        :raises ValueError: If the pin index does not exist.
-        :return: The :class:`Pin` object with the specified index.
-        :rtype: Pin
-        """
-        if index in self.indicies:
-            return self.indicies[index]
-        raise ValueError(f"Unknown index: {index} in {self.indicies}")
-
-    def all_with_name(self, name: Union[str, List[str]]):
-        """
-        Yields all pins with the specified name or names.
-
-        :param name: The name or names of the pins to yield.
-        :type name: Union[str, List[str]]
-        :raises ValueError: If the name parameter is not a string or a list of strings.
-        """
-        pins = []
-        if not isinstance(name, (str, list)):
-            raise ValueError("'name' must be a str or list of str!")
-        for pin in self._pins:
-            if isinstance(name, str) and pin.name == name:
-                pins.append(pin)
-            elif isinstance(name, list) and pin.name in name:
-                pins.append(pin)
-        return pins
-
-
-def pin_sort_key(pin: "Pin") -> tuple:
-    """
-    Sort key function for pins with the following priority:
-    1. Numeric pins (sorted numerically) - come first
-    2. Regular alphabetical pins
-    3. GND and SHIELD - come last
-
-    :param pin: The pin to generate a sort key for
-    :type pin: Pin
-    :return: Tuple for sorting (priority, value)
-    :rtype: tuple
-    """
-    name = pin.name
-    # Check if the name can be converted to a number
-    try:
-        numeric_value = int(name)
-        # Numeric pins get priority 0 (first)
-        return (0, numeric_value)
-    except ValueError:
-        # Not a number, check if it's GND or SHIELD
-        if name.upper() in ("GND", "SHIELD"):
-            # GND and SHIELD get priority 2 (last)
-            return (2, name.upper())
-        else:
-            # Regular pins get priority 1 (middle), sorted alphabetically
-            return (1, name.upper())
