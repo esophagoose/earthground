@@ -1,13 +1,17 @@
 import pathlib
-import sys
-from typing import List, Optional, Union
+from typing import List, Optional, Union, overload
 
 import kiutils.footprint as kfp
 import kiutils.utils.sexpr as sexpr_utils
 import pygerber.aperture as ap_lib
 
 import earthground.footprint_types as ft
-from earthground.footprint_types import BoundingBox
+from earthground.footprint_types import BoundingBox, KicadFootprintRef
+from earthground.kicad.catalog import (
+    KicadCatalogError,
+    find_footprint_path,
+    resolve_footprint_roots,
+)
 
 DEFAULT_FOOTPRINT_PATH = {
     "darwin": "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints/",
@@ -85,38 +89,50 @@ class KicadFootprint(ft.BaseFootprint):
 class KicadImporter:
     def __init__(
         self,
-        additional_lib_paths: List[Union[str, pathlib.Path]] = [],
+        additional_lib_paths: Optional[List[Union[str, pathlib.Path]]] = None,
     ):
         """
         :param additional_lib_paths: Extra directories that contain ``*.pretty``
             footprint libraries (same layout as KiCad's ``footprints/`` root).
             These are searched before the default KiCad install path.
         """
-        if not isinstance(additional_lib_paths, list):
+        if additional_lib_paths is not None and not isinstance(
+            additional_lib_paths, list
+        ):
             raise ValueError("additional_lib_paths must be a list")
 
-        self.lib_paths: List[pathlib.Path] = []
-        if additional_lib_paths:
-            self.lib_paths.extend(pathlib.Path(p) for p in additional_lib_paths)
-        self.lib_paths.append(pathlib.Path(DEFAULT_FOOTPRINT_PATH[sys.platform]))
+        self.lib_paths = list(
+            resolve_footprint_roots(additional_lib_paths or [], initialize=False)
+        )
 
     def get_footprint_path(self, library: str, footprint_name: str) -> pathlib.Path:
-        library_path = library if library.endswith(".pretty") else f"{library}.pretty"
-        footprint_path = (
-            footprint_name
-            if footprint_name.endswith(".kicad_mod")
-            else f"{footprint_name}.kicad_mod"
-        )
-        for path in self.lib_paths:
-            if (path / library_path / footprint_path).exists():
-                return path / library_path / footprint_path
-        raise FileNotFoundError(
-            f"Footprint '{footprint_path}' or library '{library_path}' not found in path"
-        )
+        try:
+            return find_footprint_path(self.lib_paths, library, footprint_name)
+        except KicadCatalogError as exc:
+            raise FileNotFoundError(str(exc)) from exc
+
+    @overload
+    def import_footprint(
+        self, library: KicadFootprintRef, footprint_name: None = None
+    ) -> KicadFootprint: ...
+
+    @overload
+    def import_footprint(self, library: str, footprint_name: str) -> KicadFootprint: ...
 
     def import_footprint(
-        self, library: str, footprint_name: str
-    ) -> Optional[KicadFootprint]:
+        self,
+        library: Union[str, KicadFootprintRef],
+        footprint_name: Optional[str] = None,
+    ) -> KicadFootprint:
+        if isinstance(library, KicadFootprintRef):
+            if footprint_name is not None:
+                raise TypeError(
+                    "footprint_name must be omitted when importing a KicadFootprintRef"
+                )
+            footprint_name = library.footprint_name
+            library = library.library
+        if footprint_name is None:
+            raise TypeError("footprint_name is required when library is a string")
         with open(self.get_footprint_path(library, footprint_name), "r") as file:
             sexp = file.read()
             return KicadFootprint(library, footprint_name, sexp)

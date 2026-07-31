@@ -1,0 +1,4 @@
+interface:
+  display_name: "Earthground Export"
+  short_description: "Validate and export Python design files"
+  default_prompt: "Use $earthground-export to validate and export an Earthground Python design file as a KiCad PCB."

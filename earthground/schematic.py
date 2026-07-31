@@ -1,6 +1,6 @@
 import logging
 from types import MappingProxyType
-from typing import Dict, List, Mapping, Optional, Union
+from typing import Dict, Iterator, List, Mapping, Optional, Union
 
 import earthground.components as cmp
 import earthground.footprints.passives as passives
@@ -663,17 +663,34 @@ class Design:
                     self.join_net(port_pin, net_name)
                     self.join_net(connection, net_name)
 
+    def iter_designs(self) -> Iterator["Design"]:
+        """Yield this design and every nested module depth-first."""
+        yield self
+        for module in self.modules:
+            yield from module.iter_designs()
+
+    def iter_modules(self) -> Iterator["Design"]:
+        """Yield every nested module depth-first."""
+        for module in self.modules:
+            yield module
+            yield from module.iter_modules()
+
+    def iter_components(self) -> Iterator[cmp.Component]:
+        """Yield components from this design and every nested module."""
+        for design in self.iter_designs():
+            yield from design.components.values()
+
     def validate(self, skip_footprint_check=False, check_no_single_connections=False):
         errors = []
-        components = list(self.components.values())
-        for module in self.modules:
-            components.extend(list(module.components.values()))
+        components = list(self.iter_components())
         if not skip_footprint_check:
             for component in components:
                 log.debug(f"Validated: {component}")
                 if not component.footprint and not component.virtual:
                     errors.append(f"No footprint: {component.name}")
         errors.extend(self._validate_design(check_no_single_connections))
+        for module in self.iter_modules():
+            errors.extend(module._validate_design(False))
         if errors:
             header = f" {self.name.upper()} VALIDATION FAILED "
             log.error("")

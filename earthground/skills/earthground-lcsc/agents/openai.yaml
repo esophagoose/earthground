@@ -1,0 +1,4 @@
+interface:
+  display_name: "Earthground LCSC Lookup"
+  short_description: "Resolve manufacturer part numbers to LCSC IDs"
+  default_prompt: "Use $earthground-lcsc to resolve a manufacturer part number to its C-prefixed LCSC ID."

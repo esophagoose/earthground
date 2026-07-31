@@ -1,7 +1,26 @@
 import math
+from enum import Enum
 from typing import Dict, List, NamedTuple
 
 import pygerber.aperture as ap_lib
+
+
+class KicadFootprintRef(str, Enum):
+    """An exact ``Library:Footprint`` reference from a KiCad catalog."""
+
+    library: str
+    footprint_name: str
+
+    def __new__(cls, library: str, footprint_name: str):
+        value = f"{library}:{footprint_name}"
+        member = str.__new__(cls, value)
+        member._value_ = value
+        member.library = library
+        member.footprint_name = footprint_name
+        return member
+
+    def __str__(self) -> str:
+        return self.value
 
 
 class Pad(NamedTuple):

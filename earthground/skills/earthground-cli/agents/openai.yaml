@@ -1,0 +1,4 @@
+interface:
+  display_name: "Earthground CLI Resolver"
+  short_description: "Route Earthground requests to the right CLI workflow"
+  default_prompt: "Use $earthground-cli to choose and run the right Earthground CLI command for this task."

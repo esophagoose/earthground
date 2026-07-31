@@ -1,0 +1,4 @@
+interface:
+  display_name: "Earthground KiCad Catalog"
+  short_description: "Generate and query KiCad footprint catalogs"
+  default_prompt: "Use $earthground-kicad-catalog to find a KiCad footprint and return its description."
