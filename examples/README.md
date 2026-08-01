@@ -1,4 +1,9 @@
 # Example Project - Making an IO Expander Breakout Board
+
+For a focused Tier 2 example, see ``sn65dphy440ss.py``. It models a real D-PHY
+retimer's configuration straps, required external components, power, and
+thermal data, then resolves the generated circuit without requiring KiCad.
+
 Let's design a breakout board for the [TCA9535](https://www.ti.com/lit/ds/symlink/tca9535.pdf), an IO expander! To show the full power of this library, this breakout board will have two TCA9535s, on different I2C addresses; a QWIIC connector for I2C connectivity; and a 40-pin connector for the GPIO outputs. The final project can be found in `io_expander_example.py`
 
 ## Schematic
