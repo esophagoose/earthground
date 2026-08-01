@@ -10,9 +10,8 @@ import sys
 import tempfile
 from typing import Optional, Sequence
 
-import kiutils.board as kicad_board
-import kiutils.footprint as kicad_footprint
-import kiutils.items.common as kicad_common
+from pykicad import FootprintBuilder, Pcb, PcbBuilder, read_from_file, write_to_string
+import pykicad.models.pcb as pcb
 
 import earthground.components as cmp
 import earthground.exporters.kicad as kicad_exporter
@@ -47,32 +46,20 @@ def _flatten_components(design: sch_lib.Design) -> dict[str, cmp.Component]:
     return flattened
 
 
-def _reference_text(
-    footprint: kicad_footprint.Footprint,
-) -> kicad_footprint.FpText | None:
-    return next(
-        (
-            item
-            for item in footprint.graphicItems
-            if isinstance(item, kicad_footprint.FpText) and item.type == "reference"
-        ),
-        None,
-    )
+def _reference_text(footprint: pcb.Footprint) -> pcb.Property | pcb.FpText | None:
+    return FootprintBuilder(footprint).reference
 
 
-def _footprint_refdes(footprint: kicad_footprint.Footprint) -> str:
-    reference_property = footprint.properties.get("Reference")
-    if reference_property:
-        return str(reference_property)
+def _footprint_refdes(footprint: pcb.Footprint) -> str:
     reference_text = _reference_text(footprint)
-    if reference_text is not None and reference_text.text:
-        return reference_text.text
+    if reference_text is not None and reference_text.value:
+        return reference_text.value
     raise FootprintUpdateError("PCB footprint has no Reference property or text")
 
 
 def _index_board_footprints(
-    footprints: list[kicad_footprint.Footprint],
-) -> dict[str, kicad_footprint.Footprint]:
+    footprints: list[pcb.Footprint],
+) -> dict[str, pcb.Footprint]:
     indexed = {}
     for footprint in footprints:
         refdes = _footprint_refdes(footprint)
@@ -82,9 +69,20 @@ def _index_board_footprints(
     return indexed
 
 
+def _board_net_names(board: Pcb) -> set[str]:
+    names = {net.name for net in board.net}
+    names.update(
+        pad.net.name
+        for footprint in board.footprint
+        for pad in footprint.pads
+        if pad.net is not None and pad.net.name is not None
+    )
+    return names
+
+
 def _validate_component_match(
     design_components: dict[str, cmp.Component],
-    pcb_footprints: dict[str, kicad_footprint.Footprint],
+    pcb_footprints: dict[str, pcb.Footprint],
 ) -> None:
     design_refdes = set(design_components)
     pcb_refdes = set(pcb_footprints)
@@ -106,63 +104,65 @@ def _validate_component_match(
 
 
 def _preserve_board_footprint_state(
-    old: kicad_footprint.Footprint,
-    new: kicad_footprint.Footprint,
+    old: pcb.Footprint,
+    new: pcb.Footprint,
     refdes: str,
 ) -> None:
-    new.position = copy.deepcopy(old.position)
+    new.at = copy.deepcopy(old.at)
     new.layer = old.layer
     new.tstamp = old.tstamp
-    new.path = old.path
-    new.locked = old.locked
-    new.placed = old.placed
-    new.properties = {**old.properties, **new.properties}
-    for attribute in (
-        "boardOnly",
-        "excludeFromPosFiles",
-        "excludeFromBom",
-        "allowMissingCourtyard",
-    ):
-        setattr(new.attributes, attribute, getattr(old.attributes, attribute))
+    new.exclude_from_bom = old.exclude_from_bom
+    new.exclude_from_pos_files = old.exclude_from_pos_files
+    for name, value in (old.model_extra or {}).items():
+        setattr(new, name, copy.deepcopy(value))
+
+    properties = {item.name: copy.deepcopy(item) for item in old.property}
+    properties.update({item.name: item for item in new.property})
+    new.property = list(properties.values())
 
     old_reference = _reference_text(old)
     new_reference = _reference_text(new)
     if old_reference is not None:
         preserved_reference = copy.deepcopy(old_reference)
-        preserved_reference.text = refdes
-        if new_reference is None:
-            new.graphicItems.insert(0, preserved_reference)
+        preserved_reference.value = refdes
+        if isinstance(new_reference, pcb.Property):
+            new.property.remove(new_reference)
+        elif isinstance(new_reference, pcb.FpText):
+            new.fp_text.remove(new_reference)
+        if isinstance(preserved_reference, pcb.Property):
+            new.property.insert(0, preserved_reference)
         else:
-            new.graphicItems[new.graphicItems.index(new_reference)] = (
-                preserved_reference
-            )
+            new.fp_text.insert(0, preserved_reference)
 
     old_pads = {pad.number: pad for pad in old.pads}
     for pad in new.pads:
         old_pad = old_pads.get(pad.number)
         if old_pad is not None:
             pad.tstamp = old_pad.tstamp
+            for name, value in (old_pad.model_extra or {}).items():
+                if name in {"uuid", "tstamp"}:
+                    setattr(pad, name, copy.deepcopy(value))
 
 
 def _replacement_footprint(
     exporter: kicad_exporter.KicadExporter,
     refdes: str,
     component: cmp.Component,
-    old_footprint: kicad_footprint.Footprint,
-) -> kicad_footprint.Footprint:
-    if old_footprint.position is None:
+    old_footprint: pcb.Footprint,
+) -> pcb.Footprint:
+    if old_footprint.at is None:
         raise FootprintUpdateError(f"PCB footprint {refdes} has no position")
 
-    design_position = kicad_common.Position(
-        X=old_footprint.position.X,
-        Y=old_footprint.position.Y,
-        angle=-(old_footprint.position.angle or 0),
+    design_position = pcb.Position(
+        x=old_footprint.at.x,
+        y=old_footprint.at.y,
+        angle=-old_footprint.at.angle,
     )
     old_reference = _reference_text(old_footprint)
     reference_position = (
-        copy.deepcopy(old_reference.position)
-        if old_reference is not None
-        else kicad_common.Position(X=0, Y=0, angle=0)
+        copy.deepcopy(old_reference.at)
+        if old_reference is not None and old_reference.at is not None
+        else pcb.Position(x=0, y=0, angle=0)
     )
     layer = (
         layout_lib.Layer.BOTTOM
@@ -204,7 +204,7 @@ def _write_atomically(path: pathlib.Path, content: str) -> None:
 
 
 def update_footprints(design: sch_lib.Design, pcb_path: str | pathlib.Path) -> int:
-    """Replace every PCB footprint from ``design`` using kiutils."""
+    """Replace every PCB footprint from ``design`` using PyKiCad."""
     path = pathlib.Path(pcb_path).expanduser().resolve()
     if path.suffix != ".kicad_pcb":
         raise FootprintUpdateError(f"Expected a .kicad_pcb file: {path}")
@@ -212,40 +212,46 @@ def update_footprints(design: sch_lib.Design, pcb_path: str | pathlib.Path) -> i
         raise FootprintUpdateError(f"PCB file not found: {path}")
 
     try:
-        board = kicad_board.Board.from_file(path, encoding="utf-8")
+        board = read_from_file(path).model
+        if not isinstance(board, Pcb):
+            raise TypeError("document is not a KiCad PCB")
     except Exception as exc:
         raise FootprintUpdateError(f"Unable to parse KiCad PCB {path}: {exc}") from exc
 
-    pcb_footprints = _index_board_footprints(board.footprints)
+    pcb_footprints = _index_board_footprints(board.footprint)
     design_components = _flatten_components(design)
     _validate_component_match(design_components, pcb_footprints)
 
     exporter = kicad_exporter.KicadExporter(design)
-    exporter.board.nets = list(board.nets)
-    exporter._added_nets = {net.name: net for net in board.nets}
-    original_net_names = set(exporter._added_nets)
+    exporter.builder = PcbBuilder(board)
+    exporter.board = board
+    original_net_names = _board_net_names(board)
 
     replacements = []
-    for old_footprint in board.footprints:
+    for old_footprint in board.footprint:
         refdes = _footprint_refdes(old_footprint)
-        replacements.append(
-            _replacement_footprint(
-                exporter,
-                refdes,
-                design_components[refdes],
-                old_footprint,
-            )
+        replacement = _replacement_footprint(
+            exporter,
+            refdes,
+            design_components[refdes],
+            old_footprint,
         )
+        replacements.append(replacement)
 
-        added_nets = set(exporter._added_nets) - original_net_names
+        replacement_net_names = {
+            pad.net.name
+            for pad in replacement.pads
+            if pad.net is not None and pad.net.name is not None
+        }
+        added_nets = replacement_net_names - original_net_names
         if added_nets:
             raise FootprintUpdateError(
                 f"Cannot update {refdes} without changing the PCB net table; "
                 f"missing nets: {', '.join(sorted(added_nets))}"
             )
 
-    board.footprints = replacements
-    _write_atomically(path, board.to_sexpr())
+    board.footprint = replacements
+    _write_atomically(path, write_to_string(board))
     return len(replacements)
 
 

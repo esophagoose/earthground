@@ -129,6 +129,7 @@ def test_bottom_layer_imported_footprint_switches_text_and_smd_pad_layers():
     assert footprint.pads[0].layers == ["B.Cu", "B.Mask", "B.Paste"]
     assert footprint.pads[1].layers == ["B.Cu", "B.Mask", "B.Paste"]
     assert _property(footprint, "MPN").value == "IMP-123"
+    assert _property(footprint, "Manufacturer").value == "Imported Corp"
 
 
 def test_module_placement_on_bottom_layer_pushes_child_footprints_to_bottom():
@@ -246,3 +247,4 @@ def test_native_footprint_description_uses_component_mpn_when_available():
 
     assert footprint.description == "RC0805FR-07100RL"
     assert _property(footprint, "MPN").value == "RC0805FR-07100RL"
+    assert _property(footprint, "Manufacturer").value == "Yageo"

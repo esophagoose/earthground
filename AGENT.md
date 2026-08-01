@@ -11,7 +11,7 @@ Earthground is a Python library for creating software-defined electrical designs
 - Run tests: `uv run pytest`
 - Run a module: `uv run -m <module.path>`
 - Install dependencies: `uv sync`
-- Note: the `python-kicad` distribution (imported as `pykicad`) is an editable local dependency at `../pykicad` (see `[tool.uv.sources]` in `pyproject.toml`).
+- KiCad parsing and authoring use the `python-kicad` distribution (imported as `pykicad`).
 
 ## Code Style
 

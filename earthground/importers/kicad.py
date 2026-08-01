@@ -1,7 +1,9 @@
 import pathlib
 from typing import List, Optional, Union, overload
 
-from pykicad import Footprint, FootprintBuilder, read_from_string
+import pygerber.aperture as ap_lib
+from pykicad import Footprint, read_from_string
+import pykicad.models.pcb as pcb
 
 import earthground.footprint_types as ft
 from earthground.footprint_types import BoundingBox, KicadFootprintRef
@@ -18,16 +20,18 @@ DEFAULT_FOOTPRINT_PATH = {
 }
 
 
-def _aperture_from_kicad_pad(pad: kfp.Pad) -> ap_lib.Aperture:
+def _aperture_from_kicad_pad(pad: pcb.Pad) -> ap_lib.Aperture:
     """Convert KiCad pad geometry into Earthground's aperture model."""
-    width = pad.size.X
-    height = pad.size.Y
-    rotation = pad.position.angle or 0
+    if pad.size is None:
+        raise ValueError(f"KiCad pad {pad.number!r} has no size")
+    width = pad.size.width
+    height = pad.size.height
+    rotation = pad.at.angle if pad.at is not None else 0
 
     if pad.shape == "circle":
         return ap_lib.ApertureCircle(diameter=width)
     if pad.shape == "roundrect":
-        radius = (pad.roundrectRatio or 0) * min(width, height)
+        radius = (pad.roundrect_rratio or 0) * min(width, height)
         return ap_lib.ApertureRectangle(
             width=width,
             height=height,
@@ -57,8 +61,8 @@ class KicadFootprint(ft.BaseFootprint):
     Wrapper for a KiCad .kicad_mod footprint.
 
     Parses the original S-expression once and caches the typed footprint model.
-    Pads are not expanded into earthground's internal pad model because the
-    cached KiCad template is instantiated directly by the KiCad exporter.
+    The typed template is cached for direct placement by the KiCad exporter,
+    while electrical pads are exposed through Earthground's footprint model.
     """
 
     def __init__(self, library: str, footprint_name: str, sexp: str):
@@ -70,7 +74,14 @@ class KicadFootprint(ft.BaseFootprint):
         if not isinstance(document.model, Footprint):
             raise TypeError("KiCad footprint text did not produce a Footprint")
         self.footprint = document.model
-        self._bbox: Optional[BoundingBox] = None
+        for pad in self.footprint.pads:
+            if not pad.number or pad.pad_type == "np_thru_hole" or pad.size is None:
+                continue
+            position = pad.at or pcb.Position(x=0, y=0)
+            self.pads[pad.number] = ft.Pad(
+                location=[position.x, position.y],
+                aperture=_aperture_from_kicad_pad(pad),
+            )
 
     def get_bbox(self) -> BoundingBox:
         """
@@ -80,17 +91,10 @@ class KicadFootprint(ft.BaseFootprint):
         an internal pad list and would return an invalid (inf) bounding box
         for imported KiCad footprints with no pads populated in earthground.
         """
-        if self._bbox is not None:
-            return self._bbox
-
-        bounds = FootprintBuilder(self.footprint).pad_bounds()
-        if bounds is None:
+        if not self.pads:
             # No pads: use a conservative 1×1 mm box at origin.
-            self._bbox = BoundingBox(-0.5, -0.5, 0.5, 0.5)
-            return self._bbox
-
-        self._bbox = BoundingBox(*bounds)
-        return self._bbox
+            return BoundingBox(-0.5, -0.5, 0.5, 0.5)
+        return super().get_bbox()
 
 
 class KicadImporter:

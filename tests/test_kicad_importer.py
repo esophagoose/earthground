@@ -1,5 +1,6 @@
 import pytest
 import pygerber.aperture as ap_lib
+import pykicad.models.pcb as pcb
 
 import earthground.components as cmp
 import earthground.exporters.kicad as kicad
@@ -150,7 +151,7 @@ def test_padless_footprint_keeps_conservative_bbox():
 
 
 def test_malformed_sexpression_fails_during_construction():
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValueError, match="Unclosed"):
         KicadFootprint("Test", "Malformed", '(footprint "Malformed"')
 
 
@@ -184,7 +185,6 @@ def test_imported_export_uses_original_sexpression_geometry():
 
     assert component.footprint.sexp == source_sexp
     assert exported.pads[0].shape == "trapezoid"
-    assert exported.pads[0].position.X == 6
-    assert exported.pads[0].position.Y == 2
-    assert exported.pads[0].size.X == 2
-    assert exported.pads[0].size.Y == 1
+    assert exported.pads[0].at == pcb.Position(x=6, y=2, angle=15)
+    assert exported.pads[0].size.width == 2
+    assert exported.pads[0].size.height == 1

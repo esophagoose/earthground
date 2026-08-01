@@ -69,13 +69,43 @@ def _reference_justify(
     )
 
 
+def get_index(footprint: pcb.Footprint) -> Optional[str]:
+    reference = FootprintBuilder(footprint).reference
+    return reference.value if reference is not None else None
+
+
+def get_index_fptext(
+    footprint: pcb.Footprint,
+) -> Optional[pcb.Property | pcb.FpText]:
+    return FootprintBuilder(footprint).reference
+
+
+def _set_text_hidden(item: pcb.Property | pcb.FpText, hidden: bool) -> None:
+    if isinstance(item, pcb.Property):
+        item.hide = hidden
+        return
+    if item.effects is None:
+        item.effects = text_effects()
+    item.effects.hide = hidden
+
+
+def _hide_text_on_layer(footprint: pcb.Footprint, suffix: str) -> None:
+    for item in FootprintBuilder(footprint).iter_text():
+        if item.layer and item.layer.endswith(suffix):
+            _set_text_hidden(item, True)
+
+
 class KicadExporter:
     def __init__(
         self,
         schematic: sch_lib.Design,
         pcb_path: Optional[pathlib.Path] = None,
+        add_silkscreen_text: bool = True,
+        add_fab_text: bool = True,
     ):
         self.schematic = schematic
+        self.add_silkscreen_text = add_silkscreen_text
+        self.add_fab_text = add_fab_text
         self.assigned_layout: Dict[str, layout_lib.ComponentLayout] = (
             schematic.layout.placement
         )
@@ -115,6 +145,8 @@ class KicadExporter:
                 component.parent,
                 component_layout.id_orientation,
                 component_layout.layer,
+                add_silkscreen_text=self.add_silkscreen_text,
+                add_fab_text=self.add_fab_text,
             )
             self.builder.add_footprint(footprint)
 
@@ -134,6 +166,8 @@ class KicadExporter:
         schematic: Optional[sch_lib.Design] = None,
         id_orientation: layout_lib.Orientation = layout_lib.Orientation.CENTER,
         layer: layout_lib.Layer = layout_lib.Layer.TOP,
+        add_silkscreen_text: bool = True,
+        add_fab_text: bool = True,
     ) -> pcb.Footprint:
         if isinstance(cid, sch_lib.Design):
             schematic = cid
@@ -174,12 +208,15 @@ class KicadExporter:
                 footprint.description = component.mpn
 
             for pad in footprint.pads:
-                if pad.type == "np_thru_hole":
+                if pad.pad_type == "np_thru_hole":
                     continue
                 try:
                     index = int(pad.number)
+                except (ValueError, TypeError):
+                    index = pad.number
+                try:
                     pin = component.pins[index]
-                except (ValueError, TypeError, KeyError):
+                except (KeyError, TypeError):
                     continue
                 net = schematic.pin_to_net.get(pin)
                 if net:
@@ -208,7 +245,7 @@ class KicadExporter:
                 component.footprint.name,
                 at=pcb.Position(x=0, y=0),
                 layer="F.Fab",
-                hide=True,
+                hide=not add_fab_text,
             )
 
             for index, pad in component.footprint.pads.items():
@@ -245,9 +282,24 @@ class KicadExporter:
                         layer="F.SilkS",
                     )
 
+        reference = footprint_builder.reference
+        if reference is not None:
+            _set_text_hidden(reference, not add_silkscreen_text)
+        if not add_silkscreen_text:
+            _hide_text_on_layer(footprint_builder.model, ".SilkS")
+        if not add_fab_text:
+            _hide_text_on_layer(footprint_builder.model, ".Fab")
+
         footprint_builder.set_property(
             "MPN",
             component.mpn or "",
+            at=pcb.Position(x=0, y=0),
+            layer=f"{'B' if _is_bottom_layer(layer) else 'F'}.Fab",
+            hide=True,
+        )
+        footprint_builder.set_property(
+            "Manufacturer",
+            getattr(component, "manufacturer", "") or "",
             at=pcb.Position(x=0, y=0),
             layer=f"{'B' if _is_bottom_layer(layer) else 'F'}.Fab",
             hide=True,
@@ -281,7 +333,7 @@ class KicadExporter:
                 self.builder.add_graphic_line(
                     Point(x=item.start.x, y=item.start.y),
                     Point(x=item.end.x, y=item.end.y),
-                    layer="F.Fab",
+                    layer=f"{'B' if _is_bottom_layer(item.layer) else 'F'}.Fab",
                 )
             elif isinstance(item, layout_lib.FabText):
                 self.builder.add_graphic_text(
@@ -291,7 +343,7 @@ class KicadExporter:
                         y=item.position.y,
                         angle=item.position.angle,
                     ),
-                    layer="F.Fab",
+                    layer=f"{'B' if _is_bottom_layer(item.layer) else 'F'}.Fab",
                     effects=text_effects(
                         width=item.width,
                         height=item.height,
@@ -303,16 +355,15 @@ class KicadExporter:
 
     def draw_silkscreen_lines(self):
         for item in self.schematic.layout.flatten_silk():
-            self.board.graphicItems.append(
-                fp.GrLine(
-                    start=to_pos((item.start.x, item.start.y)),
-                    end=to_pos((item.end.x, item.end.y)),
-                    layer=f"{_side_prefix(item.layer)}.SilkS",
-                )
+            self.builder.add_graphic_line(
+                Point(x=item.start.x, y=item.start.y),
+                Point(x=item.end.x, y=item.end.y),
+                layer=f"{'B' if _is_bottom_layer(item.layer) else 'F'}.SilkS",
             )
 
     def add_pours(self, config: layout_lib.PourLayer):
         outline = self.schematic.layout.outline
+        net_name = cmp.validate_net_name(config.net_name, owner="add_pours()")
         self.builder.add_zone(
             [
                 Point(x=outline.x1, y=outline.y1),
@@ -321,15 +372,16 @@ class KicadExporter:
                 Point(x=outline.x1, y=outline.y2),
             ],
             layer=self.builder.copper_layer(config.layer).name,
-            net=config.net_name,
+            net=net_name,
         )
 
     def add_via(self, config: layout_lib.ViaConfig):
+        net_name = cmp.validate_net_name(config.net_name, owner="add_via()")
         self.builder.add_via(
             pcb.Position(x=config.location[0], y=config.location[1]),
             size=config.hole_size,
             drill=config.drill_size,
-            net=config.net_name,
+            net=net_name,
         )
 
     def save(self, output_folder="./generated_outputs/", overwrite=False):
@@ -337,5 +389,6 @@ class KicadExporter:
         self.convert_to_kicad(self.schematic)
         self.draw_board_outline()
         self.draw_fab_lines()
+        self.draw_silkscreen_lines()
         write_to_file(self.board, path)
         print(f"{'Overwrote' if overwrite else 'Wrote'} board file: {path}")

@@ -1,3 +1,5 @@
+import pytest
+from pykicad import FootprintBuilder
 from pykicad.models.base import Point
 import pykicad.models.pcb as pcb
 
@@ -11,6 +13,16 @@ from earthground.schematic import Design
 
 def _property(footprint: pcb.Footprint, name: str) -> pcb.Property:
     return next(item for item in footprint.property if item.name == name)
+
+
+def _text_items(footprint: pcb.Footprint) -> list[pcb.Property | pcb.FpText]:
+    return list(FootprintBuilder(footprint).iter_text())
+
+
+def _is_hidden(item: pcb.Property | pcb.FpText) -> bool:
+    if isinstance(item, pcb.Property):
+        return bool(item.hide)
+    return bool(item.effects and item.effects.hide)
 
 
 def test_parse_footprint():
@@ -42,14 +54,12 @@ def test_parse_footprint_can_skip_silkscreen_text():
         add_silkscreen_text=False,
     )
 
-    text_items = [
-        item for item in footprint.graphicItems if isinstance(item, fp.FpText)
-    ]
+    text_items = _text_items(footprint)
     silk_text = [item for item in text_items if item.layer.endswith(".SilkS")]
     fab_text = [item for item in text_items if item.layer.endswith(".Fab")]
     assert silk_text
-    assert all(item.hide for item in silk_text)
-    assert any(not item.hide for item in fab_text)
+    assert all(_is_hidden(item) for item in silk_text)
+    assert any(not _is_hidden(item) for item in fab_text)
 
 
 def test_hidden_imported_reference_text_still_gets_component_refdes():
@@ -81,9 +91,9 @@ def test_hidden_imported_reference_text_still_gets_component_refdes():
     )
     reference = kicad.get_index_fptext(footprint)
 
-    assert reference.text == "U99"
+    assert reference.value == "U99"
     assert reference.layer == "F.SilkS"
-    assert reference.hide is True
+    assert _is_hidden(reference)
 
 
 def test_parse_footprint_can_skip_fab_text():
@@ -98,14 +108,12 @@ def test_parse_footprint_can_skip_fab_text():
         add_fab_text=False,
     )
 
-    text_items = [
-        item for item in footprint.graphicItems if isinstance(item, fp.FpText)
-    ]
+    text_items = _text_items(footprint)
     silk_text = [item for item in text_items if item.layer.endswith(".SilkS")]
     fab_text = [item for item in text_items if item.layer.endswith(".Fab")]
-    assert any(not item.hide for item in silk_text)
+    assert any(not _is_hidden(item) for item in silk_text)
     assert fab_text
-    assert all(item.hide for item in fab_text)
+    assert all(_is_hidden(item) for item in fab_text)
 
 
 def test_exporter_text_flags_apply_to_converted_footprints():
@@ -123,12 +131,13 @@ def test_exporter_text_flags_apply_to_converted_footprints():
 
     text_items = [
         item
-        for footprint in exporter.board.footprints
-        for item in footprint.graphicItems
-        if isinstance(item, fp.FpText)
+        for footprint in exporter.board.footprint
+        for item in _text_items(footprint)
     ]
     assert all(
-        item.hide for item in text_items if item.layer.endswith((".SilkS", ".Fab"))
+        _is_hidden(item)
+        for item in text_items
+        if item.layer.endswith((".SilkS", ".Fab"))
     )
 
 
@@ -199,14 +208,14 @@ def test_module_graphics_are_transformed_and_flipped():
     exporter.draw_silkscreen_lines()
     exporter.draw_fab_lines()
 
-    silk_line = exporter.board.graphicItems[0]
-    fab_line = exporter.board.graphicItems[1]
+    silk_line = exporter.board.graphic_item[0]
+    fab_line = exporter.board.graphic_item[1]
     assert silk_line.layer == "B.SilkS"
-    assert silk_line.start == fp.Position(X=8, Y=21, angle=0)
-    assert silk_line.end == fp.Position(X=8, Y=23, angle=0)
+    assert silk_line.start == Point(x=8, y=21)
+    assert silk_line.end == Point(x=8, y=23)
     assert fab_line.layer == "B.Fab"
-    assert fab_line.start == fp.Position(X=10, Y=21, angle=0)
-    assert fab_line.end == fp.Position(X=8, Y=21, angle=0)
+    assert fab_line.start == Point(x=10, y=21)
+    assert fab_line.end == Point(x=8, y=21)
 
 
 def test_add_pour_sets_zone_net_name():
@@ -221,3 +230,61 @@ def test_add_pour_sets_zone_net_name():
     assert zone.net == "GND"
     assert exporter.builder.ensure_net("GND").name == "GND"
     assert zone.layer == "B.Cu"
+
+
+def test_layout_net_references_reject_non_string_names():
+    design = Design("TEST")
+    component = design.add_component(cmp.Component())
+    pin = cmp.Pin("CB", 1, component)
+
+    with pytest.raises(TypeError, match="PourLayer.*net_name.*str.*Pin"):
+        layout_lib.PourLayer(net_name=pin, layer=1)
+    with pytest.raises(TypeError, match="ViaConfig.*net_name.*str.*Pin"):
+        layout_lib.ViaConfig(
+            location=layout_lib.Position(0, 0, 0),
+            net_name=pin,
+            hole_size=0.6,
+            drill_size=0.3,
+        )
+
+
+def test_layout_net_references_preserve_named_tuple_behavior():
+    position = layout_lib.Position(1, 2, 0)
+    via = layout_lib.ViaConfig(position, "GND", 0.6, 0.3)
+    pour = layout_lib.PourLayer("GND", 1)
+
+    assert tuple(via) == (position, "GND", 0.6, 0.3)
+    assert tuple(pour) == ("GND", 1)
+    assert via[1] == "GND"
+    assert pour[0] == "GND"
+    assert pour._replace(layer=2) == layout_lib.PourLayer("GND", 2)
+
+    with pytest.raises(TypeError, match="PourLayer.*net_name.*str.*object"):
+        pour._replace(net_name=object())
+    with pytest.raises(TypeError, match="ViaConfig.*net_name.*str.*object"):
+        layout_lib.ViaConfig._make((position, object(), 0.6, 0.3))
+
+
+def test_kicad_export_keeps_module_port_connected_resistors_on_parent_net():
+    module = Design("LS", "LS", ports=["SIG", "GND"])
+    module.add_series_res(module.port["SIG"], "10k", module.port["GND"])
+    pulldown = module.add_component(cmp.Resistor("4.7k"))
+    module.connect([pulldown.pins[1], module.port["SIG"]], "SIG")
+    module.connect([pulldown.pins[2], module.port["GND"]], "GND")
+
+    design = Design("TEST")
+    level_shifter = design.add_module(module)
+    design.join_net(level_shifter.port["SIG"], "SIG_0")
+    design.join_net(level_shifter.port["GND"], "GND")
+
+    exporter = kicad.KicadExporter(design)
+    exporter.convert_to_kicad(design)
+
+    pad_nets_by_reference = {
+        kicad.get_index(footprint): [
+            pad.net.name if pad.net else None for pad in footprint.pads
+        ]
+        for footprint in exporter.board.footprint
+    }
+    assert pad_nets_by_reference["LS1_R1"][0] == "SIG_0"
+    assert pad_nets_by_reference["LS1_R2"][0] == "SIG_0"

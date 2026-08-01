@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Optional, Sequence, Union
 
 import yaml
-from kiutils.utils import sexpr as sexpr_utils
+from pykicad import Footprint, read_from_file
 
 CATALOG_SCHEMA = 1
 CONFIG_DIRECTORY = ".earthground"
@@ -505,19 +505,18 @@ def read_footprint_description(path: pathlib.Path) -> Optional[str]:
                 return encoded.replace(r"\"", '"').replace(r"\\", "\\")
 
     try:
-        parsed = sexpr_utils.parse_sexp(path.read_text(encoding="utf-8"))
+        model = read_from_file(path).model
     except Exception:
         return None
-    if not isinstance(parsed, list):
+    if not isinstance(model, Footprint):
         return None
-    for item in parsed:
-        if not isinstance(item, list) or not item:
-            continue
-        if item[0] == "descr" and len(item) > 1:
-            return str(item[1])
-        if item[0] == "property" and len(item) > 2 and item[1] == "Description":
-            return str(item[2])
-    return None
+    if model.description:
+        return model.description
+    description = next(
+        (item.value for item in model.property if item.name == "Description"),
+        None,
+    )
+    return description
 
 
 def resolve_footprint_roots(

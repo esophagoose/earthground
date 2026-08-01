@@ -370,8 +370,8 @@ def test_board2board_interface_adds_host_and_mezzanine_sides():
 
     exporter = KicadExporter(host)
     exporter.draw_silkscreen_lines()
-    assert len(exporter.board.graphicItems) == 4
-    assert exporter.board.graphicItems[0].layer == "F.SilkS"
+    assert len(exporter.board.graphic_item) == 4
+    assert exporter.board.graphic_item[0].layer == "F.SilkS"
 
     mezzanine = Design("Mezzanine")
     mate_module = interface.add_to_mezzanine()
