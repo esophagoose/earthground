@@ -8,6 +8,9 @@ from earthground.erc import ElectricalCheck, ElectricalReport
 import earthground.footprints.passives as passives
 import earthground.layout as layout_lib
 import earthground.standard_values as sv
+import earthground.straps as straps
+import earthground.thermal as thermal
+import earthground.contracts as contracts
 
 log = logging.getLogger(__name__)
 
@@ -94,6 +97,10 @@ class Design:
         self._declared_rails: Dict[str, sv.ValueBounds] = {}
         self._external_drives: Dict[str, Optional[sv.ValueBounds]] = {}
         self._ambient: Optional[sv.ValueBounds] = None
+        self._strap_expectations: Dict[
+            tuple[cmp.Component, str], straps.StrapExpectation
+        ] = {}
+        self._contract_waivers: Dict[tuple[cmp.Component, str], str] = {}
 
     def declare_rail(self, name: str, voltage: sv.ValueBounds) -> None:
         sv.require_bounds(voltage, "V", "Rail voltage")
@@ -111,6 +118,46 @@ class Design:
     def declare_ambient(self, temperature: sv.ValueBounds) -> None:
         sv.require_bounds(temperature, "°C", "Ambient temperature")
         self._ambient = temperature
+
+    def expect_strap(
+        self,
+        component: cmp.Component,
+        strap_id: str,
+        level: str,
+        reason: str,
+    ) -> None:
+        if component.parent is not self:
+            raise ValueError("Strap expectation component must belong to this design")
+        straps_by_id = {strap.id: strap for strap in component.strap_pins}
+        if strap_id not in straps_by_id:
+            raise ValueError(f"Unknown strap {strap_id!r} on {component}")
+        if level not in {item.name for item in straps_by_id[strap_id].levels}:
+            raise ValueError(f"Unknown level {level!r} for strap {strap_id!r}")
+        if not reason:
+            raise ValueError("Strap expectation requires a reason")
+        self._strap_expectations[(component, strap_id)] = straps.StrapExpectation(
+            level, reason
+        )
+
+    def check_straps(self) -> straps.StrapReport:
+        return straps.check_design(self)
+
+    def thermal_report(self) -> thermal.ThermalReport:
+        return thermal.build_report(self)
+
+    def waive_contract(
+        self, component: cmp.Component, check_id: str, reason: str
+    ) -> None:
+        if component.parent is not self:
+            raise ValueError("Contract waiver component must belong to this design")
+        if not check_id:
+            raise ValueError("Contract waiver requires a check id")
+        if not reason:
+            raise ValueError("Contract waiver requires a reason")
+        self._contract_waivers[(component, check_id)] = reason
+
+    def check_contracts(self) -> contracts.ContractReport:
+        return contracts.check_design(self)
 
     @property
     def nets(self) -> Mapping[str, cmp.Net]:
@@ -724,6 +771,8 @@ class Design:
         skip_footprint_check=False,
         check_no_single_connections=False,
         check_electrical=False,
+        check_straps=False,
+        check_contracts=False,
     ):
         errors = []
         components = list(self.iter_components())
@@ -741,6 +790,19 @@ class Design:
                 str(check)
                 for check in report.checks
                 if check.status is not sv.CheckStatus.PASS
+            )
+        if check_straps:
+            report = self.check_straps()
+            errors.extend(
+                f"STRAP {result.status.value} at {result.refdes}.{result.pin}: "
+                f"{result.message}"
+                for result in report.results
+                if result.status is not sv.CheckStatus.PASS
+            )
+        if check_contracts:
+            report = self.check_contracts()
+            errors.extend(
+                str(check) for check in report.checks if not check.is_accepted
             )
         if errors:
             header = f" {self.name.upper()} VALIDATION FAILED "

@@ -720,3 +720,41 @@ def ohms(
     return _unit_bounds(
         "Ω", min, typ, max, nominal=nominal, tolerance_pct=tolerance_pct, source=source
     )
+
+
+def farads(
+    min=None, typ=None, max=None, *, nominal=None, tolerance_pct=None, source=None
+):
+    return _unit_bounds(
+        "F", min, typ, max, nominal=nominal, tolerance_pct=tolerance_pct, source=source
+    )
+
+
+def watts(
+    min=None, typ=None, max=None, *, nominal=None, tolerance_pct=None, source=None
+):
+    return _unit_bounds(
+        "W", min, typ, max, nominal=nominal, tolerance_pct=tolerance_pct, source=source
+    )
+
+
+def celsius_per_watt(
+    min=None, typ=None, max=None, *, nominal=None, tolerance_pct=None, source=None
+):
+    return _unit_bounds(
+        "°C/W",
+        min,
+        typ,
+        max,
+        nominal=nominal,
+        tolerance_pct=tolerance_pct,
+        source=source,
+    )
+
+
+def ratio(
+    min=None, typ=None, max=None, *, nominal=None, tolerance_pct=None, source=None
+):
+    return _unit_bounds(
+        "", min, typ, max, nominal=nominal, tolerance_pct=tolerance_pct, source=source
+    )

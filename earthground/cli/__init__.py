@@ -26,6 +26,12 @@ from earthground.cli.update_footprints import (
     configure_update_footprints_parser,
     run_parsed_args as run_update_footprints_args,
 )
+from earthground.cli.analysis_reports import (
+    configure_straps_parser,
+    configure_thermal_parser,
+    run_straps_args,
+    run_thermal_args,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -57,6 +63,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     configure_compile_parser(compile_command)
 
+    straps = commands.add_parser(
+        "straps", help="Resolve and report configuration strap pins"
+    )
+    configure_straps_parser(straps)
+
+    thermal = commands.add_parser(
+        "thermal", help="Generate a component thermal-analysis CSV"
+    )
+    configure_thermal_parser(thermal)
+
     export = commands.add_parser("export", help="Export an Earthground design project")
     export_commands = export.add_subparsers(dest="export_command", required=True)
     export_kicad = export_commands.add_parser(
@@ -80,6 +96,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     if args.earthground_command == "compile":
         return run_compile_args(args)
+    if args.earthground_command == "straps":
+        return run_straps_args(args)
+    if args.earthground_command == "thermal":
+        return run_thermal_args(args)
     if args.earthground_command == "export":
         return run_kicad_export_args(args)
     if args.earthground_command == "skills":
