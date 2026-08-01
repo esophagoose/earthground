@@ -1,4 +1,5 @@
 import pykicad.models.pcb as pcb
+from pykicad import FootprintBuilder
 
 import earthground.components as cmp
 import earthground.exporters.kicad as kicad
@@ -16,7 +17,7 @@ def _property(footprint: pcb.Footprint, name: str) -> pcb.Property:
 
 
 def _reference(footprint: pcb.Footprint) -> pcb.Property | pcb.FpText:
-    reference = footprint.reference
+    reference = FootprintBuilder(footprint).reference
     assert reference is not None
     return reference
 
@@ -166,7 +167,8 @@ def test_bottom_layer_module_child_reference_stays_local_to_the_footprint():
     reg1_u1 = next(
         footprint
         for footprint in exporter.board.footprint
-        if footprint.reference is not None and footprint.reference.value == "REG1_U1"
+        if FootprintBuilder(footprint).reference is not None
+        and FootprintBuilder(footprint).reference.value == "REG1_U1"
     )
     reference = _reference(reg1_u1)
 

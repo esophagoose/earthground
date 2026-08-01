@@ -3,7 +3,15 @@ import pathlib
 from typing import Dict, Optional
 
 import pygerber.aperture as ap_lib
-from pykicad import Pcb, read_from_file, read_from_string, write_to_file
+from pykicad import (
+    BoardSide,
+    FootprintBuilder,
+    Pcb,
+    PcbBuilder,
+    read_from_file,
+    text_effects,
+    write_to_file,
+)
 from pykicad.models.base import Point
 import pykicad.models.pcb as pcb
 
@@ -25,8 +33,8 @@ def _is_bottom_layer(layer: layout_lib.Layer) -> bool:
     return layer == layout_lib.Layer.BOTTOM
 
 
-def _board_side(layer: layout_lib.Layer) -> pcb.BoardSide:
-    return pcb.BoardSide.BACK if _is_bottom_layer(layer) else pcb.BoardSide.FRONT
+def _board_side(layer: layout_lib.Layer) -> BoardSide:
+    return BoardSide.BACK if _is_bottom_layer(layer) else BoardSide.FRONT
 
 
 def aperture_to_shape_size(aperture):
@@ -73,15 +81,16 @@ class KicadExporter:
         )
 
         if pcb_path:
-            board = read_from_file(pcb_path)
+            board = read_from_file(pcb_path).model
             if not isinstance(board, Pcb):
                 raise TypeError(f"Expected a KiCad PCB document: {pcb_path}")
-            self.board = board
+            self.builder = PcbBuilder(board)
         else:
-            self.board = Pcb.create_new(
+            self.builder = PcbBuilder.create(
                 generator="earthground",
                 copper_layer_count=self.schematic.layout.layer_count,
             )
+        self.board = self.builder.model
 
     def _collect_all_nets(self, schematic: sch_lib.Design) -> Dict[str, cmp.Net]:
         all_nets = dict(schematic.nets)
@@ -93,7 +102,7 @@ class KicadExporter:
         flattened_layout = schematic.layout.flatten()
 
         for net in self._collect_all_nets(schematic).values():
-            self.board.ensure_net(net.name)
+            self.builder.ensure_net(net.name)
 
         for cid, (component_layout, component) in flattened_layout.items():
             if component.virtual:
@@ -107,7 +116,7 @@ class KicadExporter:
                 component_layout.id_orientation,
                 component_layout.layer,
             )
-            self.board.add_footprint(footprint)
+            self.builder.add_footprint(footprint)
 
         for pour in schematic.layout.pours:
             self.add_pours(pour)
@@ -146,10 +155,21 @@ class KicadExporter:
         reference_justify = _reference_justify(id_orientation, layer)
 
         if isinstance(component.footprint, KicadFootprint):
-            parsed = read_from_string(component.footprint.sexp)
-            if not isinstance(parsed, pcb.Footprint):
-                raise TypeError("Imported KiCad text is not a footprint")
-            footprint = parsed.for_board()
+            footprint_builder = FootprintBuilder(
+                component.footprint.footprint
+            ).instantiate(
+                reference=str(cid),
+                at=pcb.Position(
+                    x=component_position.x,
+                    y=component_position.y,
+                    angle=-component_position.angle,
+                ),
+                side=_board_side(layer),
+                reference_at=id_position,
+                reference_layer="F.SilkS",
+                reference_effects=text_effects(justify=reference_justify),
+            )
+            footprint = footprint_builder.model
             if component.mpn:
                 footprint.description = component.mpn
 
@@ -163,14 +183,7 @@ class KicadExporter:
                     continue
                 net = schematic.pin_to_net.get(pin)
                 if net:
-                    pad.net = self.board.ensure_net(net.name)
-
-            footprint.set_reference(
-                str(cid),
-                at=id_position,
-                layer="F.SilkS",
-                effects=pcb.text_effects(justify=reference_justify),
-            )
+                    pad.net = self.builder.ensure_net(net.name)
 
             if abs(component_position.angle) % 180 == 90:
                 for pad in footprint.pads:
@@ -180,17 +193,17 @@ class KicadExporter:
                             height=pad.size.width,
                         )
         else:
-            footprint = pcb.Footprint.create(
+            footprint_builder = FootprintBuilder.create(
                 component.name,
                 description=component.mpn or None,
             )
-            footprint.set_reference(
+            footprint_builder.set_reference(
                 str(cid),
                 at=id_position,
                 layer="F.SilkS",
-                effects=pcb.text_effects(justify=reference_justify),
+                effects=text_effects(justify=reference_justify),
             )
-            footprint.set_property(
+            footprint_builder.set_property(
                 "Value",
                 component.footprint.name,
                 at=pcb.Position(x=0, y=0),
@@ -202,13 +215,13 @@ class KicadExporter:
                 shape, size = aperture_to_shape_size(pad.aperture)
                 pin = component.pins[index]
                 net = schematic.pin_to_net.get(pin)
-                net_ref = self.board.ensure_net(net.name) if net else None
+                net_ref = self.builder.ensure_net(net.name) if net else None
                 hole = getattr(pad.aperture, "hole", None)
                 pad_layer_prefix = "*" if hole else "F"
                 pad_layers = [f"{pad_layer_prefix}.Cu", f"{pad_layer_prefix}.Mask"]
                 if not hole:
                     pad_layers.append(f"{pad_layer_prefix}.Paste")
-                footprint.add_pad(
+                footprint_builder.add_pad(
                     str(index),
                     pad_type="thru_hole" if hole else "smd",
                     shape=shape,
@@ -226,27 +239,29 @@ class KicadExporter:
             for polysilk in component.footprint.silk:
                 for index in range(len(polysilk) - 1):
                     previous, current = polysilk[index : index + 2]
-                    footprint.add_line(
+                    footprint_builder.add_line(
                         Point(x=previous[0], y=previous[1]),
                         Point(x=current[0], y=current[1]),
                         layer="F.SilkS",
                     )
 
-        footprint.set_property(
+        footprint_builder.set_property(
             "MPN",
             component.mpn or "",
             at=pcb.Position(x=0, y=0),
-            layer="F.Fab",
+            layer=f"{'B' if _is_bottom_layer(layer) else 'F'}.Fab",
             hide=True,
         )
-        return footprint.place(
-            pcb.Position(
-                x=component_position.x,
-                y=component_position.y,
-                angle=-component_position.angle,
-            ),
-            side=_board_side(layer),
-        )
+        if not isinstance(component.footprint, KicadFootprint):
+            footprint_builder.place(
+                pcb.Position(
+                    x=component_position.x,
+                    y=component_position.y,
+                    angle=-component_position.angle,
+                ),
+                side=_board_side(layer),
+            )
+        return footprint_builder.model
 
     def _validate_component(self, component: cmp.Component):
         if not component.footprint:
@@ -254,7 +269,7 @@ class KicadExporter:
 
     def draw_board_outline(self):
         outline = self.schematic.layout.outline
-        self.board.add_graphic_rect(
+        self.builder.add_graphic_rect(
             Point(x=outline.x1, y=outline.y1),
             Point(x=outline.x2, y=outline.y2),
             layer="Edge.Cuts",
@@ -263,13 +278,13 @@ class KicadExporter:
     def draw_fab_lines(self):
         for item in self.schematic.layout.flatten_fab():
             if isinstance(item, layout_lib.FabLine):
-                self.board.add_graphic_line(
+                self.builder.add_graphic_line(
                     Point(x=item.start.x, y=item.start.y),
                     Point(x=item.end.x, y=item.end.y),
                     layer="F.Fab",
                 )
             elif isinstance(item, layout_lib.FabText):
-                self.board.add_graphic_text(
+                self.builder.add_graphic_text(
                     item.text,
                     pcb.Position(
                         x=item.position.x,
@@ -277,7 +292,7 @@ class KicadExporter:
                         angle=item.position.angle,
                     ),
                     layer="F.Fab",
-                    effects=pcb.text_effects(
+                    effects=text_effects(
                         width=item.width,
                         height=item.height,
                         thickness=item.thickness,
@@ -298,19 +313,19 @@ class KicadExporter:
 
     def add_pours(self, config: layout_lib.PourLayer):
         outline = self.schematic.layout.outline
-        self.board.add_zone(
+        self.builder.add_zone(
             [
                 Point(x=outline.x1, y=outline.y1),
                 Point(x=outline.x2, y=outline.y1),
                 Point(x=outline.x2, y=outline.y2),
                 Point(x=outline.x1, y=outline.y2),
             ],
-            layer=self.board.copper_layer(config.layer).name,
+            layer=self.builder.copper_layer(config.layer).name,
             net=config.net_name,
         )
 
     def add_via(self, config: layout_lib.ViaConfig):
-        self.board.add_via(
+        self.builder.add_via(
             pcb.Position(x=config.location[0], y=config.location[1]),
             size=config.hole_size,
             drill=config.drill_size,

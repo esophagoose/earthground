@@ -1,7 +1,7 @@
 import pathlib
 from typing import List, Optional, Union, overload
 
-from pykicad import Footprint, read_from_string
+from pykicad import Footprint, FootprintBuilder, read_from_string
 
 import earthground.footprint_types as ft
 from earthground.footprint_types import BoundingBox, KicadFootprintRef
@@ -56,10 +56,9 @@ class KicadFootprint(ft.BaseFootprint):
     """
     Wrapper for a KiCad .kicad_mod footprint.
 
-    Stores the original S-expression and lazily computes an approximate bounding
-    box for placement using the KiCad pad geometry. Pads are not expanded into
-    earthground's internal pad model because the original KiCad footprint is
-    parsed directly by the KiCad exporter.
+    Parses the original S-expression once and caches the typed footprint model.
+    Pads are not expanded into earthground's internal pad model because the
+    cached KiCad template is instantiated directly by the KiCad exporter.
     """
 
     def __init__(self, library: str, footprint_name: str, sexp: str):
@@ -67,16 +66,11 @@ class KicadFootprint(ft.BaseFootprint):
         self.name = footprint_name
         self.description = footprint_name
         self.sexp = sexp
-
-        parsed = sexpr_utils.parse_sexp(self.sexp)
-        kicad_fp = kfp.Footprint.from_sexpr(parsed)
-        for pad in kicad_fp.pads:
-            if not pad.number or pad.type == "np_thru_hole":
-                continue
-            self.pads[pad.number] = ft.Pad(
-                location=[pad.position.X, pad.position.Y],
-                aperture=_aperture_from_kicad_pad(pad),
-            )
+        document = read_from_string(sexp)
+        if not isinstance(document.model, Footprint):
+            raise TypeError("KiCad footprint text did not produce a Footprint")
+        self.footprint = document.model
+        self._bbox: Optional[BoundingBox] = None
 
     def get_bbox(self) -> BoundingBox:
         """
@@ -89,16 +83,7 @@ class KicadFootprint(ft.BaseFootprint):
         if self._bbox is not None:
             return self._bbox
 
-        try:
-            kicad_fp = read_from_string(self.sexp)
-            if not isinstance(kicad_fp, Footprint):
-                raise TypeError("KiCad footprint text did not produce a Footprint")
-        except Exception:
-            # Fallback: treat as a small 1×1 mm symbol at the origin.
-            self._bbox = BoundingBox(-0.5, -0.5, 0.5, 0.5)
-            return self._bbox
-
-        bounds = kicad_fp.pad_bounds()
+        bounds = FootprintBuilder(self.footprint).pad_bounds()
         if bounds is None:
             # No pads: use a conservative 1×1 mm box at origin.
             self._bbox = BoundingBox(-0.5, -0.5, 0.5, 0.5)

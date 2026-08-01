@@ -3,7 +3,7 @@ import shutil
 import subprocess
 
 import pytest
-from pykicad import Pcb, read_from_file, write_to_file
+from pykicad import Pcb, PcbBuilder, read_from_file, write_to_file
 from pykicad.models.base import Point
 import pykicad.models.pcb as pcb
 
@@ -59,7 +59,7 @@ def test_generated_board_round_trips_and_opens_in_kicad_10(tmp_path: Path):
 
     KicadExporter(design).save(tmp_path)
     output = tmp_path / "MIGRATION.kicad_pcb"
-    board = read_from_file(output)
+    board = read_from_file(output).model
 
     assert isinstance(board, Pcb)
     assert board.version == 20260206
@@ -72,7 +72,7 @@ def test_generated_board_round_trips_and_opens_in_kicad_10(tmp_path: Path):
 
 
 def test_existing_board_content_is_preserved_when_exporting(tmp_path: Path):
-    source = Pcb.create_new(generator="test")
+    source = PcbBuilder.create(generator="test").build()
     source.graphic_item.append(
         pcb.GraphicLine(
             start=Point(x=1, y=1),
@@ -86,7 +86,7 @@ def test_existing_board_content_is_preserved_when_exporting(tmp_path: Path):
 
     KicadExporter(design, pcb_path=source_path).save(tmp_path)
     output = tmp_path / "EXISTING.kicad_pcb"
-    board = read_from_file(output)
+    board = read_from_file(output).model
 
     assert isinstance(board, Pcb)
     assert len(board.footprint) == 1
@@ -101,7 +101,7 @@ def test_four_layer_board_uses_modern_inner_layer_names():
 
     exporter = KicadExporter(design)
 
-    assert [layer.name for layer in exporter.board.copper_layers] == [
+    assert [layer.name for layer in exporter.builder.copper_layers] == [
         "F.Cu",
         "In1.Cu",
         "In2.Cu",

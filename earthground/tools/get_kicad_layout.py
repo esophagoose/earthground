@@ -11,7 +11,7 @@ import pathlib
 import sys
 from typing import Dict
 
-from pykicad import Pcb, read_from_file
+from pykicad import FootprintBuilder, Pcb, read_from_file
 
 import earthground.layout as layout
 
@@ -45,7 +45,7 @@ def extract_layouts(board_path: pathlib.Path) -> Dict[str, layout.Placement]:
     :rtype: Dict[str, layout.Placement]
     """
     logger.info(f"Loading board file: {board_path}")
-    board = read_from_file(board_path)
+    board = read_from_file(board_path).model
     if not isinstance(board, Pcb):
         raise TypeError(f"Expected a KiCad PCB document: {board_path}")
     logger.info(f"Found {len(board.footprint)} footprints in board file")
@@ -53,7 +53,7 @@ def extract_layouts(board_path: pathlib.Path) -> Dict[str, layout.Placement]:
 
     placements = {}
     for i, footprint in enumerate(board.footprint):
-        refdes = footprint.reference
+        refdes = FootprintBuilder(footprint).reference
         if refdes is None:
             logger.warning(f"Footprint {i} has no reference designator")
             continue

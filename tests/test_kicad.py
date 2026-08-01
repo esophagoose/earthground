@@ -219,5 +219,5 @@ def test_add_pour_sets_zone_net_name():
 
     zone = exporter.board.zone[0]
     assert zone.net == "GND"
-    assert exporter.board.ensure_net("GND").name == "GND"
+    assert exporter.builder.ensure_net("GND").name == "GND"
     assert zone.layer == "B.Cu"
