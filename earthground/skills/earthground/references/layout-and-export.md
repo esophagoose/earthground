@@ -58,7 +58,11 @@ exporter = earthground.exporters.kicad.KicadExporter(design)
 exporter.save(output_folder="generated_outputs", overwrite=False)
 ```
 
-Do not pass the old `positions=` argument shown in some README versions. Populate `design.layout.placement` instead. `save` writes `<design.name>.kicad_pcb`; ensure the directory exists. Despite its name, `overwrite` currently affects the printed verb only, so perform an explicit existence check before calling `save` when preserving files matters.
+Do not pass the old `positions=` argument shown in some README versions. Populate `design.layout.placement` instead. `save` always writes `<design.name>.kicad_pcb`; ensure the directory exists. When signal-integrity net classes or differential pairs are declared, it also merges `<design.name>.kicad_pro` net classes and updates an Earthground-marked block in `<design.name>.kicad_dru`. Unrelated project settings, manual net classes, and rules outside that marked block are preserved. Despite its name, `overwrite` currently affects the printed verb only, so perform an explicit existence check before calling `save` when preserving files matters.
+
+Net-class geometry is exported from typical values; min/max constraints become generated rules where supported. Differential skew, maximum length/via count, and minimum track angle become rules. Impedance values are emitted as intent/comments, not converted into trace width or gap. Never guess geometry without a board stack-up calculation.
+
+KiCad footprints include hidden metadata properties for MPN, manufacturer, datasheet URL/revision/SHA256, lifecycle, and each `Distributor:<name>` ID. Keep this data on the component so board/BOM consumers receive it.
 
 Constructing with `pcb_path=` loads a board, but inspect the current constructor carefully before relying on update-in-place behavior: state initialization differs from the new-board branch.
 
@@ -70,16 +74,9 @@ Bottom-side export mirrors geometry, swaps F/B layer names, mirrors reference ju
 
 The output directory must exist. DNP filtering and a procurement BOM are not inherent in this path; inspect current exporter behavior for the requested artifact.
 
-## LTspice
+## LTspice is unsupported
 
-```python
-from earthground.exporters.ltspice import LTspiceExporter
-
-content = LTspiceExporter(design).export()       # return string
-LTspiceExporter(design).export("circuit.asc")   # write file
-```
-
-Resistors and capacitors have explicit symbol mappings. Other parts need compatible symbol/model attributes or fall back to class names. Treat the exporter as schematic approximation and inspect generated `.asc` content in tests.
+Do not use or recommend the LTspice exporter for production or analysis. Its implementation is incomplete and non-functional, and `Component.ltspice_model` was removed because nothing consumed it. If a task explicitly asks to repair LTspice support, begin by defining supported output semantics and regression fixtures; do not document the current code path as working.
 
 ## Interactive KiCad placement
 

@@ -65,3 +65,7 @@ The parent places the virtual module refdes (for example `FLT1`). The child layo
 - flattened designators use `<module-refdes>_<child-refdes>`.
 
 Give reusable modules a complete internal layout if they are intended as standardized PCB blocks. Otherwise their internal parts float using default placement.
+
+## Hierarchy-aware analysis
+
+Electrical, strap, contract, thermal, provenance, and sourcing reports use `DesignAnalysis` to resolve flattened refdes, nets, components, and explicit placements without mutating the design. Declare expectations or waivers on the `Design` that directly owns the component; parent-level reports still see them through the hierarchy. Required-external contracts may be satisfied by circuitry in a parent design. Placement-dependent checks remain `Unknown` until both the module and the relevant internal/support parts have explicit placements.

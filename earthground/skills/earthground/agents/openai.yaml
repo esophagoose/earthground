@@ -1,4 +1,4 @@
 interface:
   display_name: "Earthground"
-  short_description: "Build software-defined circuit designs"
-  default_prompt: "Use $earthground to create or modify an Earthground circuit design and verify it."
+  short_description: "Build and verify software-defined circuit designs"
+  default_prompt: "Use $earthground to create or modify an Earthground circuit design, encode its electrical intent, and verify it."

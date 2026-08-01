@@ -38,7 +38,7 @@ kicad.KicadExporter(design).save("generated_outputs")
 - `pins[index]` and `pins.by_index(index)` address physical pin indexes, normally integers starting at 1.
 - `pins.by_name("VCC")` is preferred for semantic part pins.
 - `pins.all_with_name(...)` handles duplicated logical names when a package has several pins with the same role.
-- `PinContainer` is backed by a frozenset. Do not depend on iteration order.
+- `PinContainer` preserves declaration order, while pin identity is physical index + name + owning object. Typed metadata does not change identity or hashing.
 - `pin.net` raises if the pin is not connected; use `design.pin_to_net.get(pin)` when absence is valid.
 
 ## Nets
@@ -79,7 +79,13 @@ design.print()       # connectivity view
 design.validate(
     skip_footprint_check=False,
     check_no_single_connections=False,
+    check_electrical=False,
+    check_straps=False,
+    check_contracts=False,
+    check_sourcing=False,
 )
 ```
 
-Validation recursively checks modules, component validators, footprints (unless skipped), and optional single-pin nets. Do not disable footprint checking merely to make KiCad export proceed: the exporter also requires footprints.
+Base validation recursively checks modules, component validators, footprints (unless skipped), optional single-pin nets, and always validates declared signal-integrity references. Electrical ERC, strap resolution, required-external contracts, and sourcing validation are opt-in because library coverage is incomplete. Their strict validation treats both `Fail` and unresolved `Unknown` as errors where applicable; inspect `check_electrical()`, `check_straps()`, `check_contracts()`, or `sourcing_report()` before deciding whether to add evidence or an explicit contract waiver. Do not disable footprint checking merely to make KiCad export proceed: the exporter also requires footprints.
+
+Use `electrical_coverage()` and `datasheet_coverage()` to report migration/evidence coverage. `datasheet_coverage()` returns recursive `provenanced`, `url_only`, and `undocumented` refdes tuples and ignores virtual/DNP components.
