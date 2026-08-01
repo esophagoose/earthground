@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-01
+
+### Added
+
+- Datasheet provenance coverage and typed component sourcing metadata.
+- Lifecycle validation, distributor identifiers, alternates, and unit-safe lead
+  times.
+- Typed passive ratings with strict constructor arguments.
+- Declarative signal-integrity net classes and differential-pair constraints.
+- KiCad project and design-rule export for signal-integrity constraints.
+- Expanded Earthground skill guidance for typed electrical intent, rule checks,
+  straps, required-external contracts, thermal analysis, sourcing, provenance,
+  and signal-integrity workflows.
+
+### Changed
+
+- KiCad footprints now include datasheet, lifecycle, and distributor metadata.
+- Removed the unused LTspice model field and documented LTspice export as
+  unsupported.
+
 ## [0.8.1] - 2026-08-01
 
 ### Added
@@ -78,7 +98,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - KiCad IPC startup behavior.
 
-[Unreleased]: https://github.com/esophagoose/earthground/compare/48614be...HEAD
+[Unreleased]: https://github.com/esophagoose/earthground/compare/d721788...HEAD
+[0.9.0]: https://github.com/esophagoose/earthground/compare/48614be...d721788
 [0.8.1]: https://github.com/esophagoose/earthground/compare/f157003...48614be
 [0.8.0]: https://github.com/esophagoose/earthground/compare/08419e9...f157003
 [0.7.1]: https://github.com/esophagoose/earthground/compare/1261d84...08419e9
