@@ -4,20 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "earthground"
-version = "0.8.0"
+version = "0.8.1"
 description = "A Python Library for Creating Software-Defined Electrical Designs"
 dependencies = [
     "python-kicad>=0.6,<0.7",
     "python-gerber>=0.1.0",
-    "pytest>=7.4.2",
-    "openai>=1.1.0",
-    "inquirerpy==0.3.4",
-    "black>=23.3.0",
-    "colorlog>=6.9.0",
-    "setuptools>=65.6.3",
-    "svg.py>=1.0.0",
-    "boto3>=1.42.21",
-    "drawsvg>=2.4.1",
     "kicad-python>=0.6.0",
     "pyyaml>=6.0.3",
     "pydantic>=2.11.3",
@@ -31,7 +22,10 @@ classifiers = [
 requires-python = ">3.10"
 
 [project.optional-dependencies]
-test = ["pytest>6"]
+test = [
+    "black>=23.3.0",
+    "pytest>=7.4.2",
+]
 
 [project.scripts]
 earthground = "earthground.cli:main"
