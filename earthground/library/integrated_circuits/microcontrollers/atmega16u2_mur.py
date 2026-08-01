@@ -1,4 +1,5 @@
 import earthground.components as cmp
+import earthground.standard_values as sv
 from earthground.library.protocols import serial
 
 
@@ -7,7 +8,7 @@ class ATMEGA16U2_MU(cmp.Component):
         super().__init__()
         self.detailed_description = "AVR AVR® ATmega Microcontroller IC 8-Bit 16MHz 16KB (8K x 16) FLASH 32-VQFN (5x5)"
         self.manufacturer = "Microchip Technology"
-        self.lead_time = "29 week(s)"
+        self.lead_time = sv.weeks(typ=29)
         self.mpn = "ATMEGA16U2-MU"
         self.datasheet = "https://ww1.microchip.com/downloads/en/DeviceDoc/doc7799.pdf"
         self.description = "IC MCU 8BIT 16KB FLASH 32VQFN"

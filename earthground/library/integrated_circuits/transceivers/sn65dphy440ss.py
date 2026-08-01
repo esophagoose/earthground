@@ -312,4 +312,39 @@ def generate_design(add_i2c_pullups=True):
     for name in ("PRE_CFG1", "VSADJ_CFG0"):
         testpoint = design.add_component(CircleSmdTestpoint(1.5))
         design.connect([testpoint.pins[1], device.pins.by_name(name)], name)
+
+    dphy_nets = tuple(
+        f"{side}{lane}{polarity}"
+        for side in ("DA", "DB")
+        for lane in ("0", "1", "2", "3", "C")
+        for polarity in ("P", "N")
+    )
+    design.declare_net_class(
+        sch.NetClass(
+            "DPHY",
+            dphy_nets,
+            z_single=sv.ohms(nominal=50, tolerance_pct=15, source=f"{SOURCE} §11"),
+            source=f"{SOURCE} §11",
+        )
+    )
+    for side in ("DA", "DB"):
+        for lane in ("0", "1", "2", "3", "C"):
+            positive = f"{side}{lane}P"
+            negative = f"{side}{lane}N"
+            design.declare_diff_pair(
+                sch.DiffPair(
+                    (positive, negative),
+                    "DPHY",
+                    z_diff=sv.ohms(
+                        nominal=100,
+                        tolerance_pct=15,
+                        source=f"{SOURCE} §11",
+                    ),
+                    intra_pair_skew=sv.mils(max=5, source=f"{SOURCE} §11"),
+                    max_vias=2,
+                    max_length=sv.millimeters(max=300, source=f"{SOURCE} §11"),
+                    min_track_angle_deg=135,
+                    source=f"{SOURCE} §11",
+                )
+            )
     return design

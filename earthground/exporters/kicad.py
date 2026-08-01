@@ -18,6 +18,8 @@ import pykicad.models.pcb as pcb
 import earthground.components as cmp
 import earthground.layout as layout_lib
 import earthground.schematic as sch_lib
+import earthground.signal_integrity as signal_integrity
+from earthground.exporters.kicad_project import save_constraints
 from earthground.importers.kicad import KicadFootprint
 
 log = logging.getLogger(__name__)
@@ -299,11 +301,31 @@ class KicadExporter:
         )
         footprint_builder.set_property(
             "Manufacturer",
-            getattr(component, "manufacturer", "") or "",
+            component.manufacturer or "",
             at=pcb.Position(x=0, y=0),
             layer=f"{'B' if _is_bottom_layer(layer) else 'F'}.Fab",
             hide=True,
         )
+        metadata = {
+            "Datasheet": component.datasheet,
+            "Datasheet Revision": component.datasheet_revision,
+            "Datasheet SHA256": component.datasheet_sha256,
+            "Lifecycle": component.lifecycle.value,
+        }
+        metadata.update(
+            {
+                f"Distributor:{name.lower()}": identifier
+                for name, identifier in sorted(component.distributor_ids.items())
+            }
+        )
+        for name, value in metadata.items():
+            footprint_builder.set_property(
+                name,
+                value or "",
+                at=pcb.Position(x=0, y=0),
+                layer=f"{'B' if _is_bottom_layer(layer) else 'F'}.Fab",
+                hide=True,
+            )
         if not isinstance(component.footprint, KicadFootprint):
             footprint_builder.place(
                 pcb.Position(
@@ -386,9 +408,13 @@ class KicadExporter:
 
     def save(self, output_folder="./generated_outputs/", overwrite=False):
         path = pathlib.Path(output_folder) / f"{self.schematic.name}.kicad_pcb"
+        constraint_errors = signal_integrity.validate_design(self.schematic)
+        if constraint_errors:
+            raise ValueError("; ".join(constraint_errors))
         self.convert_to_kicad(self.schematic)
         self.draw_board_outline()
         self.draw_fab_lines()
         self.draw_silkscreen_lines()
         write_to_file(self.board, path)
+        save_constraints(self.schematic, output_folder)
         print(f"{'Overwrote' if overwrite else 'Wrote'} board file: {path}")

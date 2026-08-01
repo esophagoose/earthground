@@ -1,6 +1,7 @@
 import earthground.components as cmp
 import earthground.footprints.tssop as tssop
 import earthground.schematic as sch
+import earthground.standard_values as sv
 import earthground.utils as utils
 from earthground.library.protocols.serial import I2C
 
@@ -13,7 +14,7 @@ class TCA9535PWR(cmp.Component):
         self.name = "TCA9535PWR"
         self.detailed_description = "I/O Expander 16 I²C, SMBus 400 kHz 24-TSSOP"
         self.manufacturer = "Texas Instruments"
-        self.lead_time = "6 week(s)"
+        self.lead_time = sv.weeks(typ=6)
         self.mpn = "TCA9535PWR"
         self.datasheet = "https://www.ti.com/general/docs/suppproductinfo.tsp?distId=10&gotoUrl=https%3A%2F%2Fwww.ti.com%2Flit%2Fgpn%2Ftca9535"
         self.description = "IC XPND 400KHZ I2C SMBUS 24TSSOP"

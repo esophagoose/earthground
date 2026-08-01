@@ -201,8 +201,8 @@ class RN487x(cmp.Component):
         self.manufacturer = "Microchip Technology"
         self.description = "Bluetooth Bluetooth v5.0 Transceiver Module 2.402GHz ~ 2.48GHz Integrated, Chip Surface"
         self.datasheet = "https://ww1.microchip.com/downloads/aemDocuments/documents/WSG/ProductDocuments/DataSheets/RN4870-71-Bluetooth-Low-Energy-Module-DS50002489.pdf"
-        self.lead_time = 12.0
-        self.state = "Active"
+        self.lead_time = sv.weeks(typ=12)
+        self.lifecycle = cmp.Lifecycle.ACTIVE
         self.parameters = full_part_number.value
         self.base_mpn = full_part_number.name.split("_")[0]
         self.pins = cmp.PinContainer.from_dict(PINOUT[self.base_mpn], self)

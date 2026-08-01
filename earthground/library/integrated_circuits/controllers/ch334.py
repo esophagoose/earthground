@@ -10,7 +10,7 @@ class CH334F(cmp.Component):
         self.mpn = "CH334F"
         self.description = "IC USB CONTROLLER 24QFN"
         self.datasheet = "https://www.wch-ic.com/downloads/file/327.html"
-        self.lcsc_part_number = "C5187527"
+        self.distributor_ids["lcsc"] = "C5187527"
         self.pins = cmp.PinContainer.from_dict(
             {
                 14: "DMU",  # USB Upstream port D-

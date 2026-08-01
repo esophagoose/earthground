@@ -86,8 +86,8 @@ class LSF0102(cmp.Component):
         self.manufacturer = "Texas Instruments"
         self.description = "Voltage Level Translator Bidirectional 1 Circuit 2 Channel"
         self.datasheet = "https://www.ti.com/general/docs/suppproductinfo.tsp?distId=10&gotoUrl=https%3A%2F%2Fwww.ti.com%2Flit%2Fgpn%2Flsf0102"
-        self.lead_time = 6.0
-        self.state = "Active"
+        self.lead_time = sv.weeks(typ=6)
+        self.lifecycle = cmp.Lifecycle.ACTIVE
         self.parameters = full_part_number.value
         pinout = PINOUT["LEADED"]
         if full_part_number.value.package_type == "DSBGA":

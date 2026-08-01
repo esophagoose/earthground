@@ -37,9 +37,30 @@ def test_parse_footprint():
     assert isinstance(footprint, pcb.Footprint)
     assert footprint.name == "RES_100Ω"
     assert _property(footprint, "MPN").value == ""
+    assert _property(footprint, "Lifecycle").value == "Unknown"
     assert footprint.pads[0].number == "1"
     assert footprint.pads[0].net.name == "NET_A"
     assert footprint.pads[1].net.name == "NET_B"
+
+
+def test_parse_footprint_exports_provenance_and_distributor_metadata():
+    design = Design("TEST")
+    component = cmp.Resistor(100)
+    component.footprint = pfp.PassiveSmd(pfp.PassivePackage.R0805)
+    component.datasheet = "https://example.test/resistor.pdf"
+    component.datasheet_revision = "Rev C"
+    component.datasheet_sha256 = "abc123"
+    component.lifecycle = cmp.Lifecycle.ACTIVE
+    component.distributor_ids["lcsc"] = "C123"
+    design.add_component(component)
+
+    footprint = kicad.KicadExporter(design).parse_footprint(design, component)
+
+    assert _property(footprint, "Datasheet").value == component.datasheet
+    assert _property(footprint, "Datasheet Revision").value == "Rev C"
+    assert _property(footprint, "Datasheet SHA256").value == "abc123"
+    assert _property(footprint, "Lifecycle").value == "Active"
+    assert _property(footprint, "Distributor:lcsc").value == "C123"
 
 
 def test_parse_footprint_can_skip_silkscreen_text():

@@ -139,8 +139,9 @@ class OpAmpBase(cmp.Component):
         ratio = gain - 1
         r2_value, r1_value = sv.find_closest_ratio(ratio)
 
-        r1 = design.add_component(cmp.Resistor(f"{r1_value}k", tolerance="0.1%"))
-        r2 = design.add_component(cmp.Resistor(f"{r2_value}k", tolerance="0.1%"))
+        tolerance = sv.ratio(min=-0.001, typ=0, max=0.001)
+        r1 = design.add_component(cmp.Resistor(f"{r1_value}k", tolerance=tolerance))
+        r2 = design.add_component(cmp.Resistor(f"{r2_value}k", tolerance=tolerance))
 
         # Connect input to non-inverting input
         letter = chr(ord(self.base_channel_name) + index - 1)

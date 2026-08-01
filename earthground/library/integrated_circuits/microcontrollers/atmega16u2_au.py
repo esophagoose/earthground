@@ -1,6 +1,7 @@
 import enum
 
 import earthground.components as cmp
+import earthground.standard_values as sv
 
 
 class Package(enum.Enum):
@@ -14,7 +15,7 @@ class ATMEGA16U2(cmp.Component):
         self.name = "ATMEGA16U2"
         self.detailed_description = "AVR AVR® ATmega Microcontroller IC 8-Bit 16MHz 16KB (8K x 16) FLASH 32-TQFP (7x7)"
         self.manufacturer = "Microchip Technology"
-        self.lead_time = "18 week(s)"
+        self.lead_time = sv.weeks(typ=18)
         self.mpn = "ATMEGA16U2-" + package.value
         self.datasheet = "https://ww1.microchip.com/downloads/en/DeviceDoc/7799S.pdf"
         self.description = "IC MCU 8BIT 16KB FLASH 32TQFP"

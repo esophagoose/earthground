@@ -216,6 +216,9 @@ _UNIT_ALIASES = {
     "F": "F",
     "H": "H",
     "s": "s",
+    "m": "m",
+    "week": "week",
+    "weeks": "week",
     "Hz": "Hz",
     "Ω": "Ω",
     "ohm": "Ω",
@@ -225,10 +228,18 @@ _UNIT_ALIASES = {
     "°C/W": "°C/W",
 }
 
+_SCALED_UNIT_ALIASES = {
+    "mil": ("m", Decimal("0.0000254"), "mil"),
+    "mils": ("m", Decimal("0.0000254"), "mil"),
+}
+
 
 def _normalize_unit(units: str) -> tuple[str, Decimal, str, bool]:
     """Return canonical unit, magnitude scale, display unit, and opacity."""
     units = units.replace(" ", "")
+    if units in _SCALED_UNIT_ALIASES:
+        canonical, scale, display = _SCALED_UNIT_ALIASES[units]
+        return canonical, scale, display, False
     if units in _UNIT_ALIASES:
         canonical = _UNIT_ALIASES[units]
         return canonical, Decimal(1), canonical, False
@@ -735,6 +746,48 @@ def watts(
 ):
     return _unit_bounds(
         "W", min, typ, max, nominal=nominal, tolerance_pct=tolerance_pct, source=source
+    )
+
+
+def weeks(
+    min=None, typ=None, max=None, *, nominal=None, tolerance_pct=None, source=None
+):
+    return _unit_bounds(
+        "week",
+        min,
+        typ,
+        max,
+        nominal=nominal,
+        tolerance_pct=tolerance_pct,
+        source=source,
+    )
+
+
+def millimeters(
+    min=None, typ=None, max=None, *, nominal=None, tolerance_pct=None, source=None
+):
+    return _unit_bounds(
+        "mm",
+        min,
+        typ,
+        max,
+        nominal=nominal,
+        tolerance_pct=tolerance_pct,
+        source=source,
+    )
+
+
+def mils(
+    min=None, typ=None, max=None, *, nominal=None, tolerance_pct=None, source=None
+):
+    return _unit_bounds(
+        "mil",
+        min,
+        typ,
+        max,
+        nominal=nominal,
+        tolerance_pct=tolerance_pct,
+        source=source,
     )
 
 

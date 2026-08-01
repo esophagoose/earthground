@@ -1,6 +1,7 @@
 import earthground.components as cmp
 import earthground.library.protocols.serial as serial
 import earthground.schematic as sch
+import earthground.standard_values as sv
 from earthground.footprints import qfn
 
 
@@ -13,7 +14,7 @@ class CY8CMBR3116(cmp.Component):
         self.description = "IC CAP SENSE 24QFN"
         self.mpn = "CY8CMBR3116-LQXI"
         self.manufacturer = "Infineon Technologies"
-        self.lead_time = "10 week(s)"
+        self.lead_time = sv.weeks(typ=10)
         self.datasheet = "https://www.infineon.com/dgdl/Infineon-CY8CMBR3002_CY8CMBR3102_CY8CMBR3106S_CY8CMBR3108_CY8CMBR3110_CY8CMBR3116-DataSheet-v18_00-EN.pdf?fileId=8ac78c8c7d0d8da4017d0ebe3508318e"
         self.parameters = {
             "Operating Temperature": "-40°C ~ 85°C",

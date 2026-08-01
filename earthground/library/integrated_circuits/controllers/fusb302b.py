@@ -8,7 +8,7 @@ class FUSB302BVMPX(cmp.Component):
         self.mpn = "FUSB302BVMPX"
         self.description = "IC USB CONTROLLER I2C 14WQFN"
         self.datasheet = "https://www.onsemi.com/pdf/datasheet/fusb302b-d.pdf"
-        self.lcsc_part_number = "C132291"
+        self.distributor_ids["lcsc"] = "C132291"
         self.parameters = {
             "Package / Case": "14-WFQFN Exposed Pad",
             "Interface": "I2C",

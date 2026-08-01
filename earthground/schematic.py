@@ -11,6 +11,10 @@ import earthground.standard_values as sv
 import earthground.straps as straps
 import earthground.thermal as thermal
 import earthground.contracts as contracts
+import earthground.sourcing as sourcing
+import earthground.signal_integrity as signal_integrity
+from earthground.analysis import DesignAnalysis
+from earthground.signal_integrity import DiffPair, NetClass
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +105,22 @@ class Design:
             tuple[cmp.Component, str], straps.StrapExpectation
         ] = {}
         self._contract_waivers: Dict[tuple[cmp.Component, str], str] = {}
+        self._net_classes: Dict[str, NetClass] = {}
+        self._diff_pairs: list[DiffPair] = []
+
+    def declare_net_class(self, net_class: NetClass) -> None:
+        if not isinstance(net_class, NetClass):
+            raise TypeError("declare_net_class() requires a NetClass")
+        if net_class.name in self._net_classes:
+            raise ValueError(f"Net class {net_class.name!r} is already declared")
+        self._net_classes[net_class.name] = net_class
+
+    def declare_diff_pair(self, pair: DiffPair) -> None:
+        if not isinstance(pair, DiffPair):
+            raise TypeError("declare_diff_pair() requires a DiffPair")
+        if any(set(existing.nets) == set(pair.nets) for existing in self._diff_pairs):
+            raise ValueError(f"Differential pair {pair.nets!r} is already declared")
+        self._diff_pairs.append(pair)
 
     def declare_rail(self, name: str, voltage: sv.ValueBounds) -> None:
         sv.require_bounds(voltage, "V", "Rail voltage")
@@ -766,6 +786,26 @@ class Design:
     def electrical_coverage(self):
         return erc.electrical_coverage(self)
 
+    def datasheet_coverage(self):
+        coverage = {"provenanced": [], "url_only": [], "undocumented": []}
+        for resolved in DesignAnalysis(self).components:
+            component = resolved.component
+            if component.virtual or component.dnp:
+                continue
+            if component.datasheet and (
+                component.datasheet_revision or component.datasheet_sha256
+            ):
+                category = "provenanced"
+            elif component.datasheet:
+                category = "url_only"
+            else:
+                category = "undocumented"
+            coverage[category].append(resolved.refdes)
+        return {key: tuple(values) for key, values in coverage.items()}
+
+    def sourcing_report(self) -> sourcing.SourcingReport:
+        return sourcing.check_design(self)
+
     def validate(
         self,
         skip_footprint_check=False,
@@ -773,8 +813,10 @@ class Design:
         check_electrical=False,
         check_straps=False,
         check_contracts=False,
+        check_sourcing=False,
     ):
         errors = []
+        errors.extend(signal_integrity.validate_design(self))
         components = list(self.iter_components())
         if not skip_footprint_check:
             for component in components:
@@ -804,6 +846,8 @@ class Design:
             errors.extend(
                 str(check) for check in report.checks if not check.is_accepted
             )
+        if check_sourcing:
+            errors.extend(str(check) for check in self.sourcing_report().failures)
         if errors:
             header = f" {self.name.upper()} VALIDATION FAILED "
             log.error("")

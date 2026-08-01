@@ -2,6 +2,7 @@ import enum
 
 import earthground.components as cmp
 import earthground.schematic as sch
+import earthground.standard_values as sv
 
 
 class ChopperMode(enum.Enum):
@@ -25,7 +26,7 @@ class TMC2100_LA_T(cmp.Component):
             "Bipolar Motor Driver Power MOSFET Logic 36-QFN (5x6)"
         )
         self.manufacturer = "Analog Devices Inc."
-        self.lead_time = "18 week(s)"
+        self.lead_time = sv.weeks(typ=18)
         self.mpn = "TMC2100-LA-T"
         self.datasheet = ""
         self.description = "IC MTR DRV BIPOLAR 5.5-46V 36QFN"

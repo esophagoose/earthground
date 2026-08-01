@@ -31,6 +31,7 @@ from earthground.pins import (
     pin_sort_key,
 )
 from earthground.ratings import Ratings
+from earthground.sourcing import Lifecycle
 import earthground.standard_values as sv
 
 if TYPE_CHECKING:
@@ -109,6 +110,15 @@ class Component:
         self.refdes_postfix = ""
         self.name = ""
         self.mpn = ""
+        self.manufacturer = ""
+        self.description = ""
+        self.datasheet = ""
+        self.datasheet_revision = ""
+        self.datasheet_sha256 = ""
+        self._lead_time: Optional[sv.ValueBounds] = None
+        self._lifecycle = Lifecycle.UNKNOWN
+        self.alternates: list[str] = []
+        self.distributor_ids: dict[str, str] = {}
         self.type = self.__class__.__name__
         self.parameters = {}
         self.pins = PinContainer()
@@ -117,7 +127,6 @@ class Component:
         self.footprint: ft.BaseFootprint = None
         self.virtual = False
         self.dnp = False  # DNP = Do Not Populate
-        self.ltspice_model = None
         self.strap_pins = tuple(type(self).strap_pins)
         self.requires = tuple(type(self).requires)
         self.thermal = type(self).thermal
@@ -127,6 +136,31 @@ class Component:
             Component.REFDES_MAP[self.refdes_prefix] = 0
         Component.REFDES_MAP[self.refdes_prefix] += 1
         self.refdes_index = Component.REFDES_MAP[self.refdes_prefix]
+
+    @property
+    def lead_time(self) -> Optional[sv.ValueBounds]:
+        return self._lead_time
+
+    @lead_time.setter
+    def lead_time(self, value) -> None:
+        if value is None:
+            self._lead_time = None
+            return
+        if isinstance(value, sv.ValueBounds):
+            sv.require_bounds(value, "week", "lead_time")
+            self._lead_time = value
+            return
+        raise TypeError("lead_time must be ValueBounds in weeks")
+
+    @property
+    def lifecycle(self) -> Lifecycle:
+        return self._lifecycle
+
+    @lifecycle.setter
+    def lifecycle(self, value: Lifecycle) -> None:
+        if not isinstance(value, Lifecycle):
+            raise TypeError("lifecycle must be a Lifecycle value")
+        self._lifecycle = value
 
     def __str__(self):
         return f"{self.name}<{self.refdes}>"
@@ -211,7 +245,14 @@ class ModuleComponent(Component):
 
 
 class Resistor(Component):
-    def __init__(self, value, **kwargs):
+    def __init__(
+        self,
+        value,
+        *,
+        tolerance: Optional[sv.ValueBounds] = None,
+        power_rating: Optional[sv.ValueBounds] = None,
+        package_size: Optional[str] = None,
+    ):
         """
         Resistor with a specified value and optional parameters.
 
@@ -228,14 +269,32 @@ class Resistor(Component):
         self.description = self.name
         self.pins = PinContainer.from_count(2, self, spec_class=PassivePinSpec)
         self.refdes_prefix = "R"
-        self.parameters = {}
-        self.package_size = None
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+        sv.require_bounds(tolerance, "", "tolerance", allow_none=True)
+        sv.require_bounds(power_rating, "W", "power_rating", allow_none=True)
+        self.tolerance = tolerance
+        self.power_rating = power_rating
+        self.package_size = package_size
+        self.parameters = {
+            key: parameter
+            for key, parameter in {
+                "tolerance": tolerance,
+                "power_rating": power_rating,
+                "package_size": package_size,
+            }.items()
+            if parameter is not None
+        }
 
 
 class Capacitor(Component):
-    def __init__(self, value, voltage, **kwargs):
+    def __init__(
+        self,
+        value,
+        voltage,
+        *,
+        tolerance: Optional[sv.ValueBounds] = None,
+        dielectric: Optional[str] = None,
+        package_size: Optional[str] = None,
+    ):
         """
         Capacitor with a specified value, voltage, and optional parameters.
 
@@ -253,13 +312,24 @@ class Capacitor(Component):
         self.description = self.name
         self.pins = PinContainer.from_count(2, self, spec_class=PassivePinSpec)
         self.refdes_prefix = "C"
-        self.package_size = None
-        for key, val in kwargs.items():
-            setattr(self, key, val)
+        sv.require_bounds(tolerance, "", "tolerance", allow_none=True)
+        if dielectric is not None and not isinstance(dielectric, str):
+            raise TypeError("dielectric must be a string")
+        self.tolerance = tolerance
+        self.dielectric = dielectric
+        self.package_size = package_size
 
 
 class Inductor(Component):
-    def __init__(self, value, **kwargs):
+    def __init__(
+        self,
+        value,
+        *,
+        current: Optional[sv.ValueBounds] = None,
+        dcr: Optional[sv.ValueBounds] = None,
+        tolerance: Optional[sv.ValueBounds] = None,
+        package_size: Optional[str] = None,
+    ):
         """
         Inductor with a specified value and optional parameters.
 
@@ -276,9 +346,13 @@ class Inductor(Component):
         self.name = f"IND_{self.value}"
         self.description = self.name
         self.pins = PinContainer.from_count(2, self, spec_class=PassivePinSpec)
-        self.package_size = None
-        for key, val in kwargs.items():
-            setattr(self, key, val)
+        sv.require_bounds(current, "A", "current", allow_none=True)
+        sv.require_bounds(dcr, "Ω", "dcr", allow_none=True)
+        sv.require_bounds(tolerance, "", "tolerance", allow_none=True)
+        self.current = current
+        self.dcr = dcr
+        self.tolerance = tolerance
+        self.package_size = package_size
 
 
 PASSIVE_TYPES = (Resistor, Capacitor, Inductor)
