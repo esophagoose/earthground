@@ -91,6 +91,10 @@ class Component:
     REFDES_MAP = {}
     abs_max = Ratings()
     recommended = Ratings()
+    strap_pins = ()
+    requires = ()
+    thermal = None
+    power = None
 
     def __init__(self, refdes_prefix="U"):
         """
@@ -114,6 +118,10 @@ class Component:
         self.virtual = False
         self.dnp = False  # DNP = Do Not Populate
         self.ltspice_model = None
+        self.strap_pins = tuple(type(self).strap_pins)
+        self.requires = tuple(type(self).requires)
+        self.thermal = type(self).thermal
+        self.power = type(self).power
         self._placed = False
         if self.refdes_prefix not in Component.REFDES_MAP:
             Component.REFDES_MAP[self.refdes_prefix] = 0
