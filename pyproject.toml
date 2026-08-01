@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "earthground"
-version = "0.6.2"
+version = "0.7.0"
 description = "A Python Library for Creating Software-Defined Electrical Designs"
 dependencies = [
     "python-kicad>=0.6,<0.7",
