@@ -64,7 +64,7 @@ def test_skills_add_confirmation_copies_every_packaged_skill(
 
     output = capsys.readouterr()
     assert output.err == ""
-    assert "Added 4 Earthground skills" in output.out
+    assert "Added 5 Earthground skills" in output.out
     assert _directory_files(destination) == _directory_files(SOURCE_SKILLS)
 
 
