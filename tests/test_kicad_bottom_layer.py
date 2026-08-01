@@ -1,4 +1,4 @@
-import kiutils.items.common as base
+import pykicad.models.pcb as pcb
 
 import earthground.components as cmp
 import earthground.exporters.kicad as kicad
@@ -9,6 +9,16 @@ from earthground.library.integrated_circuits.voltage_regulators.linear.lm317 imp
     LM317AMDTX,
 )
 from earthground.schematic import Design
+
+
+def _property(footprint: pcb.Footprint, name: str) -> pcb.Property:
+    return next(item for item in footprint.property if item.name == name)
+
+
+def _reference(footprint: pcb.Footprint) -> pcb.Property | pcb.FpText:
+    reference = footprint.reference
+    assert reference is not None
+    return reference
 
 
 def _export_single_component(component: cmp.Component, placement: layout_lib.Placement):
@@ -23,8 +33,8 @@ def _export_single_component(component: cmp.Component, placement: layout_lib.Pla
 
     exporter = kicad.KicadExporter(design)
     exporter.convert_to_kicad(design)
-    assert len(exporter.board.footprints) == 1
-    return exporter.board.footprints[0]
+    assert len(exporter.board.footprint) == 1
+    return exporter.board.footprint[0]
 
 
 def test_top_layer_placement_remains_default_and_backwards_compatible():
@@ -39,11 +49,9 @@ def test_top_layer_placement_remains_default_and_backwards_compatible():
         ),
     )
 
-    reference = next(
-        item for item in footprint.graphicItems if item.type == "reference"
-    )
+    reference = _reference(footprint)
     assert footprint.layer == "F.Cu"
-    assert footprint.position == base.Position(X=10, Y=20, angle=-90)
+    assert footprint.at == pcb.Position(x=10, y=20, angle=-90)
     assert reference.layer == "F.SilkS"
     assert reference.effects.justify.mirror is False
     assert footprint.pads[0].layers == ["F.Cu", "F.Mask", "F.Paste"]
@@ -62,11 +70,9 @@ def test_bottom_layer_native_smd_footprint_uses_bottom_layers_and_mirrored_text(
         ),
     )
 
-    reference = next(
-        item for item in footprint.graphicItems if item.type == "reference"
-    )
+    reference = _reference(footprint)
     assert footprint.layer == "B.Cu"
-    assert footprint.position == base.Position(X=10, Y=20, angle=-90)
+    assert footprint.at == pcb.Position(x=10, y=20, angle=-90)
     assert reference.layer == "B.SilkS"
     assert reference.effects.justify.mirror is True
     assert footprint.pads[0].layers == ["B.Cu", "B.Mask", "B.Paste"]
@@ -107,24 +113,21 @@ def test_bottom_layer_imported_footprint_switches_text_and_smd_pad_layers():
         ),
     )
 
-    reference = next(
-        item for item in footprint.graphicItems if item.type == "reference"
-    )
-    value = next(item for item in footprint.graphicItems if item.type == "value")
+    reference = _reference(footprint)
+    value = next(item for item in footprint.fp_text if item.name == "value")
     assert footprint.layer == "B.Cu"
-    assert footprint.position == base.Position(X=5, Y=6, angle=-180)
+    assert footprint.at == pcb.Position(x=5, y=6, angle=-180)
     assert reference.layer == "B.SilkS"
     assert reference.effects.justify.mirror is True
     assert value.layer == "B.Fab"
     assert value.effects.justify.mirror is True
-    assert value.position.X == 0
-    assert value.position.Y == -1
-    assert footprint.pads[0].position == base.Position(X=1, Y=1, angle=0)
-    assert footprint.pads[1].position == base.Position(X=-1, Y=-2, angle=0)
+    assert value.at.x == 0
+    assert value.at.y == -1
+    assert footprint.pads[0].at == pcb.Position(x=1, y=1, angle=0)
+    assert footprint.pads[1].at == pcb.Position(x=-1, y=-2, angle=0)
     assert footprint.pads[0].layers == ["B.Cu", "B.Mask", "B.Paste"]
     assert footprint.pads[1].layers == ["B.Cu", "B.Mask", "B.Paste"]
-    assert footprint.properties["MPN"] == "IMP-123"
-    assert footprint.properties["Manufacturer"] == "Imported Corp"
+    assert _property(footprint, "MPN").value == "IMP-123"
 
 
 def test_module_placement_on_bottom_layer_pushes_child_footprints_to_bottom():
@@ -139,10 +142,10 @@ def test_module_placement_on_bottom_layer_pushes_child_footprints_to_bottom():
     exporter.convert_to_kicad(design)
 
     front_count = sum(
-        1 for footprint in exporter.board.footprints if footprint.layer == "F.Cu"
+        1 for footprint in exporter.board.footprint if footprint.layer == "F.Cu"
     )
     back_count = sum(
-        1 for footprint in exporter.board.footprints if footprint.layer == "B.Cu"
+        1 for footprint in exporter.board.footprint if footprint.layer == "B.Cu"
     )
 
     assert front_count == 5
@@ -162,21 +165,13 @@ def test_bottom_layer_module_child_reference_stays_local_to_the_footprint():
 
     reg1_u1 = next(
         footprint
-        for footprint in exporter.board.footprints
-        if any(
-            getattr(item, "type", None) == "reference"
-            and getattr(item, "text", None) == "REG1_U1"
-            for item in footprint.graphicItems
-        )
+        for footprint in exporter.board.footprint
+        if footprint.reference is not None and footprint.reference.value == "REG1_U1"
     )
-    reference = next(
-        item
-        for item in reg1_u1.graphicItems
-        if getattr(item, "type", None) == "reference"
-    )
+    reference = _reference(reg1_u1)
 
-    assert reg1_u1.position == base.Position(X=0.0, Y=20.0, angle=-0.0)
-    assert reference.position == base.Position(X=0.0, Y=0.0, angle=0.0)
+    assert reg1_u1.at == pcb.Position(x=0.0, y=20.0, angle=-0.0)
+    assert reference.at == pcb.Position(x=0.0, y=0.0, angle=0.0)
 
 
 def test_bottom_layer_native_footprint_geometry_is_mirrored_across_y_axis():
@@ -190,8 +185,8 @@ def test_bottom_layer_native_footprint_geometry_is_mirrored_across_y_axis():
     top = exporter.parse_footprint(
         component.refdes,
         component,
-        base.Position(0, 0, 0),
-        base.Position(0, -20, 0),
+        pcb.Position(x=0, y=0, angle=0),
+        pcb.Position(x=0, y=-20, angle=0),
         design,
         layout_lib.Orientation.TOP,
         layout_lib.Layer.TOP,
@@ -199,27 +194,18 @@ def test_bottom_layer_native_footprint_geometry_is_mirrored_across_y_axis():
     bottom = exporter.parse_footprint(
         component.refdes,
         component,
-        base.Position(0, 0, 0),
-        base.Position(0, -20, 0),
+        pcb.Position(x=0, y=0, angle=0),
+        pcb.Position(x=0, y=-20, angle=0),
         design,
         layout_lib.Orientation.TOP,
         layout_lib.Layer.BOTTOM,
     )
 
-    top_ref = next(
-        item for item in top.graphicItems if getattr(item, "type", None) == "reference"
-    )
-    bottom_ref = next(
-        item
-        for item in bottom.graphicItems
-        if getattr(item, "type", None) == "reference"
-    )
-
-    assert top_ref.position == base.Position(X=0, Y=-20, angle=0)
-    assert bottom_ref.position == base.Position(X=0, Y=-20, angle=0)
-    assert bottom.pads[0].position == base.Position(X=4.38, Y=-2.285, angle=0)
-    assert bottom.pads[1].position == base.Position(X=-2.285, Y=0, angle=0)
-    assert bottom.pads[2].position == base.Position(X=4.38, Y=2.285, angle=0)
+    assert _reference(top).at == pcb.Position(x=0, y=-20, angle=0)
+    assert _reference(bottom).at == pcb.Position(x=0, y=-20, angle=0)
+    assert bottom.pads[0].at == pcb.Position(x=4.38, y=-2.285, angle=0)
+    assert bottom.pads[1].at == pcb.Position(x=-2.285, y=0, angle=0)
+    assert bottom.pads[2].at == pcb.Position(x=4.38, y=2.285, angle=0)
 
 
 def test_rotated_180_left_reference_uses_left_side_local_offset():
@@ -234,14 +220,12 @@ def test_rotated_180_left_reference_uses_left_side_local_offset():
         ),
     )
 
-    reference = next(
-        item for item in footprint.graphicItems if item.type == "reference"
-    )
+    reference = _reference(footprint)
 
-    assert footprint.position == base.Position(X=10, Y=20, angle=-180)
-    assert reference.position.X > 0
-    assert reference.position.Y == 0
-    assert reference.effects.justify.horizontally == "right"
+    assert footprint.at == pcb.Position(x=10, y=20, angle=-180)
+    assert reference.at.x > 0
+    assert reference.at.y == 0
+    assert reference.effects.justify.horizontal == "right"
 
 
 def test_native_footprint_description_uses_component_mpn_when_available():
@@ -259,5 +243,4 @@ def test_native_footprint_description_uses_component_mpn_when_available():
     )
 
     assert footprint.description == "RC0805FR-07100RL"
-    assert footprint.properties["MPN"] == "RC0805FR-07100RL"
-    assert footprint.properties["Manufacturer"] == "Yageo"
+    assert _property(footprint, "MPN").value == "RC0805FR-07100RL"

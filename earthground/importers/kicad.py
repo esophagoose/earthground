@@ -1,9 +1,7 @@
 import pathlib
 from typing import List, Optional, Union, overload
 
-import kiutils.footprint as kfp
-import kiutils.utils.sexpr as sexpr_utils
-import pygerber.aperture as ap_lib
+from pykicad import Footprint, read_from_string
 
 import earthground.footprint_types as ft
 from earthground.footprint_types import BoundingBox, KicadFootprintRef
@@ -58,8 +56,10 @@ class KicadFootprint(ft.BaseFootprint):
     """
     Wrapper for a KiCad .kicad_mod footprint.
 
-    Stores the original S-expression for verbatim KiCad export and exposes
-    electrical pad geometry through earthground's internal pad model.
+    Stores the original S-expression and lazily computes an approximate bounding
+    box for placement using the KiCad pad geometry. Pads are not expanded into
+    earthground's internal pad model because the original KiCad footprint is
+    parsed directly by the KiCad exporter.
     """
 
     def __init__(self, library: str, footprint_name: str, sexp: str):
@@ -79,11 +79,33 @@ class KicadFootprint(ft.BaseFootprint):
             )
 
     def get_bbox(self) -> BoundingBox:
-        """Return the electrical pad bounds, or a small padless fallback."""
-        if not self.pads:
+        """
+        Approximate bounding box using the KiCad footprint pads.
+
+        This avoids the default BaseFootprint implementation, which assumes
+        an internal pad list and would return an invalid (inf) bounding box
+        for imported KiCad footprints with no pads populated in earthground.
+        """
+        if self._bbox is not None:
+            return self._bbox
+
+        try:
+            kicad_fp = read_from_string(self.sexp)
+            if not isinstance(kicad_fp, Footprint):
+                raise TypeError("KiCad footprint text did not produce a Footprint")
+        except Exception:
+            # Fallback: treat as a small 1×1 mm symbol at the origin.
+            self._bbox = BoundingBox(-0.5, -0.5, 0.5, 0.5)
+            return self._bbox
+
+        bounds = kicad_fp.pad_bounds()
+        if bounds is None:
             # No pads: use a conservative 1×1 mm box at origin.
-            return BoundingBox(-0.5, -0.5, 0.5, 0.5)
-        return super().get_bbox()
+            self._bbox = BoundingBox(-0.5, -0.5, 0.5, 0.5)
+            return self._bbox
+
+        self._bbox = BoundingBox(*bounds)
+        return self._bbox
 
 
 class KicadImporter:

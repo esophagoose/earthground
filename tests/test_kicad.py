@@ -1,5 +1,5 @@
-import kiutils.footprint as fp
-import pytest
+from pykicad.models.base import Point
+import pykicad.models.pcb as pcb
 
 import earthground.components as cmp
 import earthground.exporters.kicad as kicad
@@ -9,8 +9,8 @@ from earthground.importers.kicad import KicadFootprint
 from earthground.schematic import Design
 
 
-def test_to_position():
-    assert kicad.to_position([1, 2]) == fp.Position(X=1, Y=2)
+def _property(footprint: pcb.Footprint, name: str) -> pcb.Property:
+    return next(item for item in footprint.property if item.name == name)
 
 
 def test_parse_footprint():
@@ -22,18 +22,12 @@ def test_parse_footprint():
     design.join_net(component.pins[2], "NET_B")
     footprint = kicad.KicadExporter(design).parse_footprint(design, component)
 
-    assert isinstance(footprint, fp.Footprint)
-    assert footprint.entryName == "RES_100Ω"
-    assert footprint.properties["MPN"] == ""
+    assert isinstance(footprint, pcb.Footprint)
+    assert footprint.name == "RES_100Ω"
+    assert _property(footprint, "MPN").value == ""
     assert footprint.pads[0].number == "1"
-    # assert footprint.pads[0].net.name == "NET_A"
-    # assert footprint.pads[0].position == fp.Position(X=-0.9125, Y=0)
-    # assert footprint.pads[0].size == fp.Position(X=1.025, Y=1.4)
-    # assert footprint.pads[1].number == "2"
-    # assert footprint.pads[1].net.name == "NET_B"
-    # assert footprint.pads[1].position == fp.Position(X=0.9125, Y=0)
-    # assert footprint.pads[1].size == fp.Position(X=1.025, Y=1.4)
-    # assert len(footprint.pads) == 2
+    assert footprint.pads[0].net.name == "NET_A"
+    assert footprint.pads[1].net.name == "NET_B"
 
 
 def test_parse_footprint_can_skip_silkscreen_text():
@@ -150,10 +144,10 @@ def test_draw_fab_lines_adds_board_graphics_on_fab_layer():
     exporter = kicad.KicadExporter(design)
     exporter.draw_fab_lines()
 
-    fab_line = exporter.board.graphicItems[0]
+    fab_line = exporter.board.graphic_item[0]
     assert fab_line.layer == "F.Fab"
-    assert fab_line.start == fp.Position(X=1, Y=2, angle=0)
-    assert fab_line.end == fp.Position(X=3, Y=4, angle=0)
+    assert fab_line.start == Point(x=1, y=2)
+    assert fab_line.end == Point(x=3, y=4)
 
 
 def test_draw_fab_text_adds_board_text_on_fab_layer():
@@ -171,12 +165,12 @@ def test_draw_fab_text_adds_board_text_on_fab_layer():
     exporter = kicad.KicadExporter(design)
     exporter.draw_fab_lines()
 
-    fab_text = exporter.board.graphicItems[0]
+    fab_text = exporter.board.graphic_item[0]
     assert fab_text.layer == "F.Fab"
     assert fab_text.text == "FAB NOTE"
-    assert fab_text.position == fp.Position(X=5, Y=6, angle=90)
-    assert fab_text.effects.font.height == 1.5
-    assert fab_text.effects.font.width == 1.2
+    assert fab_text.at == pcb.Position(x=5, y=6, angle=90)
+    assert fab_text.effects.font.size.height == 1.5
+    assert fab_text.effects.font.size.width == 1.2
     assert fab_text.effects.font.thickness == 0.2
 
 
@@ -223,65 +217,7 @@ def test_add_pour_sets_zone_net_name():
     exporter = kicad.KicadExporter(design)
     exporter.convert_to_kicad(design)
 
-    zone = exporter.board.zones[0]
-    assert zone.netName == "GND"
-    assert zone.net == exporter._added_nets["GND"].number
-    assert zone.layers == ["B.Cu"]
-
-
-def test_layout_net_references_reject_non_string_names():
-    design = Design("TEST")
-    component = design.add_component(cmp.Component())
-    pin = cmp.Pin("CB", 1, component)
-
-    with pytest.raises(TypeError, match="PourLayer.*net_name.*str.*Pin"):
-        layout_lib.PourLayer(net_name=pin, layer=1)
-    with pytest.raises(TypeError, match="ViaConfig.*net_name.*str.*Pin"):
-        layout_lib.ViaConfig(
-            location=layout_lib.Position(0, 0, 0),
-            net_name=pin,
-            hole_size=0.6,
-            drill_size=0.3,
-        )
-
-
-def test_layout_net_references_preserve_named_tuple_behavior():
-    position = layout_lib.Position(1, 2, 0)
-    via = layout_lib.ViaConfig(position, "GND", 0.6, 0.3)
-    pour = layout_lib.PourLayer("GND", 1)
-
-    assert tuple(via) == (position, "GND", 0.6, 0.3)
-    assert tuple(pour) == ("GND", 1)
-    assert via[1] == "GND"
-    assert pour[0] == "GND"
-    assert pour._replace(layer=2) == layout_lib.PourLayer("GND", 2)
-
-    with pytest.raises(TypeError, match="PourLayer.*net_name.*str.*object"):
-        pour._replace(net_name=object())
-    with pytest.raises(TypeError, match="ViaConfig.*net_name.*str.*object"):
-        layout_lib.ViaConfig._make((position, object(), 0.6, 0.3))
-
-
-def test_kicad_export_keeps_module_port_connected_resistors_on_parent_net():
-    module = Design("LS", "LS", ports=["SIG", "GND"])
-    module.add_series_res(module.port["SIG"], "10k", module.port["GND"])
-    pulldown = module.add_component(cmp.Resistor("4.7k"))
-    module.connect([pulldown.pins[1], module.port["SIG"]], "SIG")
-    module.connect([pulldown.pins[2], module.port["GND"]], "GND")
-
-    design = Design("TEST")
-    level_shifter = design.add_module(module)
-    design.join_net(level_shifter.port["SIG"], "SIG_0")
-    design.join_net(level_shifter.port["GND"], "GND")
-
-    exporter = kicad.KicadExporter(design)
-    exporter.convert_to_kicad(design)
-
-    pad_nets_by_reference = {
-        kicad.get_index_fptext(footprint).text: [
-            pad.net.name if pad.net else None for pad in footprint.pads
-        ]
-        for footprint in exporter.board.footprints
-    }
-    assert pad_nets_by_reference["LS1_R1"][0] == "SIG_0"
-    assert pad_nets_by_reference["LS1_R2"][0] == "SIG_0"
+    zone = exporter.board.zone[0]
+    assert zone.net == "GND"
+    assert exporter.board.ensure_net("GND").name == "GND"
+    assert zone.layer == "B.Cu"

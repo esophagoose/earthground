@@ -11,7 +11,7 @@ import pathlib
 import sys
 from typing import Dict
 
-from pykicad.parser.kicad_sexp import read_in_pcb_from_kicad_pcb
+from pykicad import Pcb, read_from_file
 
 import earthground.layout as layout
 
@@ -45,19 +45,18 @@ def extract_layouts(board_path: pathlib.Path) -> Dict[str, layout.Placement]:
     :rtype: Dict[str, layout.Placement]
     """
     logger.info(f"Loading board file: {board_path}")
-    board = read_in_pcb_from_kicad_pcb(board_path)
-    logger.info(f"Found {len(board.footprints)} footprints in board file")
+    board = read_from_file(board_path)
+    if not isinstance(board, Pcb):
+        raise TypeError(f"Expected a KiCad PCB document: {board_path}")
+    logger.info(f"Found {len(board.footprint)} footprints in board file")
     cid_mapper = {}
 
     placements = {}
-    for i, footprint in enumerate(board.footprints):
-        refdes_props = [p for p in footprint.properties if p.name == "Reference"]
-        if not refdes_props:
+    for i, footprint in enumerate(board.footprint):
+        refdes = footprint.reference
+        if refdes is None:
             logger.warning(f"Footprint {i} has no reference designator")
-            for prop in footprint.properties:
-                logger.debug(f"  - property: {prop.name} = {prop.value}")
             continue
-        refdes = refdes_props[0]
         prefix = refdes.value[0] if refdes.value else "?"
         cid_mapper[prefix] = cid_mapper.get(prefix, 0) + 1
         refdes_str = prefix + str(cid_mapper[prefix])

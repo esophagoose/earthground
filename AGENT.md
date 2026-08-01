@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Earthground is a Python library for creating software-defined electrical designs (schematics, PCB layouts). It exports to KiCad and uses `kiutils`, `pykicad`, and other dependencies defined in `pyproject.toml`.
+Earthground is a Python library for creating software-defined electrical designs (schematics, PCB layouts). It exports to KiCad through `python-kicad` and uses the dependencies defined in `pyproject.toml`.
 
 ## Environment
 
@@ -11,7 +11,7 @@ Earthground is a Python library for creating software-defined electrical designs
 - Run tests: `uv run pytest`
 - Run a module: `uv run -m <module.path>`
 - Install dependencies: `uv sync`
-- Note: `pykicad` is a local dependency at `../pykicad` (see `[tool.uv.sources]` in `pyproject.toml`).
+- Note: the `python-kicad` distribution (imported as `pykicad`) is an editable local dependency at `../pykicad` (see `[tool.uv.sources]` in `pyproject.toml`).
 
 ## Code Style
 

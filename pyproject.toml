@@ -7,7 +7,7 @@ name = "earthground"
 version = "0.6.2"
 description = "A Python Library for Creating Software-Defined Electrical Designs"
 dependencies = [
-    "kiutils==1.4.8",
+    "python-kicad>=0.6,<1",
     "python-gerber>=0.1.0",
     "pytest>=7.4.2",
     "openai>=1.1.0",
@@ -17,7 +17,6 @@ dependencies = [
     "setuptools>=65.6.3",
     "svg.py>=1.0.0",
     "boto3>=1.42.21",
-    "pykicad",
     "drawsvg>=2.4.1",
     "kicad-python>=0.6.0",
     "pyyaml>=6.0.3",
@@ -41,11 +40,8 @@ place_with_kicad = "earthground.tools.place_with_kicad:main"
 [project.urls]
 Source = "https://github.com/esophagoose/earthground"
 
-[tool.hatch.build]
-exclude = [
-    "/earthground/footprints/kicad/_generated.py",
-    "/earthground/footprints/kicad/_generated_exports.pyi",
-]
+[tool.flit.module]
+name = "earthground"
 
-[tool.hatch.build.targets.wheel]
-packages = ["earthground"]
+[tool.uv.sources]
+python-kicad = { path = "../pykicad", editable = true }
