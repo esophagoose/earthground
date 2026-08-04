@@ -15,10 +15,10 @@ Simple Example - Resistor Divider
 
 .. code-block:: python
 
-    import common.components as cmp
-    import common.schematic as sch_lib
-    import common.standard_values as sv
-    import library.headers.connectors as conn_lib
+    import earthground.components as cmp
+    import earthground.library.connectors.connectors as conn_lib
+    import earthground.schematic as sch_lib
+    import earthground.standard_values as sv
 
     # Setup the schematic page
     schematic = sch_lib.Design("Resistor Divider Example")
@@ -72,4 +72,3 @@ Project Walkthrough - 32 Port I/O Expander
 
 .. include:: ../examples/README.md
    :parser: myst_parser.sphinx_
-

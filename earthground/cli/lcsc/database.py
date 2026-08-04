@@ -57,7 +57,19 @@ def get_database_path(
         expanded = project.root / expanded
     database_path = expanded.resolve()
     if not database_path.is_file():
-        raise LcscDatabaseError(f"LCSC database not found: {database_path}")
+        message = (
+            f"LCSC database not found: {database_path}. Relative 'lcsc.db' paths "
+            f"are resolved from the Earthground project root {project.root}."
+        )
+        configured = pathlib.Path(configured_path)
+        if (
+            not configured.is_absolute()
+            and configured.parts
+            and configured.parts[0] == project.root.name
+        ):
+            corrected = pathlib.Path(*configured.parts[1:])
+            message += f" Remove the duplicated project directory; use: {corrected}"
+        raise LcscDatabaseError(message)
     return database_path
 
 

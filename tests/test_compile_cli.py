@@ -271,7 +271,26 @@ def test_compile_requires_project_design_class(tmp_path):
     config.parent.mkdir(parents=True)
     config.write_text("kicad: {}\n", encoding="utf-8")
 
-    with pytest.raises(CompileProjectError, match="'project' mapping"):
+    with pytest.raises(
+        CompileProjectError,
+        match=r"(?s)not configured.*project:\n  design_class: python\.module:DesignClass",
+    ):
+        load_design_class(project)
+
+
+def test_compile_reports_generated_null_design_class(tmp_path):
+    project = tmp_path / "missing_design"
+    config = project / ".earthground" / "config.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        "project:\n  design_class: null\nkicad: {}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        CompileProjectError,
+        match=r"(?s)project\.design_class.*project:\n  design_class: python\.module:DesignClass",
+    ):
         load_design_class(project)
 
 

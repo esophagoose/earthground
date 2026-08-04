@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 import earthground.kicad.catalog as catalog
 from earthground.cli import main as earthground_main
@@ -93,7 +94,9 @@ def test_initialize_project_writes_detected_standard_paths(tmp_path, monkeypatch
     assert config.executable == executable
     assert loaded.footprint_root == footprint_root
     assert loaded.catalog_output == catalog.ENVIRONMENT_OUTPUT
-    assert "Standard macOS" in project.config.read_text(encoding="utf-8")
+    generated = project.config.read_text(encoding="utf-8")
+    assert "Standard macOS" in generated
+    assert yaml.safe_load(generated)["project"] == {"design_class": None}
 
 
 def test_initialize_force_preserves_user_settings(tmp_path, monkeypatch):
@@ -122,6 +125,41 @@ def test_initialize_force_preserves_user_settings(tmp_path, monkeypatch):
     assert loaded.footprint_root == new_root
     assert loaded.additional_footprint_roots == [custom_root]
     assert loaded.catalog_output == output
+
+
+def test_initialize_force_preserves_non_kicad_config(tmp_path, monkeypatch):
+    project = catalog.get_project_paths(tmp_path)
+    root = tmp_path / "footprints"
+    _make_library(root, "Library", ["Part"])
+    project.config.parent.mkdir(parents=True)
+    project.config.write_text(
+        "\n".join(
+            [
+                "project:",
+                "  design_class: boards.main:Board",
+                "lcsc:",
+                "  db: toolchain/parts.sqlite3",
+                "custom:",
+                "  preserve: true",
+                "kicad: {}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        catalog,
+        "detect_kicad_installation",
+        lambda **kwargs: catalog.KicadInstallation(None, root, "10.0"),
+    )
+
+    catalog.initialize_project(project, force=True)
+
+    document = yaml.safe_load(project.config.read_text(encoding="utf-8"))
+    assert document["project"] == {"design_class": "boards.main:Board"}
+    assert document["lcsc"] == {"db": "toolchain/parts.sqlite3"}
+    assert document["custom"] == {"preserve": True}
+    assert document["kicad"]["footprint_root"] == str(root)
 
 
 def test_scan_footprints_uses_root_precedence_and_sorted_output(tmp_path):

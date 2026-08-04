@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-03
+
+### Added
+
+- Migration guide for upgrading Earthground 0.5 projects to 0.9 and adopting
+  typed electrical intent, component analysis, sourcing, and KiCad rules.
+- Generated project configuration now includes a `project.design_class` stub.
+
+### Changed
+
+- Electrical rule checking now resolves rails, external drives, and resistor
+  bias across module boundaries.
+- Differential-negative open-drain nets require a pull-down to a non-positive
+  rail; ordinary open-drain nets continue to require a positive pull-up.
+- Decoupling distance checks prefer relevant local support components and keep
+  concrete placement evidence when unrelated parts are unplaced.
+- KiCad catalog regeneration preserves non-KiCad project configuration.
+
+### Fixed
+
+- Internal digital pull-ups and pull-downs now satisfy floating-input checks.
+- Compile and LCSC configuration failures provide actionable configuration and
+  project-root path guidance.
+- Removed the D-Sub connector import-time invalid escape warning.
+
+## [0.9.1] - 2026-08-03
+
+### Changed
+
+- Simplified TCA9535 address strapping and migrated its generated design to the
+  current port and decoupling APIs.
+- Tightened conversion between voltage values and canonical power-net names.
+
+### Removed
+
+- Removed the unused `ElectricalBool` and obsolete geometry helpers from
+  `earthground.utils`.
+
 ## [0.9.0] - 2026-08-01
 
 ### Added

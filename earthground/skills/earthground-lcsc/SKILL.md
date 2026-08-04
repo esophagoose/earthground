@@ -13,10 +13,13 @@ Define the SQLite database in `.earthground/config.yaml`:
 
 ```yaml
 lcsc:
-  db: /path/to/lcsc.sqlite3
+  db: toolchain/jlcdb/jlcpcb_db.sqlite3
 ```
 
-The path may be absolute or relative to the project root.
+The path may be absolute or relative to the Earthground project root (the
+directory containing `.earthground`). If that root is `repo/electrical`, do not
+prefix the relative value with `electrical/`; doing so resolves to a duplicated
+`repo/electrical/electrical/...` path.
 
 ## Look up parts
 

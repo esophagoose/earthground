@@ -1,26 +1,26 @@
 Schematic
 =========
 
-.. autofunction:: common.schematic.Design.__init__
+.. autofunction:: earthground.schematic.Design.__init__
 
-.. autofunction:: common.schematic.Design.add_module
+.. autofunction:: earthground.schematic.Design.add_module
 
-.. autofunction:: common.schematic.Design.add_component
+.. autofunction:: earthground.schematic.Design.add_component
 
-.. autofunction:: common.schematic.Design.add_net
+.. autofunction:: earthground.schematic.Design.add_net
 
-.. autofunction:: common.schematic.Design.join_net
+.. autofunction:: earthground.schematic.Design.join_net
 
-.. autofunction:: common.schematic.Design.change_net_name
+.. autofunction:: earthground.schematic.Design.change_net_name
 
-.. autofunction:: common.schematic.Design.connect
+.. autofunction:: earthground.schematic.Design.connect
 
-.. autofunction:: common.schematic.Design.connect_bus
+.. autofunction:: earthground.schematic.Design.connect_bus
 
-.. autofunction:: common.schematic.Design.add_decoupling_cap
+.. autofunction:: earthground.schematic.Design.add_decoupling_capacitor
 
-.. autofunction:: common.schematic.Design.add_series_res
+.. autofunction:: earthground.schematic.Design.add_series_res
 
-.. autofunction:: common.schematic.Design.print
+.. autofunction:: earthground.schematic.Design.print
 
-.. autofunction:: common.schematic.Design.print_symbol
+.. autofunction:: earthground.schematic.Design.print_symbol

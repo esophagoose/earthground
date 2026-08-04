@@ -67,7 +67,16 @@ coverage = design.electrical_coverage()
 design.validate(check_electrical=True)
 ```
 
-ERC covers supply compatibility, conflicting drivers, floating inputs, connected no-connect pins, open-drain pull-ups, absolute maximum voltage, and ambient operating range. It is opt-in. Untyped legacy pins affect coverage but do not create fake evidence.
+ERC covers supply compatibility, conflicting drivers, floating inputs, connected no-connect pins, open-drain bias, absolute maximum voltage, and ambient operating range. It is opt-in. Untyped legacy pins affect coverage but do not create fake evidence.
+
+Rail and external-drive declarations resolve on flattened physical nets. A
+board-level declaration is visible through connected module ports; do not copy
+it into every child design. Conflicting declarations on the same resolved net
+make its voltage unknown. Parent-level pull resistors are likewise visible to
+child pins. `InternalDigitalFeatures(pull_up=True)` or `pull_down=True` supplies
+valid floating-input bias. Ordinary open-drain and positive differential lines
+require a pull-up to a positive rail; a `PinInterfaceRef` with `NEGATIVE`
+polarity requires a pull-down to a non-positive rail.
 
 ## Strap pins
 

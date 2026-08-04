@@ -22,6 +22,7 @@ from earthground.kicad.catalog import (
 from earthground.schematic import Design, SchematicValidationError
 
 CONFIG_PATH = pathlib.Path(".earthground") / "config.yaml"
+DESIGN_CLASS_EXAMPLE = "project:\n  design_class: python.module:DesignClass"
 
 
 class CompileProjectError(RuntimeError):
@@ -64,11 +65,17 @@ def _load_design_reference(project_root: pathlib.Path) -> str:
 
     project_config = document.get("project")
     if not isinstance(project_config, dict):
-        raise CompileProjectError(f"{config_path} must contain a 'project' mapping")
+        raise CompileProjectError(
+            f"{config_path} is not configured for compilation. Add:\n"
+            f"{DESIGN_CLASS_EXAMPLE}"
+        )
 
     design_reference = project_config.get("design_class")
     if not isinstance(design_reference, str) or not design_reference.strip():
-        raise CompileProjectError(f"{config_path} must define 'project.design_class'")
+        raise CompileProjectError(
+            f"{config_path} must define 'project.design_class'. Set:\n"
+            f"{DESIGN_CLASS_EXAMPLE}"
+        )
     return design_reference.strip()
 
 

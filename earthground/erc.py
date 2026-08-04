@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Optional
 
 import earthground.components as cmp
 import earthground.standard_values as sv
+from earthground.analysis import DesignAnalysis, ResolvedNet
 
 if TYPE_CHECKING:
     from earthground.schematic import Design
@@ -96,59 +97,50 @@ def _sources(*bounds) -> tuple[str, ...]:
     )
 
 
-def _resolved_power_voltage(design: "Design", net: cmp.Net) -> Optional[sv.ValueBounds]:
-    if net.name == design.ground:
-        return sv.volts(0, typ=0, max=0)
-    if net.name in design._declared_rails:
-        return design._declared_rails[net.name]
-    sources = [
-        pin
-        for pin in net.connections
-        if _active_pin(pin) and pin.erc.power_role is cmp.PowerRole.OUTPUT
-    ]
-    if len(sources) == 1:
-        return sources[0].erc.voltage_operating
-    return None
+def _resolved_power_voltage(net: ResolvedNet) -> Optional[sv.ValueBounds]:
+    if net.voltage_conflict:
+        return None
+    return net.power_voltage
 
 
-def _resolved_net_voltage(design: "Design", net: cmp.Net) -> Optional[sv.ValueBounds]:
-    power = _resolved_power_voltage(design, net)
-    if power is not None:
-        return power
-    if net.name in design._external_drives:
-        return design._external_drives[net.name]
-    drivers = [
-        pin
-        for pin in net.connections
-        if _active_pin(pin) and _is_output_capable(pin.erc)
-    ]
-    if len(drivers) == 1:
-        return drivers[0].erc.voltage_operating
-    return None
+def _resolved_net_voltage(net: ResolvedNet) -> Optional[sv.ValueBounds]:
+    return None if net.voltage_conflict else net.voltage
 
 
 def _resistive_bias(
-    design: "Design", net: cmp.Net, *, positive_only: bool
+    analysis: DesignAnalysis,
+    net: ResolvedNet,
+    *,
+    polarity: str = "any",
 ) -> tuple[bool, Optional[sv.ValueBounds]]:
-    for pin in net.connections:
-        if not _active_pin(pin) or not isinstance(pin.parent, cmp.Resistor):
+    for _, other_net in analysis.resistor_branches(net):
+        if other_net is None:
             continue
-        for other_pin in pin.parent.pins:
-            if other_pin is pin:
-                continue
-            other_net = design.pin_to_net.get(other_pin)
-            if other_net is None:
-                continue
-            voltage = _resolved_power_voltage(design, other_net)
-            if voltage is None:
-                continue
-            if positive_only and (voltage.min is None or voltage.min <= Decimal(0)):
-                continue
-            return True, voltage
+        voltage = _resolved_power_voltage(other_net)
+        if voltage is None:
+            continue
+        if polarity == "positive" and (
+            voltage.min is None or voltage.min <= Decimal(0)
+        ):
+            continue
+        if polarity == "non_positive" and (
+            voltage.max is None or voltage.max > Decimal(0)
+        ):
+            continue
+        return True, voltage
     return False, None
 
 
-def _check_local(design: "Design", design_path: str) -> list[ElectricalCheck]:
+def _has_internal_bias(pin: cmp.Pin) -> bool:
+    spec = pin.spec
+    return isinstance(spec, cmp.DigitalPinSpec) and (
+        spec.internal.pull_up is True or spec.internal.pull_down is True
+    )
+
+
+def _check_local(
+    design: "Design", design_path: str, analysis: DesignAnalysis
+) -> list[ElectricalCheck]:
     checks = []
     active_pins = [
         pin
@@ -178,8 +170,8 @@ def _check_local(design: "Design", design_path: str) -> list[ElectricalCheck]:
             cmp.PowerRole.GROUND,
         }:
             continue
-        net = design.pin_to_net.get(pin)
-        rail = None if net is None else _resolved_power_voltage(design, net)
+        net = analysis.net_for_pin(pin)
+        rail = None if net is None else _resolved_power_voltage(net)
         if characteristics.voltage_operating is None or rail is None:
             add(
                 "E1",
@@ -204,43 +196,32 @@ def _check_local(design: "Design", design_path: str) -> list[ElectricalCheck]:
             (characteristics.voltage_operating, rail),
         )
 
-    # E2: unconditional driver contention.
-    for net in design.nets.values():
-        drivers = [
-            pin
-            for pin in net.connections
-            if _active_pin(pin) and _is_unconditional_driver(pin.erc)
-        ]
-        if not drivers:
-            continue
-        status = sv.CheckStatus.FAIL if len(drivers) >= 2 else sv.CheckStatus.PASS
-        add(
-            "E2",
-            status,
-            f"net has {len(drivers)} unconditional driver(s)",
-            net=net,
-        )
-
     # E3: floating inputs.
     for pin in active_pins:
         if pin.erc.directions != frozenset((cmp.PinDirection.INPUT,)):
             continue
-        net = design.pin_to_net.get(pin)
+        net = analysis.net_for_pin(pin)
+        internal_bias = _has_internal_bias(pin)
         if net is None:
-            add("E3", sv.CheckStatus.FAIL, "input is unconnected", pin)
+            add(
+                "E3",
+                sv.CheckStatus.PASS if internal_bias else sv.CheckStatus.FAIL,
+                (
+                    "unconnected input has a declared internal pull-up or pull-down"
+                    if internal_bias
+                    else "input is unconnected"
+                ),
+                pin,
+            )
             continue
-        connections = [p for p in net.connections if _active_pin(p)]
+        connections = analysis.active_connections(net)
         has_driver = any(
             other is not pin and _drives_without_bias(other.erc)
             for other in connections
         )
-        has_bias, _ = _resistive_bias(design, net, positive_only=False)
-        has_declared_source = (
-            net.name == design.ground
-            or net.name in design._declared_rails
-            or net.name in design._external_drives
-        )
-        driven = has_driver or has_bias or has_declared_source
+        has_bias, _ = _resistive_bias(analysis, net)
+        has_declared_source = net.power_voltage is not None or net.externally_driven
+        driven = has_driver or has_bias or has_declared_source or internal_bias
         add(
             "E3",
             sv.CheckStatus.PASS if driven else sv.CheckStatus.FAIL,
@@ -257,7 +238,7 @@ def _check_local(design: "Design", design_path: str) -> list[ElectricalCheck]:
     for pin in active_pins:
         if pin.erc.connection is not cmp.ConnectionPolicy.MUST_NOT_CONNECT:
             continue
-        net = design.pin_to_net.get(pin)
+        net = analysis.net_for_pin(pin)
         add(
             "E4",
             sv.CheckStatus.PASS if net is None else sv.CheckStatus.FAIL,
@@ -270,35 +251,13 @@ def _check_local(design: "Design", design_path: str) -> list[ElectricalCheck]:
             net,
         )
 
-    # E5: open-drain pull-ups.
-    for net in design.nets.values():
-        open_drains = [
-            pin
-            for pin in net.connections
-            if _active_pin(pin) and cmp.DriveStyle.OPEN_DRAIN in pin.erc.drive_styles
-        ]
-        if not open_drains:
-            continue
-        has_pullup, voltage = _resistive_bias(design, net, positive_only=True)
-        add(
-            "E5",
-            sv.CheckStatus.PASS if has_pullup else sv.CheckStatus.FAIL,
-            (
-                "open-drain net has a resistor pull-up to a positive rail"
-                if has_pullup
-                else "open-drain net has no resistor pull-up to a positive rail"
-            ),
-            net=net,
-            bounds=(voltage,),
-        )
-
     # E6: absolute maximum voltage.
     for pin in active_pins:
         abs_max = pin.erc.voltage_abs_max
         if abs_max is None:
             continue
-        net = design.pin_to_net.get(pin)
-        voltage = None if net is None else _resolved_net_voltage(design, net)
+        net = analysis.net_for_pin(pin)
+        voltage = None if net is None else _resolved_net_voltage(net)
         if voltage is None:
             add(
                 "E6",
@@ -350,11 +309,82 @@ def _check_local(design: "Design", design_path: str) -> list[ElectricalCheck]:
     return checks
 
 
-def check_design(design: "Design") -> ElectricalReport:
+def _check_global_nets(
+    analysis: DesignAnalysis, design_path: str
+) -> list[ElectricalCheck]:
     checks = []
 
+    def add(rule, status, message, net, bounds=()):
+        checks.append(
+            ElectricalCheck(
+                rule,
+                status,
+                message,
+                design_path,
+                net=net.name,
+                sources=_sources(*bounds),
+            )
+        )
+
+    # E2: unconditional driver contention on each flattened physical net.
+    for net in analysis.nets.values():
+        drivers = [
+            pin
+            for pin in analysis.active_connections(net)
+            if _is_unconditional_driver(pin.erc)
+        ]
+        if not drivers:
+            continue
+        add(
+            "E2",
+            sv.CheckStatus.FAIL if len(drivers) >= 2 else sv.CheckStatus.PASS,
+            f"net has {len(drivers)} unconditional driver(s)",
+            net,
+        )
+
+    # E5: open-drain bias. Differential-negative lines bias toward ground;
+    # ordinary and differential-positive lines bias toward a positive rail.
+    for net in analysis.nets.values():
+        open_drains = [
+            pin
+            for pin in analysis.active_connections(net)
+            if cmp.DriveStyle.OPEN_DRAIN in pin.erc.drive_styles
+        ]
+        if not open_drains:
+            continue
+        negative = all(
+            isinstance(pin.spec, cmp.DigitalPinSpec)
+            and pin.spec.interface is not None
+            and pin.spec.interface.polarity is cmp.DifferentialPolarity.NEGATIVE
+            for pin in open_drains
+        )
+        polarity = "non_positive" if negative else "positive"
+        has_bias, voltage = _resistive_bias(analysis, net, polarity=polarity)
+        direction = (
+            "pull-down to a non-positive rail"
+            if negative
+            else "pull-up to a positive rail"
+        )
+        add(
+            "E5",
+            sv.CheckStatus.PASS if has_bias else sv.CheckStatus.FAIL,
+            (
+                f"open-drain net has a resistor {direction}"
+                if has_bias
+                else f"open-drain net has no resistor {direction}"
+            ),
+            net,
+            (voltage,),
+        )
+    return checks
+
+
+def check_design(design: "Design") -> ElectricalReport:
+    analysis = DesignAnalysis(design)
+    checks = _check_global_nets(analysis, design.short_name)
+
     def visit(current, path):
-        checks.extend(_check_local(current, path))
+        checks.extend(_check_local(current, path, analysis))
         for module in current.modules:
             visit(module, f"{path}/{module.short_name}")
 

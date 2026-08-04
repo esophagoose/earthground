@@ -4,7 +4,6 @@ Exporters
 KiCad
 -----
 
-.. autofunction:: exporters.kicad.KicadExporter.__init__
+.. autofunction:: earthground.exporters.kicad.KicadExporter.__init__
 
-.. autofunction:: exporters.kicad.KicadExporter.save
-
+.. autofunction:: earthground.exporters.kicad.KicadExporter.save

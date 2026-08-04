@@ -64,8 +64,14 @@ The parent places the virtual module refdes (for example `FLT1`). The child layo
 - bottom parent flips the child side;
 - flattened designators use `<module-refdes>_<child-refdes>`.
 
+Every nested hierarchy segment is preserved, even when adjacent modules began
+with the same short name. A `DI2C` wrapper containing a `DI2C` child can
+therefore produce `DI2C1_DI2C1_C1`. This is intentional and disambiguates real
+module boundaries. Give the two designs distinct short names if shorter output
+is required.
+
 Give reusable modules a complete internal layout if they are intended as standardized PCB blocks. Otherwise their internal parts float using default placement.
 
 ## Hierarchy-aware analysis
 
-Electrical, strap, contract, thermal, provenance, and sourcing reports use `DesignAnalysis` to resolve flattened refdes, nets, components, and explicit placements without mutating the design. Declare expectations or waivers on the `Design` that directly owns the component; parent-level reports still see them through the hierarchy. Required-external contracts may be satisfied by circuitry in a parent design. Placement-dependent checks remain `Unknown` until both the module and the relevant internal/support parts have explicit placements.
+Electrical, strap, contract, thermal, provenance, and sourcing reports use `DesignAnalysis` to resolve flattened refdes, nets, components, and explicit placements without mutating the design. Declare expectations or waivers on the `Design` that directly owns the component; parent-level reports still see them through the hierarchy. Required-external contracts may be satisfied by circuitry in a parent design. Board rail declarations and parent pull resistors resolve through connected module ports. Placement-dependent checks remain `Unknown` until the required component and enough relevant support parts have explicit placements; unrelated unplaced support parts do not erase known local distance evidence.

@@ -68,6 +68,23 @@ def test_get_database_path_resolves_relative_to_project(tmp_path):
     assert get_database_path(project_root=project) == database
 
 
+def test_missing_database_explains_project_relative_paths(tmp_path):
+    project = tmp_path / "electrical"
+    config = project / ".earthground" / "config.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        "lcsc:\n  db: electrical/toolchain/parts.sqlite3\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(LcscDatabaseError) as excinfo:
+        get_database_path(project_root=project)
+
+    message = str(excinfo.value)
+    assert f"project root {project}" in message
+    assert "use: toolchain/parts.sqlite3" in message
+
+
 def test_lookup_parts_returns_c_prefixed_ids_case_insensitively(tmp_path):
     _, database = _create_project(tmp_path)
 

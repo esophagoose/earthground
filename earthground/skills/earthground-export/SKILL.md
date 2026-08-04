@@ -36,6 +36,13 @@ PROJECT/generated_outputs/{Design.name}.kicad_pcb
 Treat an existing file as an intentional overwrite. Confirm exit status 0 and
 verify the reported path exists before claiming success.
 
+For a repository containing multiple boards, run this command once per Python
+design file. Project `compile` configuration is deliberately single-design.
+
+Constraint output is conditional: saving constraints does not create or update
+`.kicad_pro` or `.kicad_dru` unless the design declares at least one net class
+or differential pair.
+
 ## Handle failures
 
 - Treat exit status 1 as a design construction, validation, or KiCad export
@@ -44,3 +51,6 @@ verify the reported path exists before claiming success.
   import failure.
 - Verify the path points to a `.py` file rather than a project directory.
 - Ensure imports resolve from the discovered project root.
+- If a vendored `.kicad_mod` fails with `Unsupported KiCad document root
+  'module'`, open and resave it in a current KiCad Footprint Editor. Do not
+  replace only the root token; legacy pad and layer syntax also needs conversion.

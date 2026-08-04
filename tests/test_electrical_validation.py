@@ -26,7 +26,13 @@ def statuses(report, rule_id):
 
 
 def digital(
-    name, direction, *, drive=cmp.DriveStyle.UNSPECIFIED, operating=None, abs_max=None
+    name,
+    direction,
+    *,
+    drive=cmp.DriveStyle.UNSPECIFIED,
+    operating=None,
+    abs_max=None,
+    **kwargs,
 ):
     return cmp.DigitalPinSpec.single_mode(
         direction,
@@ -34,6 +40,7 @@ def digital(
         drive_style=drive,
         voltage_operating=operating,
         voltage_abs_max=abs_max,
+        **kwargs,
     )
 
 
@@ -154,6 +161,28 @@ def test_e3_external_drive_and_unconnected_input():
     assert floating.pins[1] not in design.pin_to_net
 
 
+def test_e3_accepts_declared_internal_pull_on_unconnected_input():
+    design = Design("InternalBias")
+    device = design.add_component(
+        TypedComponent(
+            {
+                1: digital(
+                    "ENABLE",
+                    cmp.PinDirection.INPUT,
+                    internal=cmp.InternalDigitalFeatures(pull_up=True),
+                )
+            }
+        )
+    )
+
+    checks = [
+        check for check in design.check_electrical().checks if check.rule_id == "E3"
+    ]
+    assert checks[0].status is sv.CheckStatus.PASS
+    assert "internal pull-up or pull-down" in checks[0].message
+    assert device.pins[1] not in design.pin_to_net
+
+
 def test_e4_no_connect_pin():
     design = Design("NoConnect")
     component = design.add_component(
@@ -192,6 +221,92 @@ def test_e5_open_drain_requires_populated_resistor_to_positive_rail():
     pullup.dnp = True
     assert statuses(design.check_electrical(), "E5") == [sv.CheckStatus.FAIL]
     assert statuses(design.check_electrical(), "E3") == [sv.CheckStatus.FAIL]
+
+
+def test_hierarchical_erc_uses_parent_rail_and_pullup_once():
+    child = Design("Peripheral", "PER", ports=["VCC", "SDA"])
+    device = child.add_component(
+        TypedComponent(
+            {
+                1: power(
+                    "VCC",
+                    cmp.PowerRole.INPUT,
+                    voltage=sv.volts(3.0, max=3.6),
+                ),
+                2: digital(
+                    "SDA",
+                    cmp.PinDirection.BIDIRECTIONAL,
+                    drive=cmp.DriveStyle.OPEN_DRAIN,
+                ),
+            }
+        )
+    )
+    child.connect([device.pins[1], child.port["VCC"]], "VCC")
+    child.connect([device.pins[2], child.port["SDA"]], "SDA")
+
+    parent = Design("Board")
+    module = parent.add_module(child)
+    parent.join_net(module.port["VCC"], "P3V3")
+    parent.join_net(module.port["SDA"], "I2C_SDA")
+    pullup = parent.add_component(cmp.Resistor("4.7k"))
+    parent.connect([module.port["SDA"], pullup.pins[1]], "I2C_SDA")
+    parent.connect([pullup.pins[2], module.port["VCC"]], "P3V3")
+    parent.declare_rail("P3V3", sv.volts(3.1, typ=3.3, max=3.5))
+
+    report = parent.check_electrical()
+    assert statuses(report, "E1") == [sv.CheckStatus.PASS]
+    assert statuses(report, "E5") == [sv.CheckStatus.PASS]
+
+    child.declare_rail("P3V3", sv.volts(1.7, typ=1.8, max=1.9))
+    assert statuses(parent.check_electrical(), "E1") == [sv.CheckStatus.UNKNOWN]
+
+
+def test_e5_requires_pull_down_for_negative_differential_open_drain():
+    interface = cmp.PinInterfaceRef(
+        interface="PAIR",
+        polarity=cmp.DifferentialPolarity.NEGATIVE,
+    )
+    design = Design("DifferentialOpenDrain")
+    device = design.add_component(
+        TypedComponent(
+            {
+                1: digital(
+                    "PAIR_N",
+                    cmp.PinDirection.BIDIRECTIONAL,
+                    drive=cmp.DriveStyle.OPEN_DRAIN,
+                    interface=interface,
+                )
+            }
+        )
+    )
+    pulldown = design.add_component(cmp.Resistor("4.7k"))
+    design.connect([device.pins[1], pulldown.pins[1]], "PAIR_N")
+    design.join_net(pulldown.pins[2], "GND")
+
+    checks = [
+        check for check in design.check_electrical().checks if check.rule_id == "E5"
+    ]
+    assert checks[0].status is sv.CheckStatus.PASS
+    assert "pull-down" in checks[0].message
+
+    wrong = Design("DifferentialOpenDrainWrongBias")
+    wrong_device = wrong.add_component(
+        TypedComponent(
+            {
+                1: digital(
+                    "PAIR_N",
+                    cmp.PinDirection.BIDIRECTIONAL,
+                    drive=cmp.DriveStyle.OPEN_DRAIN,
+                    interface=interface,
+                )
+            }
+        )
+    )
+    pullup = wrong.add_component(cmp.Resistor("4.7k"))
+    wrong.connect([wrong_device.pins[1], pullup.pins[1]], "PAIR_N")
+    wrong.join_net(pullup.pins[2], "P3V3")
+    wrong.declare_rail("P3V3", sv.volts(3.1, typ=3.3, max=3.5))
+    assert statuses(wrong.check_electrical(), "E5") == [sv.CheckStatus.FAIL]
 
 
 def test_e6_absolute_max_uses_resolved_voltage_and_provenance():

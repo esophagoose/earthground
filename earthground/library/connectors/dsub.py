@@ -35,7 +35,7 @@ class Dsub(cmp.Component):
         print("  " + " ".join(top_row))
         print("┌" + "-" * (len(top_row) * 3 + 2) + "┐")
         print("| " + "".join([" • " for _ in range(len(top_row))]) + " |")
-        print(" \ " + "".join([" • " for _ in range(len(bottom_row))]) + "  /")
+        print(" \\ " + "".join([" • " for _ in range(len(bottom_row))]) + "  /")
         print("  ╰" + "-" * (len(bottom_row) * 3 + 1) + "╯")
         print("    " + " ".join(bottom_row))
 

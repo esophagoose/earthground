@@ -195,19 +195,27 @@ def _check_decoupling(analysis, resolved, requirement):
                 f"no capacitor connects {target.name} to {return_net.name}",
             )
         ]
-    checks = [
-        ("topology", sv.CheckStatus.PASS, f"found {len(capacitors)} capacitor(s)")
-    ]
     required_count = max(requirement.count, len(pins) if requirement.per_pin else 1)
+    local_capacitors = tuple(
+        capacitor
+        for capacitor in capacitors
+        if capacitor.parent is resolved.component.parent
+    )
+    candidates = (
+        local_capacitors if len(local_capacitors) >= required_count else capacitors
+    )
+    checks = [
+        ("topology", sv.CheckStatus.PASS, f"found {len(candidates)} capacitor(s)")
+    ]
     checks.append(
         (
             "count",
             (
                 sv.CheckStatus.PASS
-                if len(capacitors) >= required_count
+                if len(candidates) >= required_count
                 else sv.CheckStatus.FAIL
             ),
-            f"found {len(capacitors)} capacitor(s); requires {required_count}",
+            f"found {len(candidates)} capacitor(s); requires {required_count}",
         )
     )
     minimum = _required_minimum(requirement.capacitance)
@@ -221,7 +229,7 @@ def _check_decoupling(analysis, resolved, requirement):
         )
     else:
         installed = sum(
-            (capacitor.value.value for capacitor in capacitors), start=minimum * 0
+            (capacitor.value.value for capacitor in candidates), start=minimum * 0
         )
         checks.append(
             (
@@ -231,15 +239,13 @@ def _check_decoupling(analysis, resolved, requirement):
             )
         )
     if requirement.max_distance_mm is not None:
-        support = [analysis.component_for(capacitor) for capacitor in capacitors]
-        if resolved.placement is None or any(
-            item is None or item.placement is None for item in support
-        ):
+        support = [analysis.component_for(capacitor) for capacitor in candidates]
+        if resolved.placement is None:
             checks.append(
                 (
                     "distance",
                     sv.CheckStatus.UNKNOWN,
-                    "explicit placement is unavailable",
+                    "explicit placement is unavailable for the required component",
                 )
             )
         else:
@@ -249,19 +255,27 @@ def _check_decoupling(analysis, resolved, requirement):
                     item.placement.component.y - resolved.placement.component.y,
                 )
                 for item in support
+                if item is not None and item.placement is not None
             ]
             enough_close = sum(
                 distance <= requirement.max_distance_mm for distance in distances
             )
+            unknown_count = len(support) - len(distances)
+            if enough_close >= required_count:
+                status = sv.CheckStatus.PASS
+            elif unknown_count:
+                status = sv.CheckStatus.UNKNOWN
+            else:
+                status = sv.CheckStatus.FAIL
             checks.append(
                 (
                     "distance",
+                    status,
                     (
-                        sv.CheckStatus.PASS
-                        if enough_close >= required_count
-                        else sv.CheckStatus.FAIL
+                        f"{enough_close} capacitor(s) are within "
+                        f"{requirement.max_distance_mm} mm; "
+                        f"{unknown_count} candidate placement(s) are unavailable"
                     ),
-                    f"{enough_close} capacitor(s) are within {requirement.max_distance_mm} mm",
                 )
             )
     return checks

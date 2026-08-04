@@ -93,6 +93,21 @@ def test_analysis_flattens_hierarchy_without_mutating_and_requires_explicit_plac
     assert placed.placement.component.y == 22
 
 
+def test_analysis_preserves_each_repeated_module_segment_in_refdes():
+    leaf = Design("Leaf", "DI2C")
+    capacitor = leaf.add_component(cmp.Capacitor("100n", 10))
+
+    wrapper = Design("Wrapper", "DI2C")
+    wrapper.add_module(leaf)
+
+    board = Design("Board")
+    board.add_module(wrapper)
+
+    resolved = DesignAnalysis(board).component_for(capacitor)
+    assert resolved is not None
+    assert resolved.refdes == "DI2C1_DI2C1_C1"
+
+
 def test_strap_resolves_floating_and_external_pullup_with_expectations():
     design = Design("Straps")
     device = design.add_component(StrapDevice())
@@ -237,6 +252,45 @@ def test_contracts_are_hierarchy_aware_and_waivers_are_aspect_local():
         "verified manually in KiCad",
     )
     assert parent.check_contracts().is_valid
+
+
+def test_decoupling_distance_prefers_explicit_local_candidates():
+    requirement = Decoupling(
+        id="local-decoupling",
+        pin="VCC",
+        capacitance=sv.farads(min="100n", max=sv.UNBOUNDED),
+        max_distance_mm=3,
+    )
+    child = Design("Child", "CH", ["VCC", "GND"])
+    device = child.add_component(ContractDevice((requirement,)))
+    capacitor = child.add_component(cmp.Capacitor("100n", 10))
+    child.connect(
+        [device.pins.by_name("VCC"), capacitor.pins[1], child.port["VCC"]], "VCC"
+    )
+    child.connect([capacitor.pins[2], child.port["GND"]], "GND")
+    child.layout.placement["U1"] = layout.Placement(layout.Position(0, 0, 0))
+    child.layout.placement["C1"] = layout.Placement(layout.Position(2, 0, 0))
+
+    parent = Design("Parent")
+    module = parent.add_module(child)
+    parent.join_net(module.port["VCC"], "P3V3")
+    parent.join_net(module.port["GND"], "GND")
+    parent.layout.placement["CH1"] = layout.Placement(layout.Position(10, 20, 90))
+
+    unrelated = parent.add_component(cmp.Capacitor("1u", 10))
+    parent.join_net(unrelated.pins[1], "P3V3")
+    parent.join_net(unrelated.pins[2], "GND")
+
+    checks = {check.check_id: check for check in parent.check_contracts().checks}
+    assert checks["local-decoupling.distance"].status is sv.CheckStatus.PASS
+    assert (
+        "0 candidate placement(s) are unavailable"
+        in checks["local-decoupling.distance"].message
+    )
+
+    child.layout.placement["C1"] = layout.Placement(layout.Position(4, 0, 0))
+    checks = {check.check_id: check for check in parent.check_contracts().checks}
+    assert checks["local-decoupling.distance"].status is sv.CheckStatus.FAIL
 
 
 def test_leave_open_and_strict_validation():

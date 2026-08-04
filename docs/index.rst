@@ -18,6 +18,7 @@ Earthground encompasses a comprehensive suite of tools and libraries aimed at fa
    :caption: Usage
 
    quickstart
+   migration-0.5-to-0.9
    philosophy
 
 .. toctree::

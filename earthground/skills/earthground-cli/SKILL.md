@@ -30,7 +30,17 @@ specialized skill.
 
 - For `compile`, read `project.design_class` from `.earthground/config.yaml`.
   Require the `python.module:DesignClass` form and a zero-argument
-  `earthground.schematic.Design` subclass.
+  `earthground.schematic.Design` subclass. A newly generated config contains a
+  `null` stub; replace it with, for example:
+
+  ```yaml
+  project:
+    design_class: my_project.designs:MainBoard
+  ```
+
+  `compile` selects one design class. In a multi-board repository, drive
+  `earthground export kicad path/to/board.py` once per board rather than trying
+  to put a list in `project.design_class`.
 - For `export kicad`, pass a Python design file and write the board under the
   discovered project root's `generated_outputs/` only after validation succeeds.
 - For `kicad update-footprints`, require a Python design file and an existing

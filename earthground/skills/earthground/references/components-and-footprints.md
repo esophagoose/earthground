@@ -55,6 +55,17 @@ Confirm the footprint constructor and actual package geometry from source and th
 - Iteration preserves declaration order, but look up physical pins with `by_index` and semantic pins with `by_name`; order is not a substitute for pin number.
 - Expose protocol buses with the shared bus named-tuple type used elsewhere in the repository, not a new lookalike class.
 
+For imported footprints, make the pin-to-pad audit executable:
+
+```python
+component_indexes = {str(pin.index) for pin in component.pins}
+footprint_indexes = {str(index) for index in component.footprint.pads}
+assert not component_indexes - footprint_indexes
+```
+
+Review footprint-only mechanical pads separately; shell pads such as `SH` are
+not interchangeable with numeric `0`.
+
 Use `DigitalPinSpec`, `AnalogPinSpec`, `PowerPinSpec`, `PassivePinSpec`, and `NoConnectPinSpec` whenever the datasheet supports them. A plain string deliberately creates `UnspecifiedPinSpec`: it is useful during migration, but contributes no ERC evidence. Put component-wide conditions in immutable `Ratings`; canonical keys are lower-case snake case and known keys enforce dimensions. See the electrical-intent reference for modes, thresholds, interfaces, rails, and checks.
 
 ## Part behavior
@@ -89,6 +100,10 @@ Earthground supports:
 **IMPORTANT**: KiCad footprints are strongly preferred over custom footprints because they are validated already
 
 Native pad aperture support in the KiCad exporter is currently rectangle and circle. Through-hole pads are inferred from an aperture `hole`. Imported footprints retain their geometry while pad nets, board side, reference text, and placement are remapped.
+
+KiCad 5/easyeda2kicad files rooted at `(module ...)` are not accepted as modern
+footprints. Open and resave them in a current KiCad Footprint Editor. Changing
+the root token alone does not convert legacy pad and layer syntax.
 
 When adding a footprint:
 

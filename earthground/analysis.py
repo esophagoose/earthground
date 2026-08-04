@@ -23,6 +23,8 @@ class ResolvedNet:
     connections: frozenset[cmp.Pin]
     voltage: Optional[sv.ValueBounds]
     voltage_conflict: bool = False
+    power_voltage: Optional[sv.ValueBounds] = None
+    externally_driven: bool = False
 
 
 class DesignAnalysis:
@@ -46,10 +48,23 @@ class DesignAnalysis:
         for name, pins in resolved.items():
             values = declarations.get(name, [])
             conflict = bool(values and any(value != values[0] for value in values[1:]))
-            voltage = None if conflict or not values else values[0]
+            power_voltage = None if conflict or not values else values[0]
             if name == design.ground:
-                voltage = sv.volts(0, typ=0, max=0)
+                power_voltage = sv.volts(0, typ=0, max=0)
                 conflict = False
+            if power_voltage is None and not conflict:
+                power_sources = [
+                    pin
+                    for pin in pins
+                    if _active_pin(pin)
+                    and pin.erc.power_role is cmp.PowerRole.OUTPUT
+                    and pin.erc.voltage_operating is not None
+                ]
+                if len(power_sources) == 1:
+                    power_voltage = power_sources[0].erc.voltage_operating
+
+            externally_driven = name in external
+            voltage = power_voltage
             if voltage is None and not conflict:
                 driven = [
                     value for value in external.get(name, []) if value is not None
@@ -80,6 +95,8 @@ class DesignAnalysis:
                 connections=frozenset(pins),
                 voltage=voltage,
                 voltage_conflict=conflict,
+                power_voltage=power_voltage,
+                externally_driven=externally_driven,
             )
 
         self.components = tuple(_resolved_components(design))

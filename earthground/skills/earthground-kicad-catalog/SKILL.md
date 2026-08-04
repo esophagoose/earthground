@@ -18,7 +18,10 @@ configuration. Run commands from the Earthground project or pass
   ```
 
   This creates `.earthground/config.yaml` when missing, detects standard KiCad
-  paths for the OS, and generates the environment catalog.
+  paths for the OS, and generates the environment catalog. A new config also
+  contains `project.design_class: null`; set it before using `compile`.
+  Regeneration updates only the `kicad` mapping and preserves `project`, `lcsc`,
+  and other project-owned mappings.
 
 - Check configuration and freshness without writing:
 
