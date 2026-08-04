@@ -2,7 +2,10 @@ import enum
 from collections import namedtuple
 
 import earthground.components as cmp
+import earthground.contracts as contracts
 import earthground.standard_values as sv
+from earthground.library._intent import typed_pin_map
+from earthground.ratings import Ratings
 
 COMPONENT_CREATOR_VERSION = "0.0.1"
 
@@ -195,17 +198,66 @@ class RN487x(cmp.Component):
     r_pull_up = sv.ValueBounds(min=34, typ=48, max=74, units="k Ω")
     # Pull-Down Resistance
     r_pull_down = sv.ValueBounds(min=29, typ=47, max=86, units="k Ω")
+    SOURCE = "RN4870/71 datasheet DS50002489"
+    recommended = Ratings(
+        v_supply=v_supply,
+        v_il=v_il,
+        v_ih=v_ih,
+        v_ol=v_ol,
+        v_oh=v_oh,
+        r_pull_up=r_pull_up,
+        r_pull_down=r_pull_down,
+    )
 
     def __init__(self, full_part_number: RN487xPartNumbers):
         super().__init__()
         self.manufacturer = "Microchip Technology"
         self.description = "Bluetooth Bluetooth v5.0 Transceiver Module 2.402GHz ~ 2.48GHz Integrated, Chip Surface"
         self.datasheet = "https://ww1.microchip.com/downloads/aemDocuments/documents/WSG/ProductDocuments/DataSheets/RN4870-71-Bluetooth-Low-Energy-Module-DS50002489.pdf"
+        self.datasheet_revision = "DS50002489"
         self.lead_time = sv.weeks(typ=12)
         self.lifecycle = cmp.Lifecycle.ACTIVE
         self.parameters = full_part_number.value
         self.base_mpn = full_part_number.name.split("_")[0]
-        self.pins = cmp.PinContainer.from_dict(PINOUT[self.base_mpn], self)
+        suffix = full_part_number.name.removeprefix(f"{self.base_mpn}_")
+        self.mpn = f"{self.base_mpn}-{suffix.replace('_', '/')}"
+        self.name = self.mpn
+        pinout = PINOUT[self.base_mpn]
+        gpio = {name for name in pinout.values() if name.startswith("P")}
+        self.pins = cmp.PinContainer.from_dict(
+            typed_pin_map(
+                pinout,
+                digital_inputs={"RST_N", "UART_RX"},
+                digital_outputs={"UART_TX"},
+                digital_bidirectional=gpio,
+                power_inputs={
+                    name: self.v_supply
+                    for name in ("VBAT", "BK_IN")
+                    if name in pinout.values()
+                },
+                power_outputs=(
+                    {"ULPC_O": sv.volts(typ=1.2, source=self.SOURCE)}
+                    if "ULPC_O" in pinout.values()
+                    else {}
+                ),
+                grounds={"GND"},
+                no_connects={
+                    name for name in ("NC", "VDD_IO", "BK_O") if name in pinout.values()
+                },
+                passive={"BT_RF"} if "BT_RF" in pinout.values() else (),
+                digital_voltage=self.v_supply,
+                source=self.SOURCE,
+            ),
+            self,
+        )
+        self.requires = (
+            contracts.Decoupling(
+                id="vbat-decoupling",
+                pin="VBAT",
+                capacitance=sv.farads(min="100n", max=sv.UNBOUNDED),
+                source=self.SOURCE,
+            ),
+        )
         self.programming_interface = [
             self.pins.by_name("P2_0"),
             self.pins.by_name("VBAT"),

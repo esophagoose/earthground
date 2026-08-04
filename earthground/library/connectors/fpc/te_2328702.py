@@ -2,6 +2,7 @@ import pygerber.aperture as ap_lib
 
 import earthground.components as cmp
 import earthground.footprint_types as ft
+from earthground.library._intent import passive_pin_map
 
 VALID_PIN_COUNTS = [4, 6, 8, 10, 16, 24, 30]
 
@@ -17,12 +18,13 @@ class TE_2328702(cmp.Component):
         self.name = f"TE {self.mpn}"
         self.description = f"CONN FPC {pin_count}POS 0.5MM R/A"
         self.datasheet = "https://www.te.com/usa-en/product-2328702-6.datasheet.pdf"
+        self.lifecycle = cmp.Lifecycle.UNKNOWN
         self.parameters = {
             "Contact Finish": "Gold",
             "Voltage Rating": "50V",
             "Current Rating (Amps)": "0.5A",
             "Mounting Type": "Surface Mount, Right Angle",
-            "Number of Positions": "6",
+            "Number of Positions": str(pin_count),
             "Pitch": '0.020" (0.50mm)',
             "Operating Temperature": "-40°C ~ 85°C",
             "Termination": "Solder",
@@ -42,7 +44,10 @@ class TE_2328702(cmp.Component):
         }
         pins = {i: str(i) for i in range(1, pin_count + 1)}
         pins.update({"MT1": "MT1", "MT2": "MT2"})
-        self.pins = cmp.PinContainer.from_dict(pins, self)
+        self.pins = cmp.PinContainer.from_dict(
+            passive_pin_map(pins, source="TE Connectivity 2328702 product drawing"),
+            self,
+        )
         self.footprint = TeFpcFootprint(pin_count)
 
 

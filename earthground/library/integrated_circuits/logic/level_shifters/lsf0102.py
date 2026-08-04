@@ -83,6 +83,8 @@ class LSF0102(cmp.Component):
 
     def __init__(self, full_part_number: LSF0102PartNumbers):
         super().__init__()
+        self.name = full_part_number.name
+        self.mpn = full_part_number.name
         self.manufacturer = "Texas Instruments"
         self.description = "Voltage Level Translator Bidirectional 1 Circuit 2 Channel"
         self.datasheet = "https://www.ti.com/general/docs/suppproductinfo.tsp?distId=10&gotoUrl=https%3A%2F%2Fwww.ti.com%2Flit%2Fgpn%2Flsf0102"

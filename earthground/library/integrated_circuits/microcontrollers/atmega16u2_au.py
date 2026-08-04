@@ -2,6 +2,9 @@ import enum
 
 import earthground.components as cmp
 import earthground.standard_values as sv
+from earthground.library.integrated_circuits.microcontrollers.atmega16u2_mur import (
+    ATMEGA16U2_MU,
+)
 
 
 class Package(enum.Enum):
@@ -9,7 +12,7 @@ class Package(enum.Enum):
     TSSOP = "AU"
 
 
-class ATMEGA16U2(cmp.Component):
+class ATMEGA16U2(ATMEGA16U2_MU):
     def __init__(self, package: Package):
         super().__init__()
         self.name = "ATMEGA16U2"
@@ -19,6 +22,7 @@ class ATMEGA16U2(cmp.Component):
         self.mpn = "ATMEGA16U2-" + package.value
         self.datasheet = "https://ww1.microchip.com/downloads/en/DeviceDoc/7799S.pdf"
         self.description = "IC MCU 8BIT 16KB FLASH 32TQFP"
+        self.lifecycle = cmp.Lifecycle.UNKNOWN
         self.parameters = {
             "Packaging": "Tray",
             "Package / Case": "32-TQFP",

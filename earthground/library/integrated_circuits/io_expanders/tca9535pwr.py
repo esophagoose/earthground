@@ -1,13 +1,22 @@
 import earthground.components as cmp
+import earthground.contracts as contracts
 import earthground.footprints.tssop as tssop
 import earthground.schematic as sch
 import earthground.standard_values as sv
+import earthground.straps as straps
 from earthground.library.protocols.serial import I2C
+from earthground.ratings import Ratings
 
 GPIO_COUNT = 16
 
 
 class TCA9535PWR(cmp.Component):
+    SOURCE = "TCA9535 datasheet"
+    recommended = Ratings(
+        vcc=sv.volts(1.65, max=5.5, source=SOURCE),
+        ta=sv.celsius(-40, max=85, source=SOURCE),
+    )
+
     def __init__(self):
         super().__init__()
         self.name = "TCA9535PWR"
@@ -17,6 +26,7 @@ class TCA9535PWR(cmp.Component):
         self.mpn = "TCA9535PWR"
         self.datasheet = "https://www.ti.com/general/docs/suppproductinfo.tsp?distId=10&gotoUrl=https%3A%2F%2Fwww.ti.com%2Flit%2Fgpn%2Ftca9535"
         self.description = "IC XPND 400KHZ I2C SMBUS 24TSSOP"
+        self.lifecycle = cmp.Lifecycle.UNKNOWN
         self.parameters = {
             "Output Type": "Push-Pull",
             "Number of I/O": "16",
@@ -26,34 +36,79 @@ class TCA9535PWR(cmp.Component):
             "Interrupt Output": "Yes",
             "Supplier Device Package": "24-TSSOP",
         }
-        self.pins = cmp.PinContainer.from_dict(
+        gpio = {f"P{bank}{port}" for bank in range(2) for port in range(8)}
+        pinout = {
+            21: "A0",
+            2: "A1",
+            3: "A2",
+            12: "GND",
+            1: "INT",
+            **{4 + index: f"P0{index}" for index in range(8)},
+            **{13 + index: f"P1{index}" for index in range(8)},
+            22: "SCL",
+            23: "SDA",
+            24: "VCC",
+        }
+        logic = self.recommended["vcc"]
+        specs = {
+            index: cmp.DigitalPinSpec.bidirectional(
+                name=name,
+                voltage_operating=logic,
+                source=self.SOURCE,
+            )
+            for index, name in pinout.items()
+            if name in gpio
+        }
+        specs.update(
             {
-                21: "A0",
-                2: "A1",
-                3: "A2",
-                12: "GND",
-                1: "INT",
-                4: "P00",
-                5: "P01",
-                6: "P02",
-                7: "P03",
-                8: "P04",
-                9: "P05",
-                10: "P06",
-                11: "P07",
-                13: "P10",
-                14: "P11",
-                15: "P12",
-                16: "P13",
-                17: "P14",
-                18: "P15",
-                19: "P16",
-                20: "P17",
-                22: "SCL",
-                23: "SDA",
-                24: "VCC",
-            },
-            self,
+                1: cmp.DigitalPinSpec.output(
+                    name="INT",
+                    drive_style=cmp.DriveStyle.OPEN_DRAIN,
+                    voltage_operating=logic,
+                    source=self.SOURCE,
+                ),
+                2: cmp.DigitalPinSpec.input(name="A1", voltage_operating=logic),
+                3: cmp.DigitalPinSpec.input(name="A2", voltage_operating=logic),
+                12: cmp.PowerPinSpec(name="GND", role=cmp.PowerRole.GROUND),
+                21: cmp.DigitalPinSpec.input(name="A0", voltage_operating=logic),
+                22: cmp.DigitalPinSpec.input(name="SCL", voltage_operating=logic),
+                23: cmp.DigitalPinSpec.bidirectional(
+                    name="SDA",
+                    drive_style=cmp.DriveStyle.OPEN_DRAIN,
+                    voltage_operating=logic,
+                ),
+                24: cmp.PowerPinSpec(
+                    name="VCC", role=cmp.PowerRole.INPUT, voltage=logic
+                ),
+            }
+        )
+        self.pins = cmp.PinContainer.from_dict(specs, self)
+        self.requires = (
+            contracts.Decoupling(
+                id="vcc-decoupling",
+                pin="VCC",
+                capacitance=sv.farads(min="100n", max=sv.UNBOUNDED),
+                source=self.SOURCE,
+            ),
+        )
+        address_levels = (
+            straps.StrapLevel(
+                name="LOW", ratio=sv.ratio(0, max=0.2), meaning="address bit 0"
+            ),
+            straps.StrapLevel(
+                name="HIGH", ratio=sv.ratio(0.8, max=1), meaning="address bit 1"
+            ),
+        )
+        self.strap_pins = tuple(
+            straps.StrapPin(
+                id=f"address-{bit}",
+                pin=f"A{bit}",
+                reference="VCC",
+                levels=address_levels,
+                sampled_on="power-up",
+                source=self.SOURCE,
+            )
+            for bit in range(3)
         )
         self.i2c = I2C(sda=self.pins.by_name("SDA"), scl=self.pins.by_name("SCL"))
         self.footprint = tssop.TSSOP(

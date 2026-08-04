@@ -51,7 +51,11 @@ class JstConnector(cmp.Component):
         self.manufacturer = "JST"
         self.description = f"CONN HEADER {pin_count}POS 2.5MM {style.value}"
         self.detailed_description = f"JST {family.value} series {pin_count}pin"
-        self.pins = cmp.PinContainer.from_count(pin_count, self)
+        self.procurement_mode = cmp.EvidenceMode.RESOLVER
+        self.documentation_mode = cmp.EvidenceMode.RESOLVER
+        self.pins = cmp.PinContainer.from_count(
+            pin_count, self, spec_class=cmp.PassivePinSpec
+        )
         self.footprint = kicad.KicadImporter().import_footprint(
             "Connector_JST", self.get_symbol()
         )

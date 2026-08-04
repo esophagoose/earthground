@@ -5,6 +5,7 @@ import pygerber.aperture as ap_lib
 
 import earthground.components as cmp
 import earthground.footprint_types as ft
+from earthground.library._intent import passive_pin_map
 
 
 class ContactStyle(enum.Enum):
@@ -42,7 +43,8 @@ class Throughhole(cmp.Component):
         self.pins_per_row = int(pin_count / row_count)
         self.name = f"CONNECTOR_{self.pins_per_row}x{row_count}"
         self.description = self.name
-        self.pins = cmp.PinContainer.from_count(pin_count, self)
+        pinout = {index: str(index) for index in range(1, pin_count + 1)}
+        self.pins = cmp.PinContainer.from_dict(passive_pin_map(pinout), self)
         self.footprint = None
 
     def generate_footprint(self, aperture, spacing: float, layout_format: PinLayout):

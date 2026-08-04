@@ -1,7 +1,9 @@
 import re
 
 import earthground.components as cmp
+import earthground.standard_values as sv
 from earthground.footprints import header
+from earthground.library._intent import typed_pin_map
 from earthground.library.protocols.serial import I2C, UART
 
 ANALOG_PINS = ["A0", "A1", "A4", "A6", "A7", "B0", "B1"]
@@ -11,49 +13,60 @@ class BlackPill(cmp.Component):
     def __init__(self):
         super().__init__()
         self.name = "BlackPillV2"
+        pinout = {
+            1: "B12",
+            2: "B13",
+            3: "B14",
+            4: "B15",
+            5: "A8",
+            6: "A9",
+            7: "A10",
+            8: "A11",
+            9: "A12",
+            10: "A15",
+            11: "B3",
+            12: "B4",
+            13: "B5",
+            14: "B6",
+            15: "B7",
+            16: "B8",
+            17: "B9",
+            18: "P5V0_1",
+            19: "GND_1",
+            20: "P3V3",
+            21: "P5V0_2",
+            22: "GND_2",
+            23: "P3V3",
+            24: "B10",
+            25: "B2",
+            26: "B1",
+            27: "B0",
+            28: "A7",
+            29: "A6",
+            30: "A5",
+            31: "A4",
+            32: "A3",
+            33: "A2",
+            34: "A1",
+            35: "A0",
+            36: "NRST",
+            37: "C15",
+            38: "C14",
+            39: "C13",
+            40: "VBAT",
+        }
+        gpio = {name for name in pinout.values() if re.match(r"^[ABC]\d+$", name)}
         self.pins = cmp.PinContainer.from_dict(
-            {
-                1: "B12",
-                2: "B13",
-                3: "B14",
-                4: "B15",
-                5: "A8",
-                6: "A9",
-                7: "A10",
-                8: "A11",
-                9: "A12",
-                10: "A15",
-                11: "B3",
-                12: "B4",
-                13: "B5",
-                14: "B6",
-                15: "B7",
-                16: "B8",
-                17: "B9",
-                18: "P5V0_1",
-                19: "GND_1",
-                20: "P3V3",
-                21: "P5V0_2",
-                22: "GND_2",
-                23: "P3V3",
-                24: "B10",
-                25: "B2",
-                26: "B1",
-                27: "B0",
-                28: "A7",
-                29: "A6",
-                30: "A5",
-                31: "A4",
-                32: "A3",
-                33: "A2",
-                34: "A1",
-                35: "A0",
-                36: "NRST",
-                37: "C15",
-                38: "C14",
-                39: "C13",
-                40: "VBAT",
-            },
+            typed_pin_map(
+                pinout,
+                digital_bidirectional=gpio,
+                digital_inputs={"NRST"},
+                power_inputs={"P5V0_1", "P5V0_2", "VBAT"},
+                power_outputs={"P3V3"},
+                grounds={"GND_1", "GND_2"},
+                digital_voltage=sv.volts(0, max=3.3),
+                source="WeAct Black Pill V2 pinout",
+            ),
             self,
         )
 

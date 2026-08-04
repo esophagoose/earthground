@@ -1,12 +1,23 @@
 import earthground.components as cmp
+import earthground.contracts as contracts
 import earthground.footprints.transistor_outline as to
 import earthground.layout as layout_lib
 import earthground.schematic as sch
 import earthground.standard_values as sv
+from earthground.library._intent import typed_pin_map
+from earthground.ratings import Ratings
 
 
 class LM317AMDTX(cmp.Component):
     """LM317AMDTX Adjustable Positive Voltage Regulator"""
+
+    SOURCE = "LM317A datasheet SNVS774K"
+    abs_max = Ratings(vin=sv.volts(min=sv.UNBOUNDED, max=40, source=SOURCE))
+    recommended = Ratings(
+        vout=sv.volts(1.25, max=37, source=SOURCE),
+        i_out=sv.amps(min=0, max=1.5, source=SOURCE),
+        ta=sv.celsius(-40, max=125, source=SOURCE),
+    )
 
     def __init__(self):
         super().__init__()
@@ -17,6 +28,8 @@ class LM317AMDTX(cmp.Component):
         self.manufacturer = "Texas Instruments"
         self.mpn = "LM317AMDTX"
         self.datasheet = "https://www.ti.com/lit/ds/snvs774k/snvs774k.pdf"
+        self.datasheet_revision = "SNVS774K"
+        self.lifecycle = cmp.Lifecycle.UNKNOWN
         self.description = "IC REG LINEAR POS ADJ 1.5A TO252"
         self.parameters = {
             "Package / Case": "TO-252-3 (DPAK)",
@@ -36,12 +49,28 @@ class LM317AMDTX(cmp.Component):
         # Pin 2: VOUT (Output) - also tab
         # Pin 3: VIN (Input)
         self.pins = cmp.PinContainer.from_dict(
-            {
-                1: "ADJ",
-                2: "VOUT",
-                3: "VIN",
-            },
+            typed_pin_map(
+                {1: "ADJ", 2: "VOUT", 3: "VIN"},
+                analog_inputs={"ADJ"},
+                power_inputs={"VIN": None},
+                power_outputs={"VOUT": self.recommended["vout"]},
+                source=self.SOURCE,
+            ),
             self,
+        )
+        self.requires = (
+            contracts.Decoupling(
+                id="input-bypass",
+                pin="VIN",
+                capacitance=sv.farads(min="100n", max=sv.UNBOUNDED),
+                source=self.SOURCE,
+            ),
+            contracts.Decoupling(
+                id="output-bypass",
+                pin="VOUT",
+                capacitance=sv.farads(min="1u", max=sv.UNBOUNDED),
+                source=self.SOURCE,
+            ),
         )
         self.footprint = to.TO252()
         self._output_voltage = None

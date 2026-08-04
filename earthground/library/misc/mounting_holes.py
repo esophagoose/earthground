@@ -62,7 +62,9 @@ class M3(cmp.Component):
         }
 
         # Single pin for potential grounding connection
-        self.pins = cmp.PinContainer.from_dict({1: "MT1"}, self)
+        self.pins = cmp.PinContainer.from_dict(
+            {1: cmp.PassivePinSpec(name="MT1")}, self
+        )
 
         self.footprint = MountingHoleFootprint(
             screw_size="M3", hole_diameter=3.2, pad_diameter=6.4

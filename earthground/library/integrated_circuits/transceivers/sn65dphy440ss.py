@@ -13,6 +13,7 @@ import earthground.standard_values as sv
 import earthground.straps as straps
 import earthground.thermal as thermal
 from earthground.library.misc.testpoints import CircleSmdTestpoint
+from earthground.library._intent import typed_pin_map
 from earthground.ratings import Ratings
 
 SOURCE = "SN65DPHY440SS datasheet SLLSEF5D"
@@ -58,6 +59,8 @@ class SN65DPHY440SS(cmp.Component):
         self.mpn = "SN65DPHY440SSRHR"
         self.manufacturer = "Texas Instruments"
         self.datasheet = "https://www.ti.com/lit/ds/symlink/sn65dphy440ss.pdf"
+        self.datasheet_revision = "SLLSEF5D"
+        self.lifecycle = cmp.Lifecycle.UNKNOWN
         self.description = "MIPI D-PHY 1.1 retimer, four data lanes plus clock"
 
         self.abs_max = Ratings(
@@ -195,40 +198,97 @@ class SN65DPHY440SS(cmp.Component):
             note="worst listed active mode: four lanes at 1 Gbps",
         )
 
+        pinout = {
+            1: "DA0P",
+            2: "DA0N",
+            3: "DA1P",
+            4: "DA1N",
+            5: "DACP",
+            6: "DACN",
+            7: "DA2P",
+            8: "DA2N",
+            9: "DA3P",
+            10: "DA3N",
+            11: "VCC",
+            12: "VREG_OUT",
+            13: "EQ_SCL",
+            14: "ERC_SDA",
+            15: "DB3N",
+            16: "DB3P",
+            17: "DB2N",
+            18: "DB2P",
+            19: "DBCN",
+            20: "DBCP",
+            21: "DB1N",
+            22: "DB1P",
+            23: "DB0N",
+            24: "DB0P",
+            25: "VDD",
+            26: "PRE_CFG1",
+            27: "VSADJ_CFG0",
+            28: "RSTN",
+            29: "GND",
+        }
+        pair_names = {
+            **{f"data-a-{lane}": (f"DA{lane}P", f"DA{lane}N") for lane in range(4)},
+            "clock-a": ("DACP", "DACN"),
+            **{f"data-b-{lane}": (f"DB{lane}P", f"DB{lane}N") for lane in range(4)},
+            "clock-b": ("DBCP", "DBCN"),
+        }
+        overrides = {}
+        for interface, (positive, negative) in pair_names.items():
+            direction = (
+                cmp.PinDirection.INPUT
+                if interface.endswith("-a") or "data-a" in interface
+                else cmp.PinDirection.OUTPUT
+            )
+            overrides[positive] = cmp.AnalogPinSpec(
+                name=positive,
+                direction=direction,
+                interface=cmp.PinInterfaceRef(
+                    interface=interface, polarity=cmp.DifferentialPolarity.POSITIVE
+                ),
+                source=SOURCE,
+            )
+            overrides[negative] = cmp.AnalogPinSpec(
+                name=negative,
+                direction=direction,
+                interface=cmp.PinInterfaceRef(
+                    interface=interface, polarity=cmp.DifferentialPolarity.NEGATIVE
+                ),
+                source=SOURCE,
+            )
         self.pins = cmp.PinContainer.from_dict(
-            {
-                1: "DA0P",
-                2: "DA0N",
-                3: "DA1P",
-                4: "DA1N",
-                5: "DACP",
-                6: "DACN",
-                7: "DA2P",
-                8: "DA2N",
-                9: "DA3P",
-                10: "DA3N",
-                11: "VCC",
-                12: "VREG_OUT",
-                13: "EQ_SCL",
-                14: "ERC_SDA",
-                15: "DB3N",
-                16: "DB3P",
-                17: "DB2N",
-                18: "DB2P",
-                19: "DBCN",
-                20: "DBCP",
-                21: "DB1N",
-                22: "DB1P",
-                23: "DB0N",
-                24: "DB0P",
-                25: "VDD",
-                26: "PRE_CFG1",
-                27: "VSADJ_CFG0",
-                28: "RSTN",
-                29: "GND",
-            },
+            typed_pin_map(
+                pinout,
+                digital_inputs={
+                    "EQ_SCL",
+                    "ERC_SDA",
+                    "PRE_CFG1",
+                    "VSADJ_CFG0",
+                    "RSTN",
+                },
+                power_inputs={
+                    "VCC": self.recommended["vcc"],
+                    "VDD": self.recommended["vcc"],
+                },
+                power_outputs={"VREG_OUT": self.recommended["vcc"]},
+                grounds={"GND"},
+                overrides=overrides,
+                digital_voltage=self.recommended["vcc"],
+                source=SOURCE,
+            ),
             self,
         )
+        self.interfaces = {
+            name: cmp.DifferentialInterfaceSpec(
+                name=name,
+                positive=positive,
+                negative=negative,
+                target_impedance=sv.ohms(typ=100, source=SOURCE),
+            )
+            for name, (positive, negative) in pair_names.items()
+        }
 
 
 PORTS = (

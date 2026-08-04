@@ -2,7 +2,11 @@ import enum
 import re
 
 import earthground.components as cmp
+import earthground.contracts as contracts
+import earthground.standard_values as sv
+from earthground.library._intent import typed_pin_map
 from earthground.library.protocols import serial
+from earthground.ratings import Ratings
 
 PART_NUMBER_DECODER = r"ATTINY(\d+)(\d)(\d)-(\w{1,2})([N|F]).*"
 
@@ -91,10 +95,43 @@ def get_pins(package):
             19: "PA0",
             20: "PA1",
         }
+    elif package == "QFN24":
+        return {
+            1: "PA2",
+            2: "PA3",
+            3: "GND",
+            4: "VDD",
+            5: "PA4",
+            6: "PA5",
+            7: "PA6",
+            8: "PA7",
+            9: "PB7",
+            10: "PB6",
+            11: "PB5",
+            12: "PB4",
+            13: "PB3",
+            14: "PB2",
+            15: "PB1",
+            16: "PB0",
+            17: "PC0",
+            18: "PC1",
+            19: "PC2",
+            20: "PC3",
+            21: "PC4",
+            22: "PC5",
+            23: "PA0",
+            24: "PA1",
+        }
     raise ValueError(f"Unknown package: {package}")
 
 
 class ATtiny(cmp.Component):
+    SOURCE = "ATtiny 1-series family datasheet"
+    recommended = Ratings(
+        vcc=sv.volts(1.8, max=5.5, source=SOURCE),
+        ta=sv.celsius(-40, max=125, source=SOURCE),
+    )
+
     def __init__(self, part_number: str):
         super().__init__()
         part_number = part_number.upper()
@@ -102,12 +139,40 @@ class ATtiny(cmp.Component):
         match = re.match(PART_NUMBER_DECODER, part_number)
         if not match:
             raise ValueError(f"Invalid part number: {part_number}")
-        kb, series, pin_code, package, temp = match.group()
+        kb, series, pin_code, package, temp = match.groups()
         assert series == "1", "Only 1-series supported"
         self.manufacturer = "Microchip Technology"
+        self.name = part_number
+        self.mpn = part_number
         self.description = f"IC MCU 8BIT {kb}KB FLASH 32VQFN"
-        self.pin_count = PIN_CODE_TO_PIN_COUNT[pin_code]
-        self.pins = cmp.PinContainer.from_dict(get_pins(package), self)
+        device_name = f"ATtiny{kb}{series}{pin_code}"
+        self.datasheet = f"https://www.microchip.com/en-us/product/{device_name}"
+        self.lifecycle = cmp.Lifecycle.UNKNOWN
+        self.pin_count = PIN_CODE_TO_PIN_COUNT[int(pin_code)]
+        package_name = (
+            f"QFN{self.pin_count}" if package == "M" else f"SOIC{self.pin_count}"
+        )
+        pinout = get_pins(package_name)
+        gpio = {name for name in pinout.values() if name.startswith(("PA", "PB", "PC"))}
+        self.pins = cmp.PinContainer.from_dict(
+            typed_pin_map(
+                pinout,
+                digital_bidirectional=gpio,
+                power_inputs={"VDD": self.recommended["vcc"]},
+                grounds={"GND"},
+                digital_voltage=self.recommended["vcc"],
+                source=self.SOURCE,
+            ),
+            self,
+        )
+        self.requires = (
+            contracts.Decoupling(
+                id="vdd-decoupling",
+                pin="VDD",
+                capacitance=sv.farads(min="100n", max=sv.UNBOUNDED),
+                source=self.SOURCE,
+            ),
+        )
         self.parameters = {
             "Program Memory Size": f"{kb}KB",
             "Operating Temperature": f"-40°C ~ {105 if temp == 'N' else 125}°C",

@@ -1,9 +1,13 @@
 import enum
 
 import earthground.components as cmp
+import earthground.contracts as contracts
 import earthground.schematic as sch
+import earthground.standard_values as sv
 from earthground.footprints.manufacturer_specific import ti
 from earthground.library.protocols.serial import I2C
+from earthground.library._intent import typed_pin_map
+from earthground.ratings import Ratings
 
 
 class Package(enum.Enum):
@@ -40,6 +44,11 @@ PINOUT = {
 
 class DRV2605L(cmp.Component):
     I2C_ADDRESS = 0x5A
+    SOURCE = "DRV2605L datasheet"
+    recommended = Ratings(
+        vcc=sv.volts(2, max=5.5, source=SOURCE),
+        tj=sv.celsius(-40, max=150, source=SOURCE),
+    )
 
     def __init__(self, package: Package):
         super().__init__()
@@ -48,6 +57,7 @@ class DRV2605L(cmp.Component):
         self.manufacturer = "Texas Instruments"
         self.mpn = "DRV2605L" + package.value
         self.datasheet = "https://www.ti.com/general/docs/suppproductinfo.tsp?distId=10&gotoUrl=https%3A%2F%2Fwww.ti.com%2Flit%2Fgpn%2Fdrv2605l"
+        self.lifecycle = cmp.Lifecycle.UNKNOWN
         self.parameters = {
             "Interface": "I2C",
             "Operating Temperature": "-40°C ~ 150°C (TJ)",
@@ -58,7 +68,73 @@ class DRV2605L(cmp.Component):
             "Voltage - Load": "2V ~ 5.5V",
             "Motor Type": "ERM, LRA",
         }
-        self.pins = cmp.PinContainer.from_dict(PINOUT[package], self)
+        pinout = PINOUT[package]
+        overrides = {
+            "SDA": cmp.DigitalPinSpec.bidirectional(
+                name="SDA",
+                drive_style=cmp.DriveStyle.OPEN_DRAIN,
+                voltage_operating=self.recommended["vcc"],
+                source=self.SOURCE,
+            ),
+            "OUT+": cmp.AnalogPinSpec.output(
+                name="OUT+",
+                interface=cmp.PinInterfaceRef(
+                    interface="haptic-output",
+                    polarity=cmp.DifferentialPolarity.POSITIVE,
+                ),
+                source=self.SOURCE,
+            ),
+            "OUT-": cmp.AnalogPinSpec.output(
+                name="OUT-",
+                interface=cmp.PinInterfaceRef(
+                    interface="haptic-output",
+                    polarity=cmp.DifferentialPolarity.NEGATIVE,
+                ),
+                source=self.SOURCE,
+            ),
+        }
+        self.pins = cmp.PinContainer.from_dict(
+            typed_pin_map(
+                pinout,
+                digital_inputs={"SCL", "IN/TRIG", "EN"},
+                power_inputs={
+                    name: self.recommended["vcc"]
+                    for name in ("VDD", "VDD/NC")
+                    if name in pinout.values()
+                },
+                power_outputs={"REG": sv.volts(typ=1.8, source=self.SOURCE)},
+                grounds={"GND"},
+                overrides=overrides,
+                digital_voltage=self.recommended["vcc"],
+                source=self.SOURCE,
+            ),
+            self,
+        )
+        self.interfaces = {
+            "haptic-output": cmp.DifferentialInterfaceSpec(
+                name="haptic-output", positive="OUT+", negative="OUT-"
+            )
+        }
+        self.requires = (
+            contracts.Decoupling(
+                id="vdd-decoupling",
+                pin="VDD",
+                capacitance=sv.farads(min="1u", max=sv.UNBOUNDED),
+                source=self.SOURCE,
+            ),
+            contracts.Decoupling(
+                id="reg-decoupling",
+                pin="REG",
+                capacitance=sv.farads(min="1u", max=sv.UNBOUNDED),
+                source=self.SOURCE,
+            ),
+            contracts.TieIfUnused(
+                id="trigger-unused",
+                pins=("IN/TRIG",),
+                to="GND",
+                source=self.SOURCE,
+            ),
+        )
         self.i2c = I2C(sda=self.pins.by_name("SDA"), scl=self.pins.by_name("SCL"))
         self.footprint = ti.DGS_VSSOP(10)
 

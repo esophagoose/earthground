@@ -1,4 +1,5 @@
 import earthground.components as cmp
+from earthground.library._intent import passive_pin_map
 
 
 class Dsub(cmp.Component):
@@ -13,7 +14,9 @@ class Dsub(cmp.Component):
         self.pin_count = pin_count
         pins = {i: str(i) for i in range(1, pin_count + 1)}
         pins.update({"M1": "M1", "M2": "M2"})
-        self.pins = cmp.PinContainer.from_dict(pins, self)
+        self.procurement_mode = cmp.EvidenceMode.RESOLVER
+        self.documentation_mode = cmp.EvidenceMode.RESOLVER
+        self.pins = cmp.PinContainer.from_dict(passive_pin_map(pins), self)
 
     def print(self):
         def get_pin_name(index):

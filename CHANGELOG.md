@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-08-04
+
+### Added
+
+- Tier 1 through Tier 3 electrical intent, analysis contracts, differential
+  interfaces, straps, and sourcing provenance across the built-in component
+  library.
+- Strict library pin-map construction that rejects untyped or ambiguously typed
+  pins during component initialization.
+
+### Fixed
+
+- Construction and protocol pin mappings for ATmega, ATtiny, and capacitive
+  sensing library parts, including the ATtiny 24-pin VQFN map.
+
 ## [0.10.2] - 2026-08-03
 
 ### Added
@@ -174,7 +189,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - KiCad IPC startup behavior.
 
-[Unreleased]: https://github.com/esophagoose/earthground/compare/d721788...HEAD
+[Unreleased]: https://github.com/esophagoose/earthground/compare/0.10.3...HEAD
+[0.10.3]: https://github.com/esophagoose/earthground/compare/ade4e8f...HEAD
 [0.9.0]: https://github.com/esophagoose/earthground/compare/48614be...d721788
 [0.8.1]: https://github.com/esophagoose/earthground/compare/f157003...48614be
 [0.8.0]: https://github.com/esophagoose/earthground/compare/08419e9...f157003

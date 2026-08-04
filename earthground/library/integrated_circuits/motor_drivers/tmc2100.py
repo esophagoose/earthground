@@ -1,8 +1,11 @@
 import enum
 
 import earthground.components as cmp
+import earthground.contracts as contracts
 import earthground.schematic as sch
 import earthground.standard_values as sv
+from earthground.library._intent import typed_pin_map
+from earthground.ratings import Ratings
 
 
 class ChopperMode(enum.Enum):
@@ -19,6 +22,13 @@ MICROSTEPS = [1, 2, 4, 16]
 
 
 class TMC2100_LA_T(cmp.Component):
+    SOURCE = "TMC2100 datasheet"
+    recommended = Ratings(
+        vin=sv.volts(4.75, max=46, source=SOURCE),
+        i_out=sv.amps(min=0, max=1.2, source=SOURCE),
+        tj=sv.celsius(-40, max=125, source=SOURCE),
+    )
+
     def __init__(self):
         super().__init__()
         self.name = "TMC2100"
@@ -28,7 +38,9 @@ class TMC2100_LA_T(cmp.Component):
         self.manufacturer = "Analog Devices Inc."
         self.lead_time = sv.weeks(typ=18)
         self.mpn = "TMC2100-LA-T"
-        self.datasheet = ""
+        self.datasheet = "https://www.analog.com/media/en/technical-documentation/data-sheets/TMC2100_datasheet_rev1.13.pdf"
+        self.datasheet_revision = "Rev. 1.13"
+        self.lifecycle = cmp.Lifecycle.ACTIVE
         self.description = "IC MTR DRV BIPOLAR 5.5-46V 36QFN"
         self.parameters = {
             "Function": "Driver - Fully Integrated, Control and Power Stage",
@@ -41,47 +53,126 @@ class TMC2100_LA_T(cmp.Component):
             "Motor Type - Stepper": "Bipolar",
             "Step Resolution": "1 ~ 1/256",
         }
+        pinout = {
+            1: "CLK",  # CLK input or tie to GND for internal clock
+            2: "CFG3",  # Configuration input
+            3: "CFG2",  # Configuration input
+            4: "CFG1",  # Configuration input
+            5: "CFG0",  # Configuration input
+            6: "STEP",  # STEP input
+            7: "DIR",  # DIR input
+            8: "VCC_IO",  # 3.3 - 5 V IO supply voltage for all digital pins.
+            9: "DNC",  # Do not connect. Leave open!
+            10: "GNDD",  # Digital GND. Connect to GND
+            11: "N.C.",  # Unused pin, connect to GND
+            12: "GNDP",  # Power GND. Connect to GND plane near pin.
+            13: "OB1",  # Motor coil B output 1
+            14: "BRB",  # Sense resistor connection for coil B or tie to GND when using internal sense resistors.
+            15: "OB2",  # Motor coil B output 2
+            16: "VS",  # Motor supply voltage. Provide filter near pin to GNDP pin
+            17: "DNC",  # Do not connect. Leave open!
+            18: "CFG4",  # Configuration input
+            19: "CFG5",  # Configuration input
+            20: "ERROR",  # Driver error (Open drain output with 50k resistor to 2.5V)
+            21: "INDEX",  # Microstep table position index (Open drain output with 100k pulldown resistor – use sufficient pullup resistor of 22k max.)
+            22: "CFG6_ENN",  # Enable input (high to disable) and power down configuration
+            23: "AIN_IREF",  # Analog reference voltage for current scaling or reference current for use of internal sense resistors (optional mode)
+            24: "GNDA",  # Analog GND. Tie to GND plane.
+            25: "5VOUT",  # Output of internal 5 V regulator. Attach 2.2 μF to 10μF ceramic capacitor to GNDA near to pin for best performance.
+            26: "VCC",  # 5V supply input for digital circuitry within chip and charge pump. Attach 470nF capacitor to GND (GND plane). Supply by 5VOUT. Use a 2.2 or 3.3 Ohm resistor for decoupling noise from 5VOUT. When using an external supply, make sure, that VCC comes up before or in parallel to 5VOUT!
+            27: "CPO",  # Charge pump capacitor output.
+            28: "CPI",  # Charge pump capacitor input. Tie to CPO using 22 nF 50 V capacitor.
+            29: "VCP",  # Charge pump voltage. Tie to VS using 100 nF 16 V capacitor.
+            30: "VSA",  # Analog supply voltage for 5V regulator. Normally tied to VS. Provide a 100 nF filtering capacitor.
+            31: "VS",  # Motor supply voltage. Provide filtering capacity near pin with short loop to nearest GNDP pin (respectively via GND plane).
+            32: "OA2",  # Motor coil A output 2
+            33: "BRA",  # Sense resistor connection for coil A. Place sense resistor to GND near pin. Tie to GND when using internal sense resistors.
+            34: "OA1",  # Motor coil A output 1
+            35: "GNDP",  # Power GND
+            36: "TST_MODE",  # Test mode input - tie to GND
+            37: "EP",  # Exposed die pad - connect to GND plane. Provide vias for heat transfer
+        }
+        overrides = {
+            name: cmp.DigitalPinSpec.output(
+                name=name,
+                drive_style=cmp.DriveStyle.OPEN_DRAIN,
+                voltage_operating=sv.volts(0, max=5, source=self.SOURCE),
+                source=self.SOURCE,
+            )
+            for name in ("ERROR", "INDEX")
+        }
         self.pins = cmp.PinContainer.from_dict(
-            {
-                1: "CLK",  # CLK input or tie to GND for internal clock
-                2: "CFG3",  # Configuration input
-                3: "CFG2",  # Configuration input
-                4: "CFG1",  # Configuration input
-                5: "CFG0",  # Configuration input
-                6: "STEP",  # STEP input
-                7: "DIR",  # DIR input
-                8: "VCC_IO",  # 3.3 - 5 V IO supply voltage for all digital pins.
-                9: "DNC",  # Do not connect. Leave open!
-                10: "GNDD",  # Digital GND. Connect to GND
-                11: "N.C.",  # Unused pin, connect to GND
-                12: "GNDP",  # Power GND. Connect to GND plane near pin.
-                13: "OB1",  # Motor coil B output 1
-                14: "BRB",  # Sense resistor connection for coil B or tie to GND when using internal sense resistors.
-                15: "OB2",  # Motor coil B output 2
-                16: "VS",  # Motor supply voltage. Provide filter near pin to GNDP pin
-                17: "DNC",  # Do not connect. Leave open!
-                18: "CFG4",  # Configuration input
-                19: "CFG5",  # Configuration input
-                20: "ERROR",  # Driver error (Open drain output with 50k resistor to 2.5V)
-                21: "INDEX",  # Microstep table position index (Open drain output with 100k pulldown resistor – use sufficient pullup resistor of 22k max.)
-                22: "CFG6_ENN",  # Enable input (high to disable) and power down configuration
-                23: "AIN_IREF",  # Analog reference voltage for current scaling or reference current for use of internal sense resistors (optional mode)
-                24: "GNDA",  # Analog GND. Tie to GND plane.
-                25: "5VOUT",  # Output of internal 5 V regulator. Attach 2.2 μF to 10μF ceramic capacitor to GNDA near to pin for best performance.
-                26: "VCC",  # 5V supply input for digital circuitry within chip and charge pump. Attach 470nF capacitor to GND (GND plane). Supply by 5VOUT. Use a 2.2 or 3.3 Ohm resistor for decoupling noise from 5VOUT. When using an external supply, make sure, that VCC comes up before or in parallel to 5VOUT!
-                27: "CPO",  # Charge pump capacitor output.
-                28: "CPI",  # Charge pump capacitor input. Tie to CPO using 22 nF 50 V capacitor.
-                29: "VCP",  # Charge pump voltage. Tie to VS using 100 nF 16 V capacitor.
-                30: "VSA",  # Analog supply voltage for 5V regulator. Normally tied to VS. Provide a 100 nF filtering capacitor.
-                31: "VS",  # Motor supply voltage. Provide filtering capacity near pin with short loop to nearest GNDP pin (respectively via GND plane).
-                32: "OA2",  # Motor coil A output 2
-                33: "BRA",  # Sense resistor connection for coil A. Place sense resistor to GND near pin. Tie to GND when using internal sense resistors.
-                34: "OA1",  # Motor coil A output 1
-                35: "GNDP",  # Power GND
-                36: "TST_MODE",  # Test mode input - tie to GND
-                37: "EP",  # Exposed die pad - connect to GND plane. Provide vias for heat transfer
-            },
+            typed_pin_map(
+                pinout,
+                digital_inputs={
+                    "CLK",
+                    "CFG0",
+                    "CFG1",
+                    "CFG2",
+                    "CFG3",
+                    "CFG4",
+                    "CFG5",
+                    "CFG6_ENN",
+                    "STEP",
+                    "DIR",
+                    "TST_MODE",
+                },
+                analog_inputs={"AIN_IREF", "BRA", "BRB", "CPI"},
+                analog_outputs={"CPO", "VCP"},
+                power_inputs={
+                    "VCC_IO": sv.volts(3.3, max=5, source=self.SOURCE),
+                    "VCC": sv.volts(typ=5, source=self.SOURCE),
+                    "VS": self.recommended["vin"],
+                    "VSA": self.recommended["vin"],
+                },
+                power_outputs={
+                    "5VOUT": sv.volts(typ=5, source=self.SOURCE),
+                    "OA1": None,
+                    "OA2": None,
+                    "OB1": None,
+                    "OB2": None,
+                },
+                grounds={"GNDD", "GNDP", "GNDA", "EP"},
+                no_connects={"DNC"},
+                passive={"N.C."},
+                overrides=overrides,
+                digital_voltage=sv.volts(0, max=5, source=self.SOURCE),
+                source=self.SOURCE,
+            ),
             self,
+        )
+        self.requires = (
+            contracts.Decoupling(
+                id="5vout-decoupling",
+                pin="5VOUT",
+                capacitance=sv.farads(min="2.2u", max=sv.UNBOUNDED),
+                source=self.SOURCE,
+            ),
+            contracts.Bypass(
+                id="charge-pump-flying-capacitor",
+                pin="CPO",
+                return_to="CPI",
+                capacitance=sv.farads(min="22n", max="22n"),
+                source=self.SOURCE,
+            ),
+            contracts.Bypass(
+                id="charge-pump-storage-capacitor",
+                pin="VCP",
+                return_to="VS",
+                capacitance=sv.farads(min="100n", max="100n"),
+                source=self.SOURCE,
+            ),
+            contracts.Decoupling(
+                id="vsa-decoupling",
+                pin="VSA",
+                capacitance=sv.farads(min="100n", max=sv.UNBOUNDED),
+                source=self.SOURCE,
+            ),
+            contracts.SameNet(
+                id="reserved-pin-ground",
+                pins=("N.C.", "GNDD"),
+                source=self.SOURCE,
+            ),
         )
 
     def get_cfg1_and_cfg2(
@@ -121,7 +212,7 @@ class TMC2100_LA_T(cmp.Component):
         assert self.pins.by_name("CLK").connections, "Need to connect CLK!"
         for dnc in self.pins.all_with_name("DNC"):
             assert not dnc.connections, "DNC connected!"
-        for nc in self.pins.all_with_name("NC"):
+        for nc in self.pins.all_with_name("N.C."):
             assert "GND" in nc.connections[0].name, "Connect NC pins to GND"
 
 
@@ -173,7 +264,7 @@ class CurrentSetting(enum.Enum):
 
 
 def generate_design(
-    driver=TMC2100_LA_T(),
+    driver=None,
     current_limit=None,
     sense_resistor=None,
     use_internal_5v=True,
@@ -198,6 +289,7 @@ def generate_design(
     Returns:
     - schematic (Design): The generated schematic design object.
     """
+    driver = driver or TMC2100_LA_T()
     ports = ["vmotor", "vio", "gnd", "enable", "cfg1", "cfg2"]
     ports += ["oa1", "oa2", "ob2", "ob1", "step", "index"]
     schematic = sch.Design("TMC2100Design", "MOTOR", ports)
