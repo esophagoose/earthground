@@ -2,7 +2,6 @@ import earthground.components as cmp
 import earthground.footprints.tssop as tssop
 import earthground.schematic as sch
 import earthground.standard_values as sv
-import earthground.utils as utils
 from earthground.library.protocols.serial import I2C
 
 GPIO_COUNT = 16
@@ -71,17 +70,21 @@ class TCA9535PWR(cmp.Component):
 
     @property
     def address(self):
-        converter = utils.ElectricalBool(self.pins.by_name("VCC").net)
+        high_net = self.pins.by_name("VCC").net
+        low_net = self.pins.by_name("GND").net
         address = 1 << 6
-        address |= converter.to_int(self.pins.by_name("A0"))
-        address |= converter.to_int(self.pins.by_name("A1")) << 1
-        address |= converter.to_int(self.pins.by_name("A2")) << 2
+        for bit in range(3):
+            pin = self.pins.by_name(f"A{bit}")
+            if pin.net is high_net:
+                address |= 1 << bit
+            elif pin.net is not low_net:
+                raise ValueError(
+                    f"Address pin {pin.name} must be connected to VCC or GND"
+                )
         return address
 
 
-def generate_design(
-    address=0, interrupt_pullup="10k", decoupling_cap=cmp.Capacitor("1u", 10)
-):
+def generate_design(address=0, interrupt_pullup="10k", decoupling_cap=None):
     if not (0 <= address <= 7):
         raise ValueError(f"Invalid address {address}; range 0-7")
     ports = [f"IO{i}" for i in range(GPIO_COUNT)] + ["VCC", "GND", "I2C", "INT"]
@@ -91,16 +94,14 @@ def generate_design(
     design.join_net(expander.pins.by_name("GND"), "GND")
 
     # Set address pins
-    converter = utils.ElectricalBool("VCC", "GND")
-    a0 = converter.to_net(address & 1)
-    a1 = converter.to_net((address >> 1) & 1)
-    a2 = converter.to_net((address >> 2) & 1)
-    design.join_net(expander.pins.by_name("A0"), a0)
-    design.join_net(expander.pins.by_name("A1"), a1)
-    design.join_net(expander.pins.by_name("A2"), a2)
+    for bit in range(3):
+        net_name = "VCC" if address & (1 << bit) else "GND"
+        design.join_net(expander.pins.by_name(f"A{bit}"), net_name)
 
     # Add decoupling cap and interrupt pull-up
-    design.add_decoupling_cap(expander.pins.by_name("VCC"), decoupling_cap)
+    if decoupling_cap is None:
+        decoupling_cap = cmp.Capacitor("1u", 10)
+    expander.pins.by_name("VCC").add_decoupling_capacitor(decoupling_cap)
     if interrupt_pullup:
         design.add_series_res(
             pin1=expander.pins.by_name("INT"),
@@ -110,9 +111,12 @@ def generate_design(
         )
 
     # Assign ports
-    for name in ["VCC", "GND", "INT"]:
-        design.port[name] = expander.pins.by_name(name)
-    for i in range(GPIO_COUNT):
-        design.port[f"IO{i}"] = expander.gpio(i)
+    port_connections = {
+        name: expander.pins.by_name(name) for name in ["VCC", "GND", "INT"]
+    }
+    port_connections.update(
+        {f"IO{index}": expander.gpio(index) for index in range(GPIO_COUNT)}
+    )
+    design.set_ports(port_connections)
     design.port.i2c = expander.i2c
     return design

@@ -1,51 +1,25 @@
-import math
+import re
+from decimal import Decimal
 
+_POWER_NET_NAME_PATTERN = re.compile(r"([PN])(\d+)V(\d+)")
 
-class ElectricalBool:
-    def __init__(self, logic_high_name="VCC", logic_low_name="GND"):
-        self.high = logic_high_name
-        self.low = logic_low_name
-
-    def to_int(self, net_name: str) -> bool:
-        if self.high == net_name:
-            return 1
-        elif self.low == net_name:
-            return 0
-        else:
-            raise ValueError(f"Undefined value for net: {net_name}")
-
-    def to_net(self, value: bool) -> str:
-        return self.high if value else self.low
-
-
-def add(tuple1, tuple2):
-    assert len(tuple1) == len(tuple2), "Mismatched sized tuples!"
-    return tuple([t + tuple2[i] for i, t in enumerate(tuple1)])
-
-
-def rotate(location, origin, angle):
-    x, y = location
-    ox, oy = origin
-    angle = math.radians(angle)
-    new_x = ox + math.cos(angle) * (x - ox) - math.sin(angle) * (y - oy)
-    new_y = oy + math.sin(angle) * (x - ox) + math.cos(angle) * (y - oy)
-    return new_x, new_y
-
-
-def scale(data, scalar):
-    return tuple([d / scalar for d in data])
-
-
-def four_corner_rect(x0, y0, x1, y1):
-    center_x = (x0 + x1) / 2
-    center_y = (y0 + y1) / 2
-    width = abs(x1 - x0)
-    height = abs(y1 - y0)
-    return (center_x, center_y), width, height
 
 def voltage_to_net_name(voltage: float) -> str:
-    prefix = "P" if voltage >= 0 else "N"
-    if "." in str(voltage):
-        return f"{prefix}{str(voltage).replace(".", "V")}"
-    else:
-        return f"{prefix}{str(voltage)}V0"
+    value = Decimal(str(voltage))
+    if not value.is_finite():
+        raise ValueError(f"Cannot convert voltage '{voltage}' to a power net name")
+
+    prefix = "P" if value >= 0 else "N"
+    whole, separator, fractional = format(abs(value), "f").partition(".")
+    fractional = fractional.rstrip("0") if separator else ""
+    return f"{prefix}{whole}V{fractional or '0'}"
+
+
+def power_net_name_to_voltage(net_name: str) -> float:
+    match = _POWER_NET_NAME_PATTERN.fullmatch(net_name)
+    if match is None:
+        raise ValueError(f"Cannot convert net name '{net_name}' to a voltage")
+
+    prefix, whole, fractional = match.groups()
+    magnitude = float(f"{whole}.{fractional}")
+    return magnitude if prefix == "P" else -magnitude
