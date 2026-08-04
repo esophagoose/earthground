@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Optional
 
 import earthground.components as cmp
 import earthground.standard_values as sv
-from earthground.analysis import DesignAnalysis, ResolvedNet
+from earthground.analysis import DesignAnalysis, ResolvedNet, group_logical_pins
 
 if TYPE_CHECKING:
     from earthground.schematic import Design
@@ -345,14 +345,14 @@ def _check_global_nets(
 ) -> list[ElectricalCheck]:
     checks = []
 
-    def add(rule, status, message, net, bounds=()):
+    def add(rule, status, message, net=None, bounds=()):
         checks.append(
             ElectricalCheck(
                 rule,
                 status,
                 message,
                 design_path,
-                net=net.name,
+                net=None if net is None else net.name,
                 sources=_sources(*bounds),
             )
         )
@@ -366,11 +366,48 @@ def _check_global_nets(
         ]
         if not drivers:
             continue
+        driver_groups = group_logical_pins(drivers)
+        group_count = len(driver_groups)
+        pad_count = len(drivers)
+        message = f"net has {group_count} unconditional logical driver(s)"
+        if pad_count != group_count:
+            message += f" across {pad_count} package pad(s)"
         add(
             "E2",
-            sv.CheckStatus.FAIL if len(drivers) >= 2 else sv.CheckStatus.PASS,
-            f"net has {len(drivers)} unconditional driver(s)",
+            sv.CheckStatus.FAIL if group_count >= 2 else sv.CheckStatus.PASS,
+            message,
             net,
+        )
+
+    # E8: duplicate logical pins on one component cannot span physical nets.
+    active_pins = [
+        pin
+        for page in analysis.design.iter_designs()
+        for component in page.components.values()
+        if not component.virtual and not component.dnp
+        for pin in component.pins
+    ]
+    for group in group_logical_pins(active_pins):
+        if len(group) < 2:
+            continue
+        nets = {
+            net.name for pin in group if (net := analysis.net_for_pin(pin)) is not None
+        }
+        if len(nets) <= 1:
+            continue
+        component = group[0].parent
+        resolved = analysis.component_for(component)
+        refdes = component.refdes if resolved is None else resolved.refdes
+        pads = ", ".join(
+            str(pin.index) for pin in sorted(group, key=lambda p: str(p.index))
+        )
+        add(
+            "E8",
+            sv.CheckStatus.FAIL,
+            (
+                f"{refdes} logical pin {group[0].name} spans nets "
+                f"{', '.join(sorted(nets))} across package pads {pads}"
+            ),
         )
 
     # E5: open-drain bias. Differential-negative lines bias toward ground;

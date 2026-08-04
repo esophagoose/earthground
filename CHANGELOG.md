@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-08-04
+
+### Fixed
+
+- Unnamed connections and circuit helpers now preserve direct child-port net
+  names and allocate unique fallback nets instead of silently shorting
+  unrelated signals with the same auto-net name.
+- ERC driver-contention checks and voltage inference now count same-name output
+  pads on one component as one logical driver, while E8 rejects logical pins
+  split across multiple flattened nets.
+
 ## [0.10.3] - 2026-08-04
 
 ### Added
@@ -189,7 +200,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - KiCad IPC startup behavior.
 
-[Unreleased]: https://github.com/esophagoose/earthground/compare/0.10.3...HEAD
+[Unreleased]: https://github.com/esophagoose/earthground/compare/0.10.4...HEAD
+[0.10.4]: https://github.com/esophagoose/earthground/compare/0.10.3...HEAD
 [0.10.3]: https://github.com/esophagoose/earthground/compare/ade4e8f...HEAD
 [0.9.0]: https://github.com/esophagoose/earthground/compare/48614be...d721788
 [0.8.1]: https://github.com/esophagoose/earthground/compare/f157003...48614be

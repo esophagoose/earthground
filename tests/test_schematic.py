@@ -217,6 +217,19 @@ def test_connect_auto_assigned():
     assert pin2 in design.nets[net].connections
 
 
+def test_connect_auto_assigned_names_are_unique_per_connection():
+    design = Design("TestDesign")
+    first = design.add_component(Resistor("1k"))
+    second = design.add_component(Resistor("1k"))
+
+    design.connect([first.pins[1], first.pins[2]])
+    design.connect([second.pins[1], second.pins[2]])
+
+    assert design.pin_to_net[first.pins[1]].name == "AutoNet_1"
+    assert design.pin_to_net[second.pins[1]].name == "AutoNet_1_2"
+    assert design.pin_to_net[first.pins[1]] is not design.pin_to_net[second.pins[1]]
+
+
 def test_connect_assigned_net():
     net = "TEST_NET"
     design = Design("TestDesign")
@@ -448,6 +461,25 @@ def test_add_series_res_assigned_pin2():
     assert res.pins[1] in design.nets[net].connections
     assert pin2 in design.nets[assigned_net].connections
     assert res.pins[2] in design.nets[assigned_net].connections
+
+
+def test_add_series_res_uses_unique_names_for_unconnected_destinations():
+    design = Design("TestDesign")
+    source = design.add_component(Resistor("1k"))
+    first_target = design.add_component(Resistor("1k"))
+    second_target = design.add_component(Resistor("1k"))
+
+    first = design.add_series_res(source.pins[1], "100", first_target.pins[1], "SOURCE")
+    second = design.add_series_res(
+        source.pins[1], "100", second_target.pins[1], "SOURCE"
+    )
+
+    assert design.pin_to_net[first.pins[2]].name == "SOURCE_R"
+    assert design.pin_to_net[second.pins[2]].name == "SOURCE_R_2"
+    assert (
+        design.pin_to_net[first_target.pins[1]]
+        is not design.pin_to_net[second_target.pins[1]]
+    )
 
 
 def test_get_net_from_pin():

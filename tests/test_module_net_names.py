@@ -137,6 +137,28 @@ def test_parent_port_net_rename_keeps_all_module_connections():
     assert level_shifter.pin_to_net[pulldown.pins[1]] is level_shifter.nets["SIG_0"]
 
 
+def test_parent_pullups_preserve_distinct_child_port_nets():
+    parent = Design("Board")
+    module = parent.add_module(Design("TargetModule", "TGT", ports=["SCL", "SDA"]))
+    module.set_ports({"SCL": "I2C_SCL", "SDA": "I2C_SDA"})
+
+    scl_pullup = parent.add_pullup_resistor(module.port["SCL"], "2.2k", "P3V3")
+    sda_pullup = parent.add_pullup_resistor(module.port["SDA"], "2.2k", "P3V3")
+
+    assert parent.pin_to_net[module.port["SCL"]].name == "I2C_SCL"
+    assert parent.pin_to_net[module.port["SDA"]].name == "I2C_SDA"
+    assert (
+        parent.pin_to_net[module.port["SCL"]]
+        is not parent.pin_to_net[module.port["SDA"]]
+    )
+    assert module.pin_to_net[module.port["SCL"]].name == "I2C_SCL"
+    assert module.pin_to_net[module.port["SDA"]].name == "I2C_SDA"
+    assert parent.pin_to_net[scl_pullup.pins[2]].name == "I2C_SCL"
+    assert parent.pin_to_net[sda_pullup.pins[2]].name == "I2C_SDA"
+    assert parent.pin_to_net[scl_pullup.pins[1]].name == "P3V3"
+    assert parent.pin_to_net[sda_pullup.pins[1]].name == "P3V3"
+
+
 def test_adding_nested_module_propagates_scoped_net_names_through_child_ports():
     board = Design("Board")
     supply = board.add_module(_build_switched_supply())

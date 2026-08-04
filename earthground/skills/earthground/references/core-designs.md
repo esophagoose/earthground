@@ -38,13 +38,14 @@ kicad.KicadExporter(design).save("generated_outputs")
 - `pins[index]` and `pins.by_index(index)` address physical pin indexes, normally integers starting at 1.
 - `pins.by_name("VCC")` is preferred for semantic part pins.
 - `pins.all_with_name(...)` handles duplicated logical names when a package has several pins with the same role.
+- Pins with the same name on one component are physical pads of one logical electrical pin. ERC and source-voltage inference treat that group as one driver; give independent outputs distinct names. All connected pads in a logical group must resolve to one flattened net, or ERC rule E8 fails.
 - `PinContainer` preserves declaration order, while pin identity is physical index + name + owning object. Typed metadata does not change identity or hashing.
 - `pin.net` raises if the pin is not connected; use `design.pin_to_net.get(pin)` when absence is valid.
 
 ## Nets
 
 - `join_net(pin, name)` creates the named net if necessary and connects one pin.
-- `connect(pins, name=None)` connects multiple pins. With no name, it reuses the first existing net or creates `AutoNet_<first-pin-name>`.
+- `connect(pins, name=None)` connects multiple pins. With no name, it reuses the first net already assigned locally or through a direct child-module port. Otherwise it creates a unique `AutoNet_<first-pin-name>` name, adding `_2`, `_3`, and so on when needed.
 - Connecting a pin already on a different net invokes net renaming/merging behavior. Avoid relying on incidental order when two named nets meet; specify the intended name or call `merge_nets` explicitly.
 - `change_net_name` expects an existing old name.
 - `merge_nets(source, target, name=None)` removes the source and moves its pins to the target.
@@ -71,6 +72,10 @@ Prefer current method names from `schematic.py`:
 - `design.add_decoupling_capacitor(capacitor, net_name=..., ...)`
 
 Beware older examples using `add_decoupling_cap`. For a decoupler tied to a supply pin, the pin-level method is clearest. Pass a fresh capacitor instance, not a shared default object.
+
+Connection helpers preserve a direct child port's existing signal-net name.
+When no signal net exists, generated names are unique within the calling
+design; helpers never reuse an auto-net merely because two pins share a name.
 
 ## Validation and inspection
 

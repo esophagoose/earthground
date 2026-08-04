@@ -145,6 +145,129 @@ def test_e2_driver_conflict_and_conditional_exemptions():
     assert statuses(design.check_electrical(), "E2") == [sv.CheckStatus.FAIL]
 
 
+def test_e2_groups_doubled_package_pads_as_one_logical_driver():
+    output_voltage = sv.volts(3.0, typ=3.3, max=3.6, source="regulator DS")
+    design = Design("DoubledOutput", "DBL")
+    regulator = design.add_component(
+        TypedComponent(
+            {
+                3: power("VOUT", cmp.PowerRole.OUTPUT, voltage=output_voltage),
+                4: power("VOUT", cmp.PowerRole.OUTPUT, voltage=output_voltage),
+            }
+        )
+    )
+    for pin in regulator.pins.all_with_name("VOUT"):
+        design.join_net(pin, "P3V3")
+
+    report = design.check_electrical()
+    e2 = [check for check in report.checks if check.rule_id == "E2"]
+    resolved = erc.DesignAnalysis(design).nets["P3V3"]
+
+    assert [check.status for check in e2] == [sv.CheckStatus.PASS]
+    assert "1 unconditional logical driver(s) across 2 package pad(s)" in e2[0].message
+    assert resolved.power_voltage == output_voltage
+    assert resolved.voltage == output_voltage
+
+
+def test_e2_keeps_independent_outputs_as_distinct_drivers():
+    voltage = sv.volts(typ=3.3)
+
+    separate_components = Design("SeparateComponents")
+    first = separate_components.add_component(
+        TypedComponent({1: power("VOUT", cmp.PowerRole.OUTPUT, voltage=voltage)})
+    )
+    second = separate_components.add_component(
+        TypedComponent({1: power("VOUT", cmp.PowerRole.OUTPUT, voltage=voltage)})
+    )
+    separate_components.connect([first.pins[1], second.pins[1]], "SHARED")
+    assert statuses(separate_components.check_electrical(), "E2") == [
+        sv.CheckStatus.FAIL
+    ]
+
+    separate_names = Design("SeparateNames")
+    dual = separate_names.add_component(
+        TypedComponent(
+            {
+                1: power("OUT_A", cmp.PowerRole.OUTPUT, voltage=voltage),
+                2: power("OUT_B", cmp.PowerRole.OUTPUT, voltage=voltage),
+            }
+        )
+    )
+    separate_names.connect([dual.pins[1], dual.pins[2]], "SHARED")
+    assert statuses(separate_names.check_electrical(), "E2") == [sv.CheckStatus.FAIL]
+
+
+def test_e8_rejects_one_logical_pin_split_across_multiple_nets():
+    voltage = sv.volts(typ=3.3)
+    design = Design("SplitLogicalPin", "SPLIT")
+    regulator = design.add_component(
+        TypedComponent(
+            {
+                3: power("VOUT", cmp.PowerRole.OUTPUT, voltage=voltage),
+                4: power("VOUT", cmp.PowerRole.OUTPUT, voltage=voltage),
+            }
+        )
+    )
+    design.join_net(regulator.pins[3], "P3V3_A")
+    design.join_net(regulator.pins[4], "P3V3_B")
+
+    checks = [
+        check for check in design.check_electrical().checks if check.rule_id == "E8"
+    ]
+
+    assert [check.status for check in checks] == [sv.CheckStatus.FAIL]
+    assert "logical pin VOUT spans nets P3V3_A, P3V3_B" in checks[0].message
+    assert "package pads 3, 4" in checks[0].message
+
+
+def test_doubled_driver_with_inconsistent_voltage_metadata_stays_unresolved():
+    design = Design("InconsistentLogicalPin")
+    regulator = design.add_component(
+        TypedComponent(
+            {
+                3: power("VOUT", cmp.PowerRole.OUTPUT, voltage=sv.volts(typ=3.3)),
+                4: power("VOUT", cmp.PowerRole.OUTPUT, voltage=sv.volts(typ=5.0)),
+            }
+        )
+    )
+    design.connect(regulator.pins.all_with_name("VOUT"), "OUTPUT")
+
+    resolved = erc.DesignAnalysis(design).nets["OUTPUT"]
+
+    assert statuses(design.check_electrical(), "E2") == [sv.CheckStatus.PASS]
+    assert resolved.power_voltage is None
+    assert resolved.voltage is None
+
+
+def test_doubled_driver_groups_across_hierarchy_and_ignores_dnp_outputs():
+    voltage = sv.volts(typ=3.3)
+    child = Design("Regulator", "REG", ports=["VOUT"])
+    regulator = child.add_component(
+        TypedComponent(
+            {
+                3: power("VOUT", cmp.PowerRole.OUTPUT, voltage=voltage),
+                4: power("VOUT", cmp.PowerRole.OUTPUT, voltage=voltage),
+            }
+        )
+    )
+    child.connect([*regulator.pins.all_with_name("VOUT"), child.port["VOUT"]], "VOUT")
+
+    board = Design("Board")
+    module = board.add_module(child)
+    board.join_net(module.port["VOUT"], "P3V3")
+    alternate = board.add_component(
+        TypedComponent({1: power("VOUT", cmp.PowerRole.OUTPUT, voltage=voltage)})
+    )
+    alternate.dnp = True
+    board.join_net(alternate.pins[1], "P3V3")
+
+    resolved = erc.DesignAnalysis(board).nets["P3V3"]
+
+    assert statuses(board.check_electrical(), "E2") == [sv.CheckStatus.PASS]
+    assert resolved.power_voltage == voltage
+    assert resolved.voltage == voltage
+
+
 def test_e3_external_drive_and_unconnected_input():
     design = Design("Inputs")
     driven = design.add_component(

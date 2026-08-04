@@ -8,7 +8,7 @@ copyright = "2024"
 author = "esophagoose"
 
 release = "0.1"
-version = "0.10.2"
+version = "0.10.4"
 
 extensions = [
     "sphinx.ext.duration",

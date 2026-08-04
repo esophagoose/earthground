@@ -318,10 +318,31 @@ class Design:
         if pin in module_design.pin_to_net:
             module_design.change_net_name(module_design.pin_to_net[pin].name, net_name)
 
+    def _get_existing_net_name_from_pin(self, pin: cmp.Pin) -> Optional[str]:
+        net = self.pin_to_net.get(pin)
+        if net is not None:
+            return net.name
+        if isinstance(pin.parent, Ports):
+            port_design: Design = pin.parent.parent
+            if port_design is not self and port_design in self.modules:
+                net = port_design.pin_to_net.get(pin)
+                if net is not None:
+                    return net.name
+        return None
+
+    def _get_unique_net_name(self, base_name: str) -> str:
+        if base_name not in self.nets:
+            return base_name
+        suffix = 2
+        while f"{base_name}_{suffix}" in self.nets:
+            suffix += 1
+        return f"{base_name}_{suffix}"
+
     def _get_net_name_from_pin(self, pin: cmp.Pin) -> str:
-        if pin in self.pin_to_net:
-            return self.pin_to_net[pin].name
-        return f"AutoNet_{pin.name}"
+        existing = self._get_existing_net_name_from_pin(pin)
+        if existing is not None:
+            return existing
+        return self._get_unique_net_name(f"AutoNet_{pin.name}")
 
     def _pin_belongs_to_design(self, pin: cmp.Pin) -> bool:
         if isinstance(pin.parent, Ports):
@@ -513,7 +534,9 @@ class Design:
         net_name: Optional[str] = None,
     ) -> None:
         """
-        Connects a list of pins to a specified net. If no net name is provided, it automatically generates a net name.
+        Connects a list of pins to a specified net. If no net name is provided,
+        it reuses a net already assigned in this design or through a direct
+        child-module port. Otherwise it generates a unique auto-net name.
 
         This method connects all provided pins to the same net. If the pins are already part of a net,
         it will merge these nets into one. If no net name is provided and the pins are not part of any existing net,
@@ -546,14 +569,17 @@ class Design:
             [] if net_name is None else [net_name],
         )
         if net_name is None:
-            nets = [self.pin_to_net.get(p) for p in list_of_pins]
-            if not any(nets):
-                # All pins don't have a net associated with them
-                net_name = f"AutoNet_{list_of_pins[0].name}"
-            else:
-                # Some pins have nets associated with them
-                #   First valid net set as net for all pins
-                net_name = [net.name for net in nets if net][0]
+            net_name = next(
+                (
+                    existing
+                    for pin in list_of_pins
+                    if (existing := self._get_existing_net_name_from_pin(pin))
+                    is not None
+                ),
+                None,
+            )
+            if net_name is None:
+                net_name = self._get_net_name_from_pin(list_of_pins[0])
         for pin in list_of_pins:
             self.join_net(pin, net_name)
 
@@ -664,9 +690,9 @@ class Design:
         self.add_component(res)
         self.join_net(pin1, net_name)
         self.join_net(res.pins[1], net_name)
-        next_name = net_name + "_R"
-        if pin2 in self.pin_to_net:
-            next_name = self.pin_to_net[pin2].name
+        next_name = self._get_existing_net_name_from_pin(pin2)
+        if next_name is None:
+            next_name = self._get_unique_net_name(net_name + "_R")
         self.join_net(res.pins[2], next_name)
         self.join_net(pin2, next_name)
         return res

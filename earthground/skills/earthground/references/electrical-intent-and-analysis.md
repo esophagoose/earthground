@@ -67,7 +67,7 @@ coverage = design.electrical_coverage()
 design.validate(check_electrical=True)
 ```
 
-ERC covers supply compatibility, conflicting drivers, floating inputs, connected no-connect pins, open-drain bias, absolute maximum voltage, and ambient operating range. It is opt-in. Untyped legacy pins affect coverage but do not create fake evidence.
+ERC covers supply compatibility, conflicting drivers, floating inputs, connected no-connect pins, open-drain bias, absolute maximum voltage, and ambient operating range. It is opt-in. Untyped legacy pins affect coverage but do not create fake evidence. For driver contention and source-voltage inference, same-name pins on one component are one logical electrical pin even when a package exposes it on several physical pads. Such pads must resolve to the same flattened net; E8 reports a split logical pin.
 
 Rail and external-drive declarations resolve on flattened physical nets. A
 board-level declaration is visible through connected module ports; do not copy

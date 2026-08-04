@@ -34,6 +34,29 @@ class ResolvedNet:
     voltage_method: Optional[str] = None
 
 
+def group_logical_pins(pins) -> tuple[tuple[cmp.Pin, ...], ...]:
+    """Group physical package pins by component-local logical pin name."""
+
+    groups: dict[tuple[object, str], list[cmp.Pin]] = {}
+    for pin in pins:
+        groups.setdefault((pin.parent, pin.name), []).append(pin)
+    return tuple(tuple(group) for group in groups.values())
+
+
+def _single_logical_source_voltage(pins) -> Optional[sv.ValueBounds]:
+    groups = group_logical_pins(pins)
+    if len(groups) != 1:
+        return None
+    voltages = [
+        pin.erc.voltage_operating
+        for pin in groups[0]
+        if pin.erc.voltage_operating is not None
+    ]
+    if not voltages or any(voltage != voltages[0] for voltage in voltages[1:]):
+        return None
+    return voltages[0]
+
+
 class DesignAnalysis:
     """A read-only flattened view of a Design and its module hierarchy."""
 
@@ -67,8 +90,7 @@ class DesignAnalysis:
                     and pin.erc.power_role is cmp.PowerRole.OUTPUT
                     and pin.erc.voltage_operating is not None
                 ]
-                if len(power_sources) == 1:
-                    power_voltage = power_sources[0].erc.voltage_operating
+                power_voltage = _single_logical_source_voltage(power_sources)
 
             externally_driven = name in external
             voltage = power_voltage
@@ -95,8 +117,7 @@ class DesignAnalysis:
                         )
                         and pin.erc.voltage_operating is not None
                     ]
-                    if len(sources) == 1:
-                        voltage = sources[0].erc.voltage_operating
+                    voltage = _single_logical_source_voltage(sources)
             self.nets[name] = ResolvedNet(
                 name=name,
                 connections=frozenset(pins),
