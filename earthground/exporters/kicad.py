@@ -218,7 +218,11 @@ class KicadExporter:
                     index = pad.number
                 try:
                     pin = component.pins[index]
-                except (KeyError, TypeError):
+                except (KeyError, TypeError, ValueError):
+                    # PinContainer.by_index raises ValueError for an unknown
+                    # index. Pads with no matching pin are normal KiCad
+                    # geometry, including unnumbered paste apertures and
+                    # mechanical or shield pads; preserve them without a net.
                     continue
                 net = schematic.pin_to_net.get(pin)
                 if net:

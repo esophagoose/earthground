@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-08-03
+
+### Fixed
+
+- KiCad export now preserves unnumbered footprint pads without attempting to
+  map them to component pins or electrical nets.
+
 ## [0.10.0] - 2026-08-03
 
 ### Added
