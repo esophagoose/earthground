@@ -134,12 +134,27 @@ class Placement:
     id: Optional[Orientation] = None
     layer: Layer = Layer.TOP
 
+    @classmethod
+    def identity(cls, *, layer: Layer = Layer.TOP) -> "Placement":
+        return cls(Position(0, 0, 0), layer=layer)
+
 
 class ComponentLayout(NamedTuple):
     id: Position
     id_orientation: Orientation
     component: Position
     layer: Layer = Layer.TOP
+
+
+class PlacementProvenance(enum.Enum):
+    EXPLICIT = "Explicit"
+    FALLBACK = "Fallback"
+
+
+class FlattenedPlacement(NamedTuple):
+    layout: ComponentLayout
+    component: "cmp.Component"
+    provenance: PlacementProvenance
 
 
 def round_to_nearest(x: float, step: float) -> float:
@@ -178,8 +193,10 @@ class Layout:
         self.silk: list[SilkLine] = []
         self.fab: list[FabLine | FabText] = []
 
-    def get_placement(self, id: str) -> ComponentLayout:
-        floating_components = list(
+    def get_placement(
+        self, id: str, *, warn_on_fallback: bool = True
+    ) -> ComponentLayout:
+        floating_components = sorted(
             set(self.design.components.keys()) - set(self.placement.keys())
         )
         if id not in self.placement and id not in self.design.components:
@@ -187,13 +204,15 @@ class Layout:
                 f"Cannot get placement for {id}. Component not in {self.design.name}"
             )
         elif id in floating_components:
-            log.warning("Component %s is floating in %s", id, self.design.name)
+            if warn_on_fallback:
+                log.warning("Component %s is floating in %s", id, self.design.name)
             index = floating_components.index(id)
             x = 0
             for f in floating_components[:index]:
                 if self.design.components[f].virtual:
                     continue
-                x += self.design.components[f].footprint.get_bbox().width() + 1
+                footprint = self.design.components[f].footprint
+                x += (1 if footprint is None else footprint.get_bbox().width()) + 1
             x = x % SCHEMATIC_WIDTH
             y = x // SCHEMATIC_WIDTH
             return ComponentLayout(
@@ -276,31 +295,10 @@ class Layout:
         """
         Flatten the layout into a dictionary of component layouts.
         """
-        flattened = {}
-        for cid, component in self.design.components.items():
-            if isinstance(component, cmp.ModuleComponent):
-                module_layout = self.get_placement(cid)
-                module_position = module_layout.component
-                flat_module = component.parent.layout.flatten()
-                for module_cid, comp in flat_module.items():
-                    layout, component = comp
-                    rotated_component = rotate_position(
-                        layout.component, module_position.angle
-                    )
-                    rotated_id = rotate_position(layout.id, module_position.angle)
-                    layout = ComponentLayout(
-                        id=rotated_id,
-                        id_orientation=layout.id_orientation,
-                        component=rotated_component.translate(
-                            module_position.x, module_position.y
-                        ),
-                        layer=combine_layer(module_layout.layer, layout.layer),
-                    )
-                    flattened[f"{cid}_{module_cid}"] = (layout, component)
-            elif isinstance(component, cmp.Component):
-                flattened[cid] = (self.get_placement(cid), component)
-            else:
-                raise ValueError(f"Invalid component type: {type(component)}")
+        flattened = {
+            refdes: (item.layout, item.component)
+            for refdes, item in self.flatten_with_provenance().items()
+        }
         unused_cids = list(
             set(self.placement.keys()) - set(self.design.components.keys())
         )
@@ -308,6 +306,47 @@ class Layout:
             print(
                 f"WARNING: Components in layout but not used in  {self.design.name}: {unused_cids}"
             )
+        return flattened
+
+    def flatten_with_provenance(
+        self, *, warn_on_fallback: bool = True
+    ) -> Dict[str, FlattenedPlacement]:
+        """Flatten hierarchy while retaining whether every placement was explicit."""
+
+        flattened: Dict[str, FlattenedPlacement] = {}
+
+        def visit(design, prefix="", parent_layout=None, parent_explicit=True):
+            for cid, component in design.components.items():
+                refdes = f"{prefix}_{cid}" if prefix else cid
+                local = design.layout.get_placement(
+                    cid, warn_on_fallback=warn_on_fallback
+                )
+                explicit = parent_explicit and cid in design.layout.placement
+                if parent_layout is not None:
+                    local = ComponentLayout(
+                        id=rotate_position(local.id, parent_layout.component.angle),
+                        id_orientation=local.id_orientation,
+                        component=transform_position(
+                            local.component, parent_layout.component
+                        ),
+                        layer=combine_layer(parent_layout.layer, local.layer),
+                    )
+                if isinstance(component, cmp.ModuleComponent):
+                    visit(component.parent, refdes, local, explicit)
+                elif isinstance(component, cmp.Component):
+                    flattened[refdes] = FlattenedPlacement(
+                        local,
+                        component,
+                        (
+                            PlacementProvenance.EXPLICIT
+                            if explicit
+                            else PlacementProvenance.FALLBACK
+                        ),
+                    )
+                else:
+                    raise ValueError(f"Invalid component type: {type(component)}")
+
+        visit(self.design)
         return flattened
 
     def flatten_silk(self) -> list[SilkLine]:

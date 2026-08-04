@@ -43,6 +43,17 @@ def test_parse_footprint():
     assert footprint.pads[1].net.name == "NET_B"
 
 
+def test_strict_export_rejects_fallback_placement():
+    design = Design("STRICT")
+    design.add_component(cmp.Resistor("1k"))
+
+    with pytest.raises(ValueError, match="explicit placement for: R1"):
+        kicad.KicadExporter(design, strict_placement=True).convert_to_kicad(design)
+
+    design.layout.placement["R1"] = layout_lib.Placement.identity()
+    kicad.KicadExporter(design, strict_placement=True).convert_to_kicad(design)
+
+
 def test_parse_footprint_exports_provenance_and_distributor_metadata():
     design = Design("TEST")
     component = cmp.Resistor(100)

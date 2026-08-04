@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import enum
 from dataclasses import dataclass
 from typing import Optional
 
@@ -80,12 +81,19 @@ class LeaveOpenIfUnused(Requirement):
 class RoutingConstraint(Requirement):
     pins: tuple[str, ...]
     min_trace_width_mm: Optional[float] = None
+    z_diff: Optional[sv.ValueBounds] = None
     note: Optional[str] = None
 
     def __post_init__(self):
         super().__post_init__()
         if self.min_trace_width_mm is not None and self.min_trace_width_mm <= 0:
             raise ValueError("min_trace_width_mm must be positive")
+        sv.require_bounds(self.z_diff, "Ω", "z_diff", allow_none=True)
+
+
+class CheckKind(enum.Enum):
+    VERIFICATION = "Verification"
+    ADVISORY = "Advisory"
 
 
 @dataclass(frozen=True)
@@ -97,10 +105,15 @@ class ContractCheck:
     message: str
     source: Optional[str] = None
     waiver_reason: Optional[str] = None
+    kind: CheckKind = CheckKind.VERIFICATION
 
     @property
     def is_accepted(self):
-        return self.status is sv.CheckStatus.PASS or self.waiver_reason is not None
+        return (
+            self.status is sv.CheckStatus.PASS
+            or self.waiver_reason is not None
+            or self.kind is CheckKind.ADVISORY
+        )
 
     def __str__(self):
         waiver = f" [waived: {self.waiver_reason}]" if self.waiver_reason else ""
@@ -116,15 +129,31 @@ class ContractReport:
     checks: tuple[ContractCheck, ...]
 
     @property
-    def failures(self):
+    def items(self):
+        return self.checks
+
+    @property
+    def passes(self):
+        return tuple(
+            check for check in self.checks if check.status is sv.CheckStatus.PASS
+        )
+
+    @property
+    def blocking(self):
         return tuple(check for check in self.checks if not check.is_accepted)
+
+    @property
+    def failures(self):
+        return self.blocking
 
     @property
     def unknowns(self):
         return tuple(
             check
             for check in self.checks
-            if check.status is sv.CheckStatus.UNKNOWN and check.waiver_reason is None
+            if check.status is sv.CheckStatus.UNKNOWN
+            and check.waiver_reason is None
+            and check.kind is CheckKind.VERIFICATION
         )
 
     @property
@@ -166,6 +195,51 @@ def _capacitors_between(analysis, target, return_net):
         if other is not None and analysis.net_for_pin(other) is return_net:
             matches.append(capacitor)
     return tuple(dict.fromkeys(matches))
+
+
+def _pad_position(resolved, pin):
+    footprint = resolved.component.footprint
+    placement = resolved.placement
+    if footprint is None or placement is None:
+        return None
+    pad = footprint.pads.get(pin.index)
+    if pad is None:
+        pad = footprint.pads.get(str(pin.index))
+    if pad is None:
+        return None
+    x, y = pad.location
+    if placement.layer.name == "BOTTOM":
+        x = -x
+    angle = math.radians(placement.component.angle)
+    return (
+        placement.component.x + x * math.cos(angle) - y * math.sin(angle),
+        placement.component.y + x * math.sin(angle) + y * math.cos(angle),
+    )
+
+
+def _decoupling_pad_distance(analysis, resolved, capacitor, target, required_pin_name):
+    support = analysis.component_for(capacitor)
+    if support is None:
+        return None
+    device_pads = [
+        position
+        for pin in resolved.component.pins.all_with_name(required_pin_name)
+        if analysis.net_for_pin(pin) is target
+        if (position := _pad_position(resolved, pin)) is not None
+    ]
+    capacitor_pads = [
+        position
+        for pin in capacitor.pins
+        if analysis.net_for_pin(pin) is target
+        if (position := _pad_position(support, pin)) is not None
+    ]
+    if not device_pads or not capacitor_pads:
+        return None
+    return min(
+        math.hypot(left[0] - right[0], left[1] - right[1])
+        for left in device_pads
+        for right in capacitor_pads
+    )
 
 
 def _check_decoupling(analysis, resolved, requirement):
@@ -239,7 +313,6 @@ def _check_decoupling(analysis, resolved, requirement):
             )
         )
     if requirement.max_distance_mm is not None:
-        support = [analysis.component_for(capacitor) for capacitor in candidates]
         if resolved.placement is None:
             checks.append(
                 (
@@ -250,17 +323,20 @@ def _check_decoupling(analysis, resolved, requirement):
             )
         else:
             distances = [
-                math.hypot(
-                    item.placement.component.x - resolved.placement.component.x,
-                    item.placement.component.y - resolved.placement.component.y,
+                _decoupling_pad_distance(
+                    analysis,
+                    resolved,
+                    capacitor,
+                    target,
+                    requirement.pin,
                 )
-                for item in support
-                if item is not None and item.placement is not None
+                for capacitor in candidates
             ]
+            distances = [distance for distance in distances if distance is not None]
             enough_close = sum(
                 distance <= requirement.max_distance_mm for distance in distances
             )
-            unknown_count = len(support) - len(distances)
+            unknown_count = len(candidates) - len(distances)
             if enough_close >= required_count:
                 status = sv.CheckStatus.PASS
             elif unknown_count:
@@ -272,8 +348,10 @@ def _check_decoupling(analysis, resolved, requirement):
                     "distance",
                     status,
                     (
-                        f"{enough_close} capacitor(s) are within "
+                        f"{enough_close} capacitor(s) have supply-pad centres within "
                         f"{requirement.max_distance_mm} mm; "
+                        f"measured distances: "
+                        f"{', '.join(f'{distance:.3f} mm' for distance in distances) or 'none'}; "
                         f"{unknown_count} candidate placement(s) are unavailable"
                     ),
                 )
@@ -426,8 +504,90 @@ def _evaluate(analysis, resolved, requirement):
                     f"routing constraint references missing pins: {', '.join(missing)}",
                 )
             ]
+        nets = []
+        for name in requirement.pins:
+            net = analysis.net_for_pin(_pin(resolved.component, name))
+            if net is not None and net.name not in nets:
+                nets.append(net.name)
+        if not nets:
+            return [
+                (
+                    "routing",
+                    sv.CheckStatus.UNKNOWN,
+                    "routing nets are unresolved",
+                )
+            ]
+        typed_results = []
+        if requirement.min_trace_width_mm is not None:
+            minimum_m = requirement.min_trace_width_mm / 1000
+            classes = [
+                item
+                for page in analysis.design.iter_designs()
+                for item in page._net_classes.values()
+                if set(nets).issubset(item.nets)
+            ]
+            widths = [
+                item.track_width.typ
+                for item in classes
+                if item.track_width is not None and item.track_width.typ is not None
+            ]
+            if widths:
+                passed = any(float(width) >= minimum_m for width in widths)
+                typed_results.append(
+                    (
+                        "routing",
+                        sv.CheckStatus.PASS if passed else sv.CheckStatus.FAIL,
+                        f"declared net-class width {'meets' if passed else 'does not meet'} "
+                        f"{requirement.min_trace_width_mm} mm minimum",
+                    )
+                )
+            else:
+                typed_results.append(
+                    (
+                        "routing",
+                        sv.CheckStatus.UNKNOWN,
+                        "no matching typed net-class width is declared",
+                    )
+                )
+        if requirement.z_diff is not None:
+            pairs = [
+                pair
+                for page in analysis.design.iter_designs()
+                for pair in page._diff_pairs
+                if set(pair.nets) == set(nets)
+            ]
+            if not pairs or pairs[0].z_diff is None:
+                typed_results.append(
+                    (
+                        "routing-impedance",
+                        sv.CheckStatus.UNKNOWN,
+                        "no matching typed differential-pair impedance is declared",
+                    )
+                )
+            else:
+                status = requirement.z_diff.covers(pairs[0].z_diff)
+                typed_results.append(
+                    (
+                        "routing-impedance",
+                        status,
+                        (
+                            "declared differential-pair impedance is compatible"
+                            if status is sv.CheckStatus.PASS
+                            else "declared differential-pair impedance is incompatible"
+                        ),
+                    )
+                )
+        if typed_results:
+            return typed_results
         detail = requirement.note or "routing constraint requires PCB trace evidence"
-        return [("routing", sv.CheckStatus.UNKNOWN, detail)]
+        return [
+            (
+                "routing",
+                sv.CheckStatus.UNKNOWN,
+                detail,
+                CheckKind.ADVISORY,
+            )
+        ]
     return [
         (
             "declaration",
@@ -460,7 +620,8 @@ def check_design(design) -> ContractReport:
             )
             continue
         for requirement in component.requires:
-            for aspect, status, message in _evaluate(analysis, resolved, requirement):
+            for result in _evaluate(analysis, resolved, requirement):
+                aspect, status, message, *metadata = result
                 check_id = f"{requirement.id}.{aspect}"
                 checks.append(
                     ContractCheck(
@@ -471,6 +632,7 @@ def check_design(design) -> ContractReport:
                         message,
                         requirement.source,
                         waivers.get((component, check_id)),
+                        metadata[0] if metadata else CheckKind.VERIFICATION,
                     )
                 )
     return ContractReport(tuple(checks))

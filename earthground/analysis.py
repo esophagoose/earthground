@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from decimal import Decimal
+import itertools
 from typing import Optional
 
 import earthground.components as cmp
@@ -15,6 +17,10 @@ class ResolvedComponent:
     refdes: str
     component: cmp.Component
     placement: Optional[layout_lib.ComponentLayout]
+    fallback_placement: Optional[layout_lib.ComponentLayout] = None
+    placement_provenance: layout_lib.PlacementProvenance = (
+        layout_lib.PlacementProvenance.FALLBACK
+    )
 
 
 @dataclass(frozen=True)
@@ -25,6 +31,7 @@ class ResolvedNet:
     voltage_conflict: bool = False
     power_voltage: Optional[sv.ValueBounds] = None
     externally_driven: bool = False
+    voltage_method: Optional[str] = None
 
 
 class DesignAnalysis:
@@ -97,9 +104,28 @@ class DesignAnalysis:
                 voltage_conflict=conflict,
                 power_voltage=power_voltage,
                 externally_driven=externally_driven,
+                voltage_method="declared or driven" if voltage is not None else None,
             )
 
-        self.components = tuple(_resolved_components(design))
+        self._infer_resistive_voltages()
+
+        self.components = tuple(
+            ResolvedComponent(
+                refdes,
+                item.component,
+                (
+                    item.layout
+                    if item.provenance is layout_lib.PlacementProvenance.EXPLICIT
+                    else None
+                ),
+                item.layout,
+                item.provenance,
+            )
+            for refdes, item in design.layout.flatten_with_provenance(
+                warn_on_fallback=False
+            ).items()
+            if not item.component.virtual
+        )
         self._component_lookup = {item.component: item for item in self.components}
 
     def net_for_pin(self, pin: cmp.Pin) -> Optional[ResolvedNet]:
@@ -108,6 +134,42 @@ class DesignAnalysis:
 
     def component_for(self, component: cmp.Component) -> Optional[ResolvedComponent]:
         return self._component_lookup.get(component)
+
+    def voltage_for_pin(self, pin: cmp.Pin) -> Optional[sv.ValueBounds]:
+        net = self.net_for_pin(pin)
+        if net is not None and not net.voltage_conflict:
+            return net.voltage
+        spec = pin.spec
+        if not isinstance(spec, cmp.DigitalPinSpec):
+            return None
+        internal = spec.internal
+        target_name = None
+        method = None
+        if internal.pull_up is True and internal.pull_up_to:
+            target_name = internal.pull_up_to
+            method = "internal pull-up"
+        elif internal.pull_down is True and internal.pull_down_to:
+            target_name = internal.pull_down_to
+            method = "internal pull-down"
+        if target_name is None:
+            return None
+        try:
+            target_pin = pin.parent.pins.by_name(target_name)
+        except ValueError:
+            return None
+        target = self.net_for_pin(target_pin)
+        if target is None or target.voltage_conflict or target.voltage is None:
+            return None
+        source = tuple(
+            dict.fromkeys(target.voltage.source + ((internal.source or method),))
+        )
+        return sv.ValueBounds(
+            target.voltage.units,
+            target.voltage.min,
+            typ=target.voltage.typ,
+            max=target.voltage.max,
+            source=source,
+        )
 
     def active_connections(self, net: ResolvedNet) -> tuple[cmp.Pin, ...]:
         return tuple(pin for pin in net.connections if _active_pin(pin))
@@ -130,10 +192,118 @@ class DesignAnalysis:
             if other is not None:
                 yield resistor, self.net_for_pin(other)
 
+    def _infer_resistive_voltages(self) -> None:
+        for _ in range(len(self.nets)):
+            changed = False
+            for name, net in tuple(self.nets.items()):
+                if (
+                    net.voltage is not None
+                    or net.voltage_conflict
+                    or net.externally_driven
+                ):
+                    continue
+                if not _is_high_impedance_signal(net):
+                    continue
+                branches = [
+                    (resistor, other.voltage)
+                    for resistor, other in self.resistor_branches(net)
+                    if other is not None
+                    and not other.voltage_conflict
+                    and other.voltage is not None
+                ]
+                voltage = _solve_resistor_node(branches)
+                if voltage is None:
+                    continue
+                self.nets[name] = replace(
+                    net,
+                    voltage=voltage,
+                    voltage_method="resistive DC inference",
+                )
+                changed = True
+            if not changed:
+                break
+
 
 def _active_pin(pin: cmp.Pin) -> bool:
     parent = pin.parent
     return isinstance(parent, cmp.Component) and not parent.virtual and not parent.dnp
+
+
+def _is_high_impedance_signal(net: ResolvedNet) -> bool:
+    for pin in net.connections:
+        parent = pin.parent
+        if not _active_pin(pin) or isinstance(parent, cmp.Resistor):
+            continue
+        if isinstance(parent, cmp.Capacitor):
+            continue
+        if pin.erc.power_role is not None:
+            return False
+        directions = pin.erc.directions
+        if not directions or not directions.issubset({cmp.PinDirection.INPUT}):
+            return False
+    return True
+
+
+def _resistance_range(resistor: cmp.Resistor) -> tuple[Decimal, Decimal]:
+    nominal = resistor.value.value
+    tolerance = resistor.tolerance
+    if tolerance is None or tolerance.min is None or tolerance.max is None:
+        return nominal, nominal
+    return nominal * (Decimal(1) + tolerance.min), nominal * (
+        Decimal(1) + tolerance.max
+    )
+
+
+def _solve_resistor_node(branches) -> Optional[sv.ValueBounds]:
+    if not branches:
+        return None
+    if any(voltage.min is None or voltage.max is None for _, voltage in branches):
+        return None
+    corners = []
+    ranges = [
+        (
+            _resistance_range(resistor),
+            (voltage.min, voltage.max),
+        )
+        for resistor, voltage in branches
+    ]
+    choices = [
+        tuple(itertools.product(resistance, voltage)) for resistance, voltage in ranges
+    ]
+    for combination in itertools.product(*choices):
+        conductance = sum(
+            (Decimal(1) / resistance for resistance, _ in combination), Decimal(0)
+        )
+        if conductance <= 0:
+            return None
+        corners.append(
+            sum(
+                (value / resistance for resistance, value in combination),
+                Decimal(0),
+            )
+            / conductance
+        )
+    typical_terms = []
+    for resistor, voltage in branches:
+        if voltage.typ is None:
+            typical_terms = []
+            break
+        typical_terms.append((resistor.value.value, voltage.typ))
+    typical = None
+    if typical_terms:
+        g_typ = sum(
+            (Decimal(1) / resistance for resistance, _ in typical_terms), Decimal(0)
+        )
+        typical = (
+            sum((value / resistance for resistance, value in typical_terms), Decimal(0))
+            / g_typ
+        )
+    sources = tuple(
+        dict.fromkeys(
+            source for resistor, voltage in branches for source in voltage.source
+        )
+    )
+    return sv.volts(min(corners), typ=typical, max=max(corners), source=sources)
 
 
 def _module_entries(design):
@@ -142,45 +312,3 @@ def _module_entries(design):
         module = by_symbol.get(component)
         if module is not None:
             yield cid, module
-
-
-def _resolved_components(
-    design,
-    *,
-    prefix: str = "",
-    parent_layout: Optional[layout_lib.ComponentLayout] = None,
-    parent_explicit: bool = True,
-):
-    modules = {module.port.symbol: module for module in design.modules}
-    for cid, component in design.components.items():
-        refdes = f"{prefix}_{cid}" if prefix else cid
-        explicit = parent_explicit and cid in design.layout.placement
-        local_layout = (
-            design.layout.get_placement(cid) if cid in design.layout.placement else None
-        )
-        if local_layout is not None and parent_layout is not None:
-            component_position = layout_lib.transform_position(
-                local_layout.component, parent_layout.component
-            )
-            id_position = layout_lib.rotate_position(
-                local_layout.id, parent_layout.component.angle
-            )
-            local_layout = layout_lib.ComponentLayout(
-                id=id_position,
-                id_orientation=local_layout.id_orientation,
-                component=component_position,
-                layer=layout_lib.combine_layer(parent_layout.layer, local_layout.layer),
-            )
-        if not explicit:
-            local_layout = None
-
-        module = modules.get(component)
-        if module is not None:
-            yield from _resolved_components(
-                module,
-                prefix=refdes,
-                parent_layout=local_layout,
-                parent_explicit=explicit,
-            )
-        elif not component.virtual:
-            yield ResolvedComponent(refdes, component, local_layout)

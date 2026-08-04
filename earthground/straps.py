@@ -85,6 +85,24 @@ class StrapReport:
     results: tuple[StrapResult, ...]
 
     @property
+    def items(self):
+        return self.results
+
+    @property
+    def checks(self):
+        return self.results
+
+    @property
+    def passes(self):
+        return tuple(
+            result for result in self.results if result.status is sv.CheckStatus.PASS
+        )
+
+    @property
+    def blocking(self):
+        return self.failures + self.unknowns
+
+    @property
     def failures(self):
         return tuple(
             result for result in self.results if result.status is sv.CheckStatus.FAIL
@@ -98,7 +116,7 @@ class StrapReport:
 
     @property
     def is_valid(self):
-        return not self.failures and not self.unknowns
+        return not self.blocking
 
 
 def _complete_resistance(bounds: sv.ValueBounds) -> Optional[tuple[Decimal, Decimal]]:

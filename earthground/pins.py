@@ -127,11 +127,34 @@ class InternalDigitalFeatures:
     pull_up: Optional[bool] = None
     pull_down: Optional[bool] = None
     termination: Optional[str] = None
+    pull_up_to: Optional[str] = None
+    pull_down_to: Optional[str] = None
+    pull_up_resistance: Optional[sv.ValueBounds] = None
+    pull_down_resistance: Optional[sv.ValueBounds] = None
+    source: Optional[str] = None
 
     def __post_init__(self):
         for label, value in (("pull_up", self.pull_up), ("pull_down", self.pull_down)):
             if value is not None and not isinstance(value, bool):
                 raise TypeError(f"{label} must be bool or None")
+        for label, value in (
+            ("pull_up_to", self.pull_up_to),
+            ("pull_down_to", self.pull_down_to),
+        ):
+            if value is not None and (not isinstance(value, str) or not value):
+                raise TypeError(f"{label} must be a non-empty string or None")
+        sv.require_bounds(
+            self.pull_up_resistance,
+            "Ω",
+            "pull_up_resistance",
+            allow_none=True,
+        )
+        sv.require_bounds(
+            self.pull_down_resistance,
+            "Ω",
+            "pull_down_resistance",
+            allow_none=True,
+        )
 
 
 @dataclass(frozen=True)

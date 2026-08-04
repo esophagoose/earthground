@@ -15,7 +15,7 @@ design.layout.outline = BoundingBox(x1=0, y1=0, x2=60, y2=40)
 
 Placement keys are design component-map refdes values, not necessarily `component.refdes`. Rotations are degrees. `Position.rotate` only accepts multiples of 90, although raw placement models accept floats.
 
-An omitted placement makes the component float into deterministic fallback placement with a warning. This is convenient for early export, not production board layout.
+An omitted placement makes the component float into deterministic fallback placement with a warning. This is convenient for early export, not production board layout. Analysis retains those coordinates as fallback provenance but does not use them to pass placement-dependent checks. Construct `KicadExporter(..., strict_placement=True)` to reject every fallback placement; use `Placement.identity()` when a module is intentionally anchored at its parent origin.
 
 Reference-text orientation is an edge (`TOP`, `BOTTOM`, `LEFT`, `RIGHT`, `CENTER`), not text rotation. The code computes its offset based on footprint bounds and component rotation.
 

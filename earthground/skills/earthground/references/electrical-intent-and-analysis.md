@@ -73,8 +73,13 @@ Rail and external-drive declarations resolve on flattened physical nets. A
 board-level declaration is visible through connected module ports; do not copy
 it into every child design. Conflicting declarations on the same resolved net
 make its voltage unknown. Parent-level pull resistors are likewise visible to
-child pins. `InternalDigitalFeatures(pull_up=True)` or `pull_down=True` supplies
-valid floating-input bias. Ordinary open-drain and positive differential lines
+child pins. Simple high-impedance pull networks and resistor dividers are
+resolved conservatively for absolute-maximum and resistor-power analysis;
+driven, conflicted, or unsupported networks remain `Unknown`.
+`InternalDigitalFeatures(pull_up=True)` or `pull_down=True` supplies valid
+floating-input bias. Add `pull_up_to` or `pull_down_to`, resistance bounds, and
+a source when that internal termination should also establish a DC pin voltage.
+Ordinary open-drain and positive differential lines
 require a pull-up to a positive rail; a `PinInterfaceRef` with `NEGATIVE`
 polarity requires a pull-down to a non-positive rail.
 
@@ -136,7 +141,7 @@ design.waive_contract(part, "vcc-decoupling.distance", "verified in board review
 design.validate(check_contracts=True)
 ```
 
-Contracts resolve through module boundaries. Topology can pass before placement while distance/routing remains `Unknown`. Waive the exact generated check ID, locally, with a non-empty reason; do not waive a whole requirement because one aspect lacks evidence.
+Contracts resolve through module boundaries. Topology can pass before placement while distance remains `Unknown`. Decoupling distance is measured between the transformed centres of the named device pad and the capacitor's supply pad, not between component origins. Untyped routing notes are non-blocking advisories; typed width and differential-impedance requirements are checked against declared net classes and differential pairs. Waive the exact generated check ID, locally, with a non-empty reason; do not waive a whole requirement because one aspect lacks evidence.
 
 ## Power and thermal reporting
 
@@ -159,6 +164,8 @@ report.write_csv("generated_outputs/thermal.csv")
 
 Thermal resistance selection is `RθJB`, `RθJC(bottom)`, `RθJC(top)`, then `RθJA`; the report records which metric it used. Junction estimates using `RθJA` require ambient and power bounds. Put `tj` in component `abs_max` when known.
 
+When no defensible ambient exists, use `design.defer_ambient("reason")`. E7 remains `Unknown` but is acknowledged for electrical validation; thermal rows remain unknown and retain the reason rather than fabricating a temperature.
+
 ## Provenance and sourcing
 
 Populate component metadata from evidence, not inference:
@@ -176,9 +183,13 @@ self.alternates = ["PART-123A"]
 self.distributor_ids["lcsc"] = "C123456"
 ```
 
-`lead_time` accepts only week-dimensioned `ValueBounds`; migrate legacy floats/strings instead of supporting them. `Lifecycle` values are `ACTIVE`, `NRND`, `EOL`, `OBSOLETE`, `PREVIEW`, and `UNKNOWN`. `sourcing_report()` ignores virtual and DNP parts, passes only `ACTIVE`, and fails every other lifecycle including `UNKNOWN`; `validate(check_sourcing=True)` is therefore intentionally strict and opt-in.
+`lead_time` accepts only week-dimensioned `ValueBounds`; migrate legacy floats/strings instead of supporting them. `Lifecycle` values are `ACTIVE`, `NRND`, `EOL`, `OBSOLETE`, `PREVIEW`, and `UNKNOWN`. An unknown lifecycle reports `Unknown`; known non-active lifecycles fail. `validate(check_sourcing=True)` treats both as blocking.
 
-`datasheet_coverage()` categorizes populated components as `provenanced` when a URL plus revision or SHA256 exists, `url_only`, or `undocumented`. Earthground does not currently bind to datasheet extraction JSON; do not claim or invent that integration.
+Set `procurement_mode` and `documentation_mode` to `EvidenceMode.NOT_APPLICABLE` only for fabricated features that genuinely have no purchased part or datasheet. Generic passives default to `RESOLVER`. Register a pure project resolver with `design.register_sourcing_resolver(...)`; it returns `SourcingEvidence` containing the selected MPN, lifecycle, datasheet metadata, and evidence source without mutating the component.
+
+`datasheet_coverage()` categorizes populated components as `provenanced` when a URL plus revision or SHA256 exists, `url_only`, `undocumented`, or `not_applicable`. Resolver evidence feeds the same coverage report.
+
+All check reports expose `.checks`, `.items`, status partitions, and `.is_valid`; the older `.results` and `.rows` names remain available.
 
 ## Signal-integrity intent
 

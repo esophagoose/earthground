@@ -31,7 +31,7 @@ from earthground.pins import (
     pin_sort_key,
 )
 from earthground.ratings import Ratings
-from earthground.sourcing import Lifecycle
+from earthground.sourcing import EvidenceMode, Lifecycle
 import earthground.standard_values as sv
 
 if TYPE_CHECKING:
@@ -117,6 +117,8 @@ class Component:
         self.datasheet_sha256 = ""
         self._lead_time: Optional[sv.ValueBounds] = None
         self._lifecycle = Lifecycle.UNKNOWN
+        self._procurement_mode = EvidenceMode.DIRECT
+        self._documentation_mode = EvidenceMode.DIRECT
         self.alternates: list[str] = []
         self.distributor_ids: dict[str, str] = {}
         self.type = self.__class__.__name__
@@ -161,6 +163,26 @@ class Component:
         if not isinstance(value, Lifecycle):
             raise TypeError("lifecycle must be a Lifecycle value")
         self._lifecycle = value
+
+    @property
+    def procurement_mode(self) -> EvidenceMode:
+        return self._procurement_mode
+
+    @procurement_mode.setter
+    def procurement_mode(self, value: EvidenceMode) -> None:
+        if not isinstance(value, EvidenceMode):
+            raise TypeError("procurement_mode must be an EvidenceMode value")
+        self._procurement_mode = value
+
+    @property
+    def documentation_mode(self) -> EvidenceMode:
+        return self._documentation_mode
+
+    @documentation_mode.setter
+    def documentation_mode(self, value: EvidenceMode) -> None:
+        if not isinstance(value, EvidenceMode):
+            raise TypeError("documentation_mode must be an EvidenceMode value")
+        self._documentation_mode = value
 
     def __str__(self):
         return f"{self.name}<{self.refdes}>"
@@ -262,6 +284,8 @@ class Resistor(Component):
         :type parameters: dict, optional
         """
         super().__init__()
+        self.procurement_mode = EvidenceMode.RESOLVER
+        self.documentation_mode = EvidenceMode.RESOLVER
         self.value = value
         if not isinstance(value, sv.SiNumber):
             self.value = sv.SiNumber(value, "Ω")
@@ -306,6 +330,8 @@ class Capacitor(Component):
         :type parameters: dict, optional
         """
         super().__init__()
+        self.procurement_mode = EvidenceMode.RESOLVER
+        self.documentation_mode = EvidenceMode.RESOLVER
         self.value = sv.SiNumber(value, "F")
         self.voltage = sv.SiNumber(voltage, "V")
         self.name = f"CAP_{self.value}_{self.voltage}"
@@ -339,6 +365,8 @@ class Inductor(Component):
         :type kwargs: dict, optional
         """
         super().__init__(refdes_prefix="L")
+        self.procurement_mode = EvidenceMode.RESOLVER
+        self.documentation_mode = EvidenceMode.RESOLVER
         if not isinstance(value, sv.SiNumber):
             self.value = sv.SiNumber(value, "H")
         else:

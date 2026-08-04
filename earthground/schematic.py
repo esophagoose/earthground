@@ -107,6 +107,8 @@ class Design:
         self._contract_waivers: Dict[tuple[cmp.Component, str], str] = {}
         self._net_classes: Dict[str, NetClass] = {}
         self._diff_pairs: list[DiffPair] = []
+        self._sourcing_resolvers: list[sourcing.SourcingResolver] = []
+        self._ambient_deferred_reason: Optional[str] = None
 
     def declare_net_class(self, net_class: NetClass) -> None:
         if not isinstance(net_class, NetClass):
@@ -138,6 +140,18 @@ class Design:
     def declare_ambient(self, temperature: sv.ValueBounds) -> None:
         sv.require_bounds(temperature, "°C", "Ambient temperature")
         self._ambient = temperature
+        self._ambient_deferred_reason = None
+
+    def defer_ambient(self, reason: str) -> None:
+        if not reason:
+            raise ValueError("Ambient deferral requires a reason")
+        self._ambient = None
+        self._ambient_deferred_reason = reason
+
+    def register_sourcing_resolver(self, resolver: sourcing.SourcingResolver) -> None:
+        if not callable(resolver) and not callable(getattr(resolver, "resolve", None)):
+            raise TypeError("Sourcing resolver must be callable or define resolve()")
+        self._sourcing_resolvers.append(resolver)
 
     def expect_strap(
         self,
@@ -787,16 +801,35 @@ class Design:
         return erc.electrical_coverage(self)
 
     def datasheet_coverage(self):
-        coverage = {"provenanced": [], "url_only": [], "undocumented": []}
+        coverage = {
+            "provenanced": [],
+            "url_only": [],
+            "undocumented": [],
+            "not_applicable": [],
+        }
         for resolved in DesignAnalysis(self).components:
             component = resolved.component
             if component.virtual or component.dnp:
                 continue
-            if component.datasheet and (
-                component.datasheet_revision or component.datasheet_sha256
-            ):
+            if component.documentation_mode is sourcing.EvidenceMode.NOT_APPLICABLE:
+                category = "not_applicable"
+                coverage[category].append(resolved.refdes)
+                continue
+            evidence = sourcing.resolve_documentation(self, component)
+            datasheet = component.datasheet if evidence is None else evidence.datasheet
+            revision = (
+                component.datasheet_revision
+                if evidence is None
+                else evidence.datasheet_revision
+            )
+            sha256 = (
+                component.datasheet_sha256
+                if evidence is None
+                else evidence.datasheet_sha256
+            )
+            if datasheet and (revision or sha256):
                 category = "provenanced"
-            elif component.datasheet:
+            elif datasheet:
                 category = "url_only"
             else:
                 category = "undocumented"
@@ -828,11 +861,7 @@ class Design:
             errors.extend(module._validate_design(False))
         if check_electrical:
             report = self.check_electrical()
-            errors.extend(
-                str(check)
-                for check in report.checks
-                if check.status is not sv.CheckStatus.PASS
-            )
+            errors.extend(str(check) for check in report.blocking)
         if check_straps:
             report = self.check_straps()
             errors.extend(
@@ -847,7 +876,7 @@ class Design:
                 str(check) for check in report.checks if not check.is_accepted
             )
         if check_sourcing:
-            errors.extend(str(check) for check in self.sourcing_report().failures)
+            errors.extend(str(check) for check in self.sourcing_report().blocking)
         if errors:
             header = f" {self.name.upper()} VALIDATION FAILED "
             log.error("")

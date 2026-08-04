@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pytest
 
 import earthground.components as cmp
@@ -183,6 +185,90 @@ def test_e3_accepts_declared_internal_pull_on_unconnected_input():
     assert device.pins[1] not in design.pin_to_net
 
 
+def test_internal_pull_with_supply_reference_resolves_unconnected_pin_voltage():
+    design = Design("InternalBiasVoltage")
+    device = design.add_component(
+        TypedComponent(
+            {
+                1: power(
+                    "VDD",
+                    cmp.PowerRole.INPUT,
+                    voltage=sv.volts(3.0, max=3.6),
+                ),
+                2: digital(
+                    "ENABLE",
+                    cmp.PinDirection.INPUT,
+                    abs_max=sv.volts(min=sv.UNBOUNDED, max=4),
+                    internal=cmp.InternalDigitalFeatures(
+                        pull_up=True,
+                        pull_up_to="VDD",
+                        pull_up_resistance=sv.ohms(300_000, typ=300_000, max=300_000),
+                        source="datasheet internal pull-up",
+                    ),
+                ),
+            }
+        )
+    )
+    design.join_net(device.pins.by_name("VDD"), "P3V3")
+    design.declare_rail("P3V3", sv.volts(3.2, typ=3.3, max=3.4))
+
+    report = design.check_electrical()
+    enable_e3 = [
+        check
+        for check in report.checks
+        if check.rule_id == "E3" and "ENABLE" in (check.pin or "")
+    ]
+    assert [check.status for check in enable_e3] == [sv.CheckStatus.PASS]
+    assert statuses(report, "E6") == [sv.CheckStatus.PASS]
+    e6 = next(check for check in report.checks if check.rule_id == "E6")
+    assert "datasheet internal pull-up" in e6.sources
+
+
+def test_resistor_pull_and_divider_voltage_inference_is_conservative():
+    pull = Design("Pull")
+    input_device = pull.add_component(
+        TypedComponent(
+            {
+                1: digital(
+                    "NEN",
+                    cmp.PinDirection.INPUT,
+                    abs_max=sv.volts(min=sv.UNBOUNDED, max=1),
+                )
+            }
+        )
+    )
+    resistor = pull.add_component(cmp.Resistor("10k"))
+    pull.connect([input_device.pins[1], resistor.pins[1]], "NEN")
+    pull.join_net(resistor.pins[2], "GND")
+
+    analysis = erc.DesignAnalysis(pull)
+    assert analysis.net_for_pin(input_device.pins[1]).voltage.max == 0
+    assert statuses(pull.check_electrical(), "E6") == [sv.CheckStatus.PASS]
+
+    divider = Design("Divider")
+    input_device = divider.add_component(
+        TypedComponent(
+            {
+                1: digital(
+                    "MID",
+                    cmp.PinDirection.INPUT,
+                    abs_max=sv.volts(min=0, max=2),
+                )
+            }
+        )
+    )
+    upper = divider.add_component(cmp.Resistor("10k"))
+    lower = divider.add_component(cmp.Resistor("10k"))
+    divider.connect([input_device.pins[1], upper.pins[1], lower.pins[1]], "MID")
+    divider.join_net(upper.pins[2], "P3V3")
+    divider.join_net(lower.pins[2], "GND")
+    divider.declare_rail("P3V3", sv.volts(3.3, typ=3.3, max=3.3))
+
+    midpoint = erc.DesignAnalysis(divider).net_for_pin(input_device.pins[1]).voltage
+    assert midpoint.min == midpoint.typ == midpoint.max == Decimal("1.65")
+    assert statuses(divider.check_electrical(), "E6") == [sv.CheckStatus.PASS]
+
+
 def test_e4_no_connect_pin():
     design = Design("NoConnect")
     component = design.add_component(
@@ -366,6 +452,12 @@ def test_e7_requires_declared_ambient_and_validate_is_strict():
     assert statuses(design.check_electrical(), "E7") == [sv.CheckStatus.UNKNOWN]
     with pytest.raises(SchematicValidationError, match="E7 Unknown"):
         design.validate(skip_footprint_check=True, check_electrical=True)
+
+    design.defer_ambient("No thermal ICD is available")
+    deferred = design.check_electrical()
+    assert deferred.unknowns[0].acknowledgement_reason == "No thermal ICD is available"
+    assert deferred.is_valid
+    assert design.validate(skip_footprint_check=True, check_electrical=True)
 
     design.declare_ambient(sv.celsius(-20, max=70))
     assert statuses(design.check_electrical(), "E7") == [sv.CheckStatus.PASS]

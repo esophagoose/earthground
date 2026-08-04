@@ -19,6 +19,14 @@ class ElectricalCheck:
     net: Optional[str] = None
     pin: Optional[str] = None
     sources: tuple[str, ...] = ()
+    acknowledgement_reason: Optional[str] = None
+
+    @property
+    def is_accepted(self):
+        return (
+            self.status is sv.CheckStatus.PASS
+            or self.acknowledgement_reason is not None
+        )
 
     def __str__(self):
         location = self.design
@@ -27,15 +35,24 @@ class ElectricalCheck:
         if self.pin:
             location += f":{self.pin}"
         source = f" [sources: {', '.join(self.sources)}]" if self.sources else ""
+        acknowledgement = (
+            f" [acknowledged: {self.acknowledgement_reason}]"
+            if self.acknowledgement_reason
+            else ""
+        )
         return (
             f"{self.rule_id} {self.status.value} at {location}: "
-            f"{self.message}{source}"
+            f"{self.message}{source}{acknowledgement}"
         )
 
 
 @dataclass(frozen=True)
 class ElectricalReport:
     checks: tuple[ElectricalCheck, ...]
+
+    @property
+    def items(self):
+        return self.checks
 
     @property
     def passes(self):
@@ -50,8 +67,12 @@ class ElectricalReport:
         return tuple(c for c in self.checks if c.status is sv.CheckStatus.UNKNOWN)
 
     @property
+    def blocking(self):
+        return tuple(c for c in self.checks if not c.is_accepted)
+
+    @property
     def is_valid(self):
-        return not self.failures and not self.unknowns
+        return not self.blocking
 
 
 def _active_pin(pin: cmp.Pin) -> bool:
@@ -149,7 +170,15 @@ def _check_local(
         for pin in component.pins
     ]
 
-    def add(rule, status, message, pin=None, net=None, bounds=()):
+    def add(
+        rule,
+        status,
+        message,
+        pin=None,
+        net=None,
+        bounds=(),
+        acknowledgement_reason=None,
+    ):
         checks.append(
             ElectricalCheck(
                 rule,
@@ -159,6 +188,7 @@ def _check_local(
                 net=None if net is None else net.name,
                 pin=None if pin is None else _pin_label(pin),
                 sources=_sources(*bounds),
+                acknowledgement_reason=acknowledgement_reason,
             )
         )
 
@@ -257,7 +287,7 @@ def _check_local(
         if abs_max is None:
             continue
         net = analysis.net_for_pin(pin)
-        voltage = None if net is None else _resolved_net_voltage(net)
+        voltage = analysis.voltage_for_pin(pin)
         if voltage is None:
             add(
                 "E6",
@@ -293,6 +323,7 @@ def _check_local(
                 sv.CheckStatus.UNKNOWN,
                 f"{component.refdes} has an ambient rating but design ambient is undeclared",
                 bounds=(rating,),
+                acknowledgement_reason=design._ambient_deferred_reason,
             )
             continue
         status = rating.covers(design._ambient)

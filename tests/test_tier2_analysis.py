@@ -1,10 +1,14 @@
 from decimal import Decimal
 
+import pygerber.aperture as aperture
+
 import earthground.components as cmp
+import earthground.footprint_types as ft
 import earthground.layout as layout
 import earthground.standard_values as sv
 from earthground.analysis import DesignAnalysis
 from earthground.contracts import (
+    CheckKind,
     Decoupling,
     LeaveOpenIfUnused,
     RoutingConstraint,
@@ -61,6 +65,12 @@ class ContractDevice(cmp.Component):
         self.pins = cmp.PinContainer.from_dict(
             {1: "VCC", 2: "VREG", 3: "VDD", 4: "UNUSED"}, self
         )
+        self.footprint = ft.BaseFootprint()
+        self.footprint.name = "CONTRACT_TEST"
+        pad = aperture.ApertureCircle(0.5)
+        self.footprint.pads = {
+            index: ft.Pad([0, index - 1], pad) for index in range(1, 5)
+        }
         self.requires = tuple(requirements)
 
 
@@ -83,6 +93,8 @@ def test_analysis_flattens_hierarchy_without_mutating_and_requires_explicit_plac
 
     assert resolved.refdes == "CH1_U1"
     assert resolved.placement is None
+    assert resolved.fallback_placement is not None
+    assert resolved.placement_provenance is layout.PlacementProvenance.FALLBACK
     assert analysis.net_for_pin(device.pins.by_name("VCC")).name == "P1V8"
     assert dict(child.components) == before_components
 
@@ -91,6 +103,7 @@ def test_analysis_flattens_hierarchy_without_mutating_and_requires_explicit_plac
     assert placed.placement is not None
     assert placed.placement.component.x == 7
     assert placed.placement.component.y == 22
+    assert placed.placement_provenance is layout.PlacementProvenance.EXPLICIT
 
 
 def test_analysis_preserves_each_repeated_module_segment_in_refdes():
@@ -239,6 +252,7 @@ def test_contracts_are_hierarchy_aware_and_waivers_are_aspect_local():
     assert by_id["reg-link.topology"].status is sv.CheckStatus.PASS
     assert by_id["unused-tie.UNUSED"].status is sv.CheckStatus.PASS
     assert by_id["reg-width.routing"].status is sv.CheckStatus.UNKNOWN
+    assert by_id["reg-width.routing"].kind is CheckKind.VERIFICATION
     assert not report.is_valid
 
     child.waive_contract(
@@ -252,6 +266,72 @@ def test_contracts_are_hierarchy_aware_and_waivers_are_aspect_local():
         "verified manually in KiCad",
     )
     assert parent.check_contracts().is_valid
+
+
+def test_routing_advisories_do_not_block_and_typed_intent_is_checked():
+    advisory_design = Design("Advisory")
+    advisory = advisory_design.add_component(
+        ContractDevice(
+            (
+                RoutingConstraint(
+                    id="human-route",
+                    pins=("VREG", "VDD"),
+                    note="Minimise stub length",
+                ),
+            )
+        )
+    )
+    advisory_design.connect(
+        [advisory.pins.by_name("VREG"), advisory.pins.by_name("VDD")], "PAIR"
+    )
+    report = advisory_design.check_contracts()
+    assert report.checks[0].kind is CheckKind.ADVISORY
+    assert report.is_valid
+
+    typed_design = Design("Typed routing")
+    typed = typed_design.add_component(
+        ContractDevice(
+            (
+                RoutingConstraint(
+                    id="typed-route",
+                    pins=("VREG", "VDD"),
+                    z_diff=sv.ohms(nominal=100, tolerance_pct=15),
+                ),
+            )
+        )
+    )
+    typed_design.join_net(typed.pins.by_name("VREG"), "PAIR_P")
+    typed_design.join_net(typed.pins.by_name("VDD"), "PAIR_N")
+    typed_design.declare_net_class(
+        __import__("earthground.signal_integrity", fromlist=["NetClass"]).NetClass(
+            "PAIR", ("PAIR_P", "PAIR_N")
+        )
+    )
+    typed_design.declare_diff_pair(
+        __import__("earthground.signal_integrity", fromlist=["DiffPair"]).DiffPair(
+            ("PAIR_P", "PAIR_N"),
+            "PAIR",
+            z_diff=sv.ohms(nominal=100, tolerance_pct=10),
+        )
+    )
+    typed_check = typed_design.check_contracts().checks[0]
+    assert typed_check.check_id == "typed-route.routing-impedance"
+    assert typed_check.status is sv.CheckStatus.PASS
+
+
+def test_reports_expose_common_checks_and_items_aliases():
+    design = Design("Reports")
+    design.add_component(cmp.Resistor("1k"))
+
+    for report in (
+        design.check_electrical(),
+        design.check_straps(),
+        design.check_contracts(),
+        design.sourcing_report(),
+        design.thermal_report(),
+    ):
+        assert report.checks == report.items
+        assert isinstance(report.is_valid, bool)
 
 
 def test_decoupling_distance_prefers_explicit_local_candidates():

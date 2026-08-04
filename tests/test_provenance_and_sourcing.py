@@ -49,6 +49,7 @@ def test_datasheet_coverage_is_recursive_and_ignores_dnp():
         "provenanced": ("U1",),
         "url_only": ("CH1_U1",),
         "undocumented": ("CH1_U2",),
+        "not_applicable": (),
     }
 
 
@@ -62,7 +63,8 @@ def test_sourcing_report_and_opt_in_validation_are_strict():
 
     report = design.sourcing_report()
     assert [check.refdes for check in report.passes] == ["U1"]
-    assert [check.refdes for check in report.failures] == ["U2"]
+    assert report.failures == ()
+    assert [check.refdes for check in report.unknowns] == ["U2"]
     assert design.validate(skip_footprint_check=True)
 
     with pytest.raises(
@@ -72,6 +74,40 @@ def test_sourcing_report_and_opt_in_validation_are_strict():
 
     unknown.dnp = True
     assert design.validate(skip_footprint_check=True, check_sourcing=True)
+
+
+def test_sourcing_applicability_and_project_resolver_feed_both_reports():
+    from earthground.library.misc.mounting_holes import M3
+    from earthground.library.misc.testpoints import CircleSmdTestpoint
+    from earthground.sourcing import SourcingEvidence
+
+    design = Design("Evidence")
+    design.add_component(CircleSmdTestpoint(1.5))
+    design.add_component(M3())
+    resistor = design.add_component(cmp.Resistor("10k", package_size="0603"))
+
+    def resolve(component):
+        if component is resistor:
+            return SourcingEvidence(
+                mpn="RES-10K-0603",
+                lifecycle=cmp.Lifecycle.ACTIVE,
+                datasheet="https://example.test/resistor.pdf",
+                datasheet_revision="Rev A",
+                source="test resolver",
+            )
+        return None
+
+    design.register_sourcing_resolver(resolve)
+    report = design.sourcing_report()
+    assert [check.refdes for check in report.not_applicable] == ["TP1", "MH1"]
+    assert report.checks[2].status is sv.CheckStatus.PASS
+    assert report.is_valid
+    assert design.datasheet_coverage() == {
+        "provenanced": ("R1",),
+        "url_only": (),
+        "undocumented": (),
+        "not_applicable": ("TP1", "MH1"),
+    }
 
 
 def test_passive_ratings_are_typed_and_unknown_keywords_fail():

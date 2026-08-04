@@ -45,6 +45,8 @@ class M3(cmp.Component):
 
     def __init__(self):
         super().__init__(refdes_prefix="MH")
+        self.procurement_mode = cmp.EvidenceMode.NOT_APPLICABLE
+        self.documentation_mode = cmp.EvidenceMode.NOT_APPLICABLE
         self.name = "M3_MountingHole"
         self.detailed_description = "Mounting hole for M3 screw, 3.2mm hole, 6.4mm pad"
         self.manufacturer = "Generic"

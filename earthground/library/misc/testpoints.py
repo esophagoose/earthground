@@ -7,6 +7,8 @@ import earthground.footprints.generics as fp_lib
 class ObroundTestpoint(components.Component):
     def __init__(self, x: float, y: float):
         super().__init__()
+        self.procurement_mode = components.EvidenceMode.NOT_APPLICABLE
+        self.documentation_mode = components.EvidenceMode.NOT_APPLICABLE
         self.name = f"ObroundTestpoint_{x}X{y}"
         self.refdes_prefix = "TP"
         self.pins = components.PinContainer.from_count(1, self)
@@ -18,6 +20,8 @@ class ObroundTestpoint(components.Component):
 class CircleSmdTestpoint(components.Component):
     def __init__(self, diameter: float):
         super().__init__()
+        self.procurement_mode = components.EvidenceMode.NOT_APPLICABLE
+        self.documentation_mode = components.EvidenceMode.NOT_APPLICABLE
         self.name = f"CircleSmdTestpoint_{diameter}mm"
         self.refdes_prefix = "TP"
         self.pins = components.PinContainer.from_count(1, self)

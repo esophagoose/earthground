@@ -104,10 +104,12 @@ class KicadExporter:
         pcb_path: Optional[pathlib.Path] = None,
         add_silkscreen_text: bool = True,
         add_fab_text: bool = True,
+        strict_placement: bool = False,
     ):
         self.schematic = schematic
         self.add_silkscreen_text = add_silkscreen_text
         self.add_fab_text = add_fab_text
+        self.strict_placement = strict_placement
         self.assigned_layout: Dict[str, layout_lib.ComponentLayout] = (
             schematic.layout.placement
         )
@@ -131,7 +133,22 @@ class KicadExporter:
         return all_nets
 
     def convert_to_kicad(self, schematic: sch_lib.Design):
-        flattened_layout = schematic.layout.flatten()
+        resolved_layout = schematic.layout.flatten_with_provenance()
+        if self.strict_placement:
+            fallback = [
+                refdes
+                for refdes, item in resolved_layout.items()
+                if item.provenance is layout_lib.PlacementProvenance.FALLBACK
+            ]
+            if fallback:
+                raise ValueError(
+                    "Strict KiCad export requires explicit placement for: "
+                    + ", ".join(fallback)
+                )
+        flattened_layout = {
+            refdes: (item.layout, item.component)
+            for refdes, item in resolved_layout.items()
+        }
 
         for net in self._collect_all_nets(schematic).values():
             self.builder.ensure_net(net.name)

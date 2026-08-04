@@ -152,6 +152,34 @@ class ThermalRow:
 class ThermalReport:
     rows: tuple[ThermalRow, ...]
 
+    @property
+    def items(self):
+        return self.rows
+
+    @property
+    def checks(self):
+        return self.rows
+
+    @property
+    def passes(self):
+        return tuple(row for row in self.rows if row.status is sv.CheckStatus.PASS)
+
+    @property
+    def failures(self):
+        return tuple(row for row in self.rows if row.status is sv.CheckStatus.FAIL)
+
+    @property
+    def unknowns(self):
+        return tuple(row for row in self.rows if row.status is sv.CheckStatus.UNKNOWN)
+
+    @property
+    def blocking(self):
+        return self.failures + self.unknowns
+
+    @property
+    def is_valid(self):
+        return not self.blocking
+
     def write_csv(self, path: str | Path) -> Path:
         destination = Path(path)
         with destination.open("w", newline="", encoding="utf-8") as stream:
@@ -299,6 +327,10 @@ def _row(design, resolved: ResolvedComponent, analysis: DesignAnalysis):
         if design._ambient is None or power.power is None:
             status = sv.CheckStatus.UNKNOWN
             notes.append("junction estimate requires ambient and power")
+            if design._ambient_deferred_reason is not None:
+                notes.append(
+                    f"ambient intentionally deferred: {design._ambient_deferred_reason}"
+                )
         else:
             junction = design._ambient + component.thermal.r_ja * power.power
             sources.extend(design._ambient.source)
@@ -318,10 +350,10 @@ def _row(design, resolved: ResolvedComponent, analysis: DesignAnalysis):
         notes.append(
             f"{metric} is reportable but cannot estimate junction from ambient"
         )
-    placement = resolved.placement
-    if placement is None:
+    placement = resolved.placement or resolved.fallback_placement
+    if resolved.placement is None:
         status = sv.CheckStatus.UNKNOWN
-        notes.append("component has no explicit placement")
+        notes.append("component coordinates use exporter fallback placement")
     footprint = getattr(component.footprint, "name", None)
     return ThermalRow(
         resolved.refdes,

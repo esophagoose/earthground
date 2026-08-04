@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-08-03
+
+### Added
+
+- Project sourcing resolvers and explicit procurement/documentation
+  applicability for fabricated features and resolver-selected parts.
+- Placement provenance, deterministic fallback layout, identity placements,
+  and strict KiCad export that rejects fallback coordinates.
+- Conservative DC voltage inference for pull resistors, simple dividers, and
+  internally biased pins with explicit supply references.
+- Ambient deferral with a recorded engineering reason and typed routing-intent
+  verification against net classes and differential-pair declarations.
+
+### Changed
+
+- Unknown lifecycle state now reports `Unknown` instead of `Fail`; strict
+  sourcing validation continues to block incomplete evidence.
+- Datasheet coverage includes not-applicable parts and resolver evidence.
+- Decoupling distance is measured between transformed supply-pad centres rather
+  than component origins.
+- Electrical, contract, sourcing, strap, and thermal reports expose common
+  collection and validity interfaces while retaining compatibility aliases.
+- Human-only routing instructions are non-blocking advisories.
+
+### Fixed
+
+- Thermal and electrical analysis now retain fallback placement coordinates
+  without treating them as explicit compliance evidence.
+- Pull-resistor terminal voltage and unconnected internally pulled pin voltage
+  can be resolved when sufficient DC evidence exists.
+
 ## [0.10.1] - 2026-08-03
 
 ### Fixed
