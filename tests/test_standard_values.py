@@ -23,9 +23,27 @@ def test_get_standard_values():
     assert 9.09 in values, "9.09 should be in E48 series"
 
 
-def test_find_closest_ratio():
-    closest = sorted(find_closest_ratio(3.5))
-    assert closest == [1.6, 5.6]
+@pytest.mark.parametrize(
+    ("ratio", "expected"),
+    [
+        (1 / 100, [100.0, 1.0]),
+        (1 / 11, [11.0, 1.0]),
+        (3.5, [1.6, 5.6]),
+        (11, [1.0, 11.0]),
+        (100, [1.0, 100.0]),
+    ],
+)
+def test_find_closest_ratio_searches_across_decades(ratio, expected):
+    closest = find_closest_ratio(ratio)
+
+    assert closest == expected
+    assert closest[1] / closest[0] == pytest.approx(ratio)
+
+
+@pytest.mark.parametrize("ratio", [-1, 0, float("inf"), float("nan")])
+def test_find_closest_ratio_rejects_invalid_ratios(ratio):
+    with pytest.raises(ValueError, match="positive finite"):
+        find_closest_ratio(ratio)
 
 
 def test_si_number():

@@ -60,17 +60,31 @@ def find_closest_value(value, E=24):
 
 
 def find_closest_ratio(ratio, E=24):
+    if ratio <= 0 or not math.isfinite(ratio):
+        raise ValueError("ratio must be a positive finite number")
+
     standard_values = get_standard_values(E)
+    magnitude = math.floor(math.log10(ratio))
     closest = None
     diff = float("inf")
-    for value1 in standard_values:
-        for value2 in standard_values:
-            current_ratio = value1 / value2
-            current_diff = abs(current_ratio - ratio)
-            if current_diff < diff:
-                diff = current_diff
-                closest = (value1, value2)
-    return sorted(closest, reverse=(ratio < 1))
+    # E-series mantissa ratios span nearly two decades, so the nearest pair
+    # must use one of the decade offsets adjacent to the target's magnitude.
+    for relative_decade in range(magnitude - 1, magnitude + 2):
+        decade_scale = 10**relative_decade
+        for value1 in standard_values:
+            for value2 in standard_values:
+                scaled_value2 = value2 * decade_scale
+                current_ratio = scaled_value2 / value1
+                current_diff = abs(current_ratio - ratio)
+                if current_diff < diff:
+                    diff = current_diff
+                    closest = (value1, scaled_value2)
+
+    # Common scaling does not change a ratio. Keep the smaller value in the
+    # normalized E-series decade so callers receive compact values.
+    common_magnitude = math.floor(math.log10(min(closest)))
+    common_scale = 10**common_magnitude
+    return [value / common_scale for value in closest]
 
 
 def voltage_divider(
