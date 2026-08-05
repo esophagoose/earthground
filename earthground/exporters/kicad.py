@@ -245,13 +245,6 @@ class KicadExporter:
                 if net:
                     pad.net = self.builder.ensure_net(net.name)
 
-            if abs(component_position.angle) % 180 == 90:
-                for pad in footprint.pads:
-                    if pad.size is not None:
-                        pad.size = pcb.Size(
-                            width=pad.size.height,
-                            height=pad.size.width,
-                        )
         else:
             footprint_builder = FootprintBuilder.create(
                 component.name,

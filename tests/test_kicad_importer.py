@@ -188,3 +188,38 @@ def test_imported_export_uses_original_sexpression_geometry():
     assert exported.pads[0].at == pcb.Position(x=6, y=2, angle=15)
     assert exported.pads[0].size.width == 2
     assert exported.pads[0].size.height == 1
+
+
+@pytest.mark.parametrize("angle", [90, 270])
+def test_rotated_imported_footprint_preserves_pad_size(angle):
+    component = cmp.Component("C")
+    component.name = "ImportedCapacitor"
+    component.pins = cmp.PinContainer.from_dict({1: "P1", 2: "P2"}, component)
+    component.footprint = KicadFootprint(
+        "Test",
+        "ImportedCapacitor",
+        """
+        (footprint "ImportedCapacitor"
+          (version 20240108)
+          (generator "test")
+          (layer "F.Cu")
+          (pad "1" smd rect (at -2.55 0) (size 1.8 5.4)
+            (layers "F.Cu" "F.Mask" "F.Paste"))
+          (pad "2" smd rect (at 2.55 0) (size 1.8 5.4)
+            (layers "F.Cu" "F.Mask" "F.Paste")))
+        """.strip(),
+    )
+
+    design = Design("TEST")
+    design.add_component(component)
+    exported = kicad.KicadExporter(design).parse_footprint(
+        design,
+        component,
+        component_position=pcb.Position(x=10, y=20, angle=angle),
+    )
+
+    assert exported.at == pcb.Position(x=10, y=20, angle=-angle)
+    assert [(pad.size.width, pad.size.height) for pad in exported.pads] == [
+        (1.8, 5.4),
+        (1.8, 5.4),
+    ]
