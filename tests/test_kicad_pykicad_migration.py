@@ -1,6 +1,8 @@
+import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 import pytest
 from pykicad import Pcb, PcbBuilder, read_from_file, write_to_file
@@ -43,6 +45,27 @@ def _assert_kicad_accepts(path: Path, tmp_path: Path) -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def _find_pcbnew_python() -> Path | None:
+    candidates = [Path(sys.executable)]
+    if sys.platform == "darwin":
+        candidates.extend(
+            Path("/Applications").glob(
+                "KiCad*/KiCad.app/Contents/Frameworks/Python.framework/"
+                "Versions/*/bin/python3"
+            )
+        )
+    for executable in candidates:
+        result = subprocess.run(
+            [str(executable), "-c", "import pcbnew"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return executable
+    return None
 
 
 def test_generated_board_round_trips_and_opens_in_kicad_10(tmp_path: Path):
@@ -119,6 +142,65 @@ def test_imported_footprint_preserves_unnumbered_pad_without_net(tmp_path: Path)
     ]
     assert pads[-1].layers == ["F.Paste"]
     assert pads[-1].size == pcb.Size(width=0.6, height=0.6)
+
+
+def test_kicad_loads_rotated_imported_pad_with_rotated_geometry(tmp_path: Path):
+    pcbnew_python = _find_pcbnew_python()
+    if pcbnew_python is None:
+        pytest.skip("KiCad's pcbnew Python module is not installed")
+
+    component = cmp.Component("U")
+    component.name = "ROTATED_PAD"
+    component.pins = cmp.PinContainer.from_dict({1: "P1"}, component)
+    component.footprint = KicadFootprint(
+        "Test",
+        "ROTATED_PAD",
+        """
+        (footprint "ROTATED_PAD"
+          (version 20240108)
+          (generator "test")
+          (layer "F.Cu")
+          (pad "1" smd rect (at -2 0) (size 1.55 0.4)
+            (layers "F.Cu" "F.Mask" "F.Paste")))
+        """.strip(),
+    )
+    design = Design("ROTATED_PAD")
+    design.add_component(component)
+    design.layout.outline = layout_lib.BoundingBox(x1=0, y1=0, x2=20, y2=20)
+    design.layout.placement["U1"] = layout_lib.Placement(
+        position=layout_lib.Position(x=10, y=10, angle=90)
+    )
+
+    KicadExporter(design).save(tmp_path)
+    output = tmp_path / "ROTATED_PAD.kicad_pcb"
+    script = """
+import json
+import pcbnew
+import sys
+
+board = pcbnew.LoadBoard(sys.argv[1])
+footprint = next(iter(board.GetFootprints()))
+pad = next(iter(footprint.Pads()))
+bounds = pad.GetBoundingBox()
+print(json.dumps({
+    "footprint_angle": footprint.GetOrientationDegrees(),
+    "pad_angle": pad.GetOrientationDegrees(),
+    "pad_width": pcbnew.ToMM(bounds.GetWidth()),
+    "pad_height": pcbnew.ToMM(bounds.GetHeight()),
+}))
+"""
+    result = subprocess.run(
+        [str(pcbnew_python), "-c", script, str(output)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    geometry = json.loads(result.stdout)
+    assert (geometry["pad_angle"] - geometry["footprint_angle"]) % 360 == 0
+    assert geometry["pad_width"] == pytest.approx(0.4)
+    assert geometry["pad_height"] == pytest.approx(1.55)
 
 
 def test_existing_board_content_is_preserved_when_exporting(tmp_path: Path):

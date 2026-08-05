@@ -226,6 +226,14 @@ class KicadExporter:
             if component.mpn:
                 footprint.description = component.mpn
 
+            # KiCad board instances store pad orientation in board coordinates,
+            # while pad positions remain footprint-local. FootprintBuilder.place()
+            # handles side mirroring but does not compose the placement rotation.
+            footprint_angle = footprint.at.angle if footprint.at is not None else 0.0
+            for pad in footprint.pads:
+                if pad.at is not None:
+                    pad.at.angle += footprint_angle
+
             for pad in footprint.pads:
                 if pad.pad_type == "np_thru_hole":
                     continue

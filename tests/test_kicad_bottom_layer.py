@@ -99,8 +99,8 @@ def test_bottom_layer_imported_footprint_switches_text_and_smd_pad_layers():
           (fp_text value "ImportedAsymmetric" (at 0 -1 0) (layer "F.Fab")
             (effects (font (size 1 1) (thickness 0.15))))
           (fp_line (start 0 0) (end 2 0) (stroke (width 0.12) (type solid)) (layer "F.SilkS"))
-          (pad "1" smd rect (at -1 1 0) (size 1 1) (layers "F.Cu" "F.Mask" "F.Paste"))
-          (pad "2" smd rect (at 1 -2 0) (size 1 1) (layers "F.Cu" "F.Mask" "F.Paste"))
+          (pad "1" smd rect (at -1 1 15) (size 1.55 0.4) (layers "F.Cu" "F.Mask" "F.Paste"))
+          (pad "2" smd rect (at 1 -2 -25) (size 2.75 6.2) (layers "F.Cu" "F.Mask" "F.Paste"))
         )
         """.strip(),
     )
@@ -124,8 +124,10 @@ def test_bottom_layer_imported_footprint_switches_text_and_smd_pad_layers():
     assert value.effects.justify.mirror is True
     assert value.at.x == 0
     assert value.at.y == -1
-    assert footprint.pads[0].at == pcb.Position(x=1, y=1, angle=0)
-    assert footprint.pads[1].at == pcb.Position(x=-1, y=-2, angle=0)
+    assert footprint.pads[0].at == pcb.Position(x=1, y=1, angle=-195)
+    assert footprint.pads[1].at == pcb.Position(x=-1, y=-2, angle=-155)
+    assert footprint.pads[0].size == pcb.Size(width=1.55, height=0.4)
+    assert footprint.pads[1].size == pcb.Size(width=2.75, height=6.2)
     assert footprint.pads[0].layers == ["B.Cu", "B.Mask", "B.Paste"]
     assert footprint.pads[1].layers == ["B.Cu", "B.Mask", "B.Paste"]
     assert _property(footprint, "MPN").value == "IMP-123"
