@@ -1,5 +1,6 @@
 import logging
 import pathlib
+import uuid
 from typing import Dict, Optional
 
 import pygerber.aperture as ap_lib
@@ -169,8 +170,14 @@ class KicadExporter:
             )
             self.builder.add_footprint(footprint)
 
+        for track in schematic.layout.tracks:
+            self.add_track(track)
+
         for pour in schematic.layout.pours:
             self.add_pours(pour)
+
+        for zone in schematic.layout.zones:
+            self.add_zone(zone)
 
         for via in schematic.layout.vias:
             log.info("Adding via: %s", via)
@@ -418,6 +425,59 @@ class KicadExporter:
             layer=self.builder.copper_layer(config.layer).name,
             net=net_name,
         )
+
+    def _validate_copper_layer(self, layer: str) -> str:
+        available = {item.name for item in self.builder.copper_layers}
+        if layer not in available:
+            raise ValueError(
+                f"Copper layer {layer!r} is not available; expected one of "
+                + ", ".join(sorted(available))
+            )
+        return layer
+
+    def add_track(self, config: layout_lib.Track):
+        layer = self._validate_copper_layer(config.layer)
+        net_name = cmp.validate_net_name(config.net_name, owner="add_track()")
+        net = self.builder.net_value(net_name)
+        identifier = str(uuid.uuid4())
+        common = {
+            "start": Point(x=config.start.x, y=config.start.y),
+            "end": Point(x=config.end.x, y=config.end.y),
+            "width": config.width,
+            "layer": layer,
+            "net": net,
+            "locked": config.locked,
+        }
+        if isinstance(config, layout_lib.TrackSegment):
+            item = pcb.Segment(**common, uuid=identifier)
+        elif isinstance(config, layout_lib.TrackArc):
+            item = pcb.Arc(
+                **common,
+                mid=Point(x=config.mid.x, y=config.mid.y),
+                uuid=identifier,
+            )
+        else:
+            raise TypeError(f"Unsupported track: {type(config)}")
+        self.board.track.append(item)
+        return item
+
+    def add_zone(self, config: layout_lib.Zone):
+        if len(config.layers) != 1:
+            raise ValueError("Only single-layer copper zones are supported")
+        layer = self._validate_copper_layer(config.layers[0])
+        net_name = cmp.validate_net_name(config.net_name, owner="add_zone()")
+        zone = self.builder.add_zone(
+            [Point(x=point.x, y=point.y) for point in config.outline],
+            layer=layer,
+            net=net_name,
+            clearance=config.clearance,
+            min_thickness=config.min_thickness,
+            fill=config.fill,
+        )
+        zone.name = config.name
+        zone.priority = config.priority
+        zone.locked = config.locked
+        return zone
 
     def add_via(self, config: layout_lib.ViaConfig):
         net_name = cmp.validate_net_name(config.net_name, owner="add_via()")

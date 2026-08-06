@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Versioned layout YAML can store straight and arc tracks, through vias, and
+  ordinary single-layer copper zones alongside component placements.
+- `earthground kicad place` detects supported copper changes through KiCad IPC
+  and writes deterministic, regenerable layout snapshots, replacing the
+  standalone `place_with_kicad` console command.
+
 ## [0.10.4] - 2026-08-04
 
 ### Fixed

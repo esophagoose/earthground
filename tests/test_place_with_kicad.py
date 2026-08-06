@@ -1,6 +1,10 @@
 from types import SimpleNamespace
 
+import yaml
+
 import earthground.layout as layout_lib
+from earthground.cli import main as cli_main
+from earthground.schematic import Design
 from earthground.library.integrated_circuits.voltage_regulators.linear import lm317
 from earthground.tools.place_with_kicad import PlaceWithKicad
 
@@ -173,3 +177,147 @@ def test_prune_module_child_entries_removes_existing_child_keys():
         "REG1": {"y": 5.0},
         "R1": {"y": 1.0},
     }
+
+
+def test_normalize_yaml_document_migrates_legacy_placements():
+    legacy = {"R1": {"x": 1, "y": 2, "rotation": 0}}
+
+    assert PlaceWithKicad.normalize_yaml_document(legacy) == {
+        "schema_version": 1,
+        "placements": legacy,
+    }
+
+
+def test_copper_snapshot_serialization_is_deterministic():
+    snapshot = SimpleNamespace(
+        tracks=(
+            layout_lib.TrackSegment(
+                start=layout_lib.LayoutPoint(5, 4),
+                end=layout_lib.LayoutPoint(3, 2),
+                width=0.25,
+                layer="F.Cu",
+                net_name="GND",
+            ),
+        ),
+        vias=(layout_lib.ViaConfig(layout_lib.Position(3, 2, 0), "GND", 0.8, 0.4),),
+        zones=(
+            layout_lib.Zone(
+                net_name="GND",
+                layers=("B.Cu",),
+                outline=(
+                    layout_lib.LayoutPoint(10, 10),
+                    layout_lib.LayoutPoint(0, 10),
+                    layout_lib.LayoutPoint(0, 0),
+                    layout_lib.LayoutPoint(10, 0),
+                ),
+            ),
+        ),
+    )
+
+    sections = PlaceWithKicad.copper_to_yaml_sections(snapshot)
+
+    assert sections["tracks"][0]["start"] == {"x": 3, "y": 2}
+    assert sections["tracks"][0]["end"] == {"x": 5, "y": 4}
+    assert sections["vias"][0]["diameter"] == 0.8
+    assert sections["zones"][0]["outline"][0] == {"x": 0, "y": 0}
+
+
+def test_poll_loop_persists_deletion_of_last_track(tmp_path):
+    position = SimpleNamespace(x_mm=1.0, y_mm=2.0, angle_deg=0.0, layer="F.Cu")
+    track = layout_lib.TrackSegment(
+        start=layout_lib.LayoutPoint(1, 2),
+        end=layout_lib.LayoutPoint(3, 4),
+        width=0.25,
+        layer="F.Cu",
+        net_name="GND",
+    )
+    snapshots = iter(
+        [
+            SimpleNamespace(
+                positions={"R1": position}, tracks=(track,), vias=(), zones=()
+            ),
+            SimpleNamespace(positions={"R1": position}, tracks=(), vias=(), zones=()),
+        ]
+    )
+
+    class FakeIpc:
+        def get_board_snapshot(self):
+            try:
+                return next(snapshots)
+            except StopIteration:
+                raise KeyboardInterrupt
+
+    yaml_path = tmp_path / "layout.yaml"
+    yaml_path.write_text("""
+schema_version: 1
+placements:
+  R1: {x: 1, y: 2, rotation: 0}
+tracks:
+  - type: segment
+    net: GND
+    layer: F.Cu
+    width: 0.25
+    start: {x: 1, y: 2}
+    end: {x: 3, y: 4}
+""".lstrip())
+    tool = PlaceWithKicad(
+        script_path=tmp_path / "design.py",
+        yaml_path=yaml_path,
+        poll_interval=0,
+    )
+    tool.design = Design("TEST")
+
+    tool.poll_loop(FakeIpc())
+
+    assert yaml.safe_load(yaml_path.read_text())["tracks"] == []
+
+
+def test_earthground_kicad_place_dispatches_existing_workflow(tmp_path, monkeypatch):
+    design_file = tmp_path / "board.py"
+    output = tmp_path / "board-layout.yaml"
+    observed = {}
+
+    def fake_run(tool):
+        observed.update(
+            script_path=tool.script_path,
+            yaml_path=tool.yaml_path,
+            poll_interval=tool.poll_interval,
+            no_open=tool.no_open,
+        )
+
+    monkeypatch.setattr(PlaceWithKicad, "run", fake_run)
+
+    assert (
+        cli_main(
+            [
+                "kicad",
+                "place",
+                str(design_file),
+                "--output",
+                str(output),
+                "--poll-interval",
+                "0.25",
+                "--no-open",
+            ]
+        )
+        == 0
+    )
+    assert observed == {
+        "script_path": design_file.resolve(),
+        "yaml_path": output.resolve(),
+        "poll_interval": 0.25,
+        "no_open": True,
+    }
+
+
+def test_earthground_kicad_place_reports_runtime_errors(tmp_path, monkeypatch, capsys):
+    def fail(_tool):
+        raise RuntimeError("KiCad is unavailable")
+
+    monkeypatch.setattr(PlaceWithKicad, "run", fail)
+
+    assert cli_main(["kicad", "place", str(tmp_path / "board.py")]) == 1
+    assert (
+        capsys.readouterr().err
+        == "earthground kicad place: error: KiCad is unavailable\n"
+    )

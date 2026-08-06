@@ -26,6 +26,10 @@ from earthground.cli.update_footprints import (
     configure_update_footprints_parser,
     run_parsed_args as run_update_footprints_args,
 )
+from earthground.tools.place_with_kicad import (
+    configure_place_parser,
+    run_parsed_args as run_place_args,
+)
 from earthground.cli.analysis_reports import (
     configure_straps_parser,
     configure_thermal_parser,
@@ -54,6 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Update every PCB footprint from an Earthground design",
     )
     configure_update_footprints_parser(update_footprints)
+
+    place = kicad_commands.add_parser(
+        "place",
+        help="Interactively place and route an Earthground design in KiCad",
+    )
+    configure_place_parser(place)
 
     lcsc = commands.add_parser("lcsc", help="Query the LCSC component database")
     configure_lcsc_parser(lcsc)
@@ -108,6 +118,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return run_lcsc_args(args)
     if args.kicad_command == "update-footprints":
         return run_update_footprints_args(args)
+    if args.kicad_command == "place":
+        return run_place_args(args)
     return run_parsed_args(args)
 
 

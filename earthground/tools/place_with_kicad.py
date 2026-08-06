@@ -4,18 +4,20 @@ Interactive placement tool: run a design script, open KiCad, and write a
 YAML placement file as the user arranges footprints.
 
 Usage:
-    place_with_kicad <script.py> [--output placements.yaml]
-                                 [--poll-interval 1.0]
+    earthground kicad place <script.py> [--output placements.yaml]
+                                        [--poll-interval 1.0]
 """
 
 import argparse
 import dataclasses
 import importlib.util
 import math
+import os
 import pathlib
 import platform
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Mapping
 
@@ -62,7 +64,7 @@ class PlaceWithKicad:
     def load_design_from_script(script_path: str | pathlib.Path) -> sch_lib.Design:
         path = pathlib.Path(script_path).resolve()
         if not path.exists():
-            sys.exit(f"Error: script not found: {path}")
+            raise FileNotFoundError(f"Design file not found: {path}")
 
         spec = importlib.util.spec_from_file_location("_user_design", str(path))
         module = importlib.util.module_from_spec(spec)
@@ -79,8 +81,8 @@ class PlaceWithKicad:
             if isinstance(obj, sch_lib.Design):
                 return obj
 
-        sys.exit(
-            "Error: could not find a Design object in the script. "
+        raise ValueError(
+            "Could not find a Design object in the design file. "
             "Define a module-level variable named 'design' or 'schematic'."
         )
 
@@ -121,8 +123,8 @@ class PlaceWithKicad:
                 return KicadIpc(design)
             except Exception:
                 if attempt == retries:
-                    sys.exit(
-                        "Error: could not connect to KiCad API. "
+                    raise RuntimeError(
+                        "Could not connect to KiCad API. "
                         "Make sure KiCad is running with the API enabled "
                         "(Preferences > Plugins > Enable KiCad API)."
                     )
@@ -356,9 +358,113 @@ class PlaceWithKicad:
         }
 
     @staticmethod
+    def normalize_yaml_document(data: dict) -> dict:
+        structured_keys = {"schema_version", "placements", "tracks", "vias", "zones"}
+        if not data or not (structured_keys & set(data)):
+            return {
+                "schema_version": 1,
+                "placements": dict(data),
+            }
+        normalized = dict(data)
+        normalized.setdefault("schema_version", 1)
+        normalized.setdefault("placements", {})
+        return normalized
+
+    @staticmethod
+    def point_to_yaml(point) -> dict:
+        return {"x": round(point.x, 6), "y": round(point.y, 6)}
+
+    @classmethod
+    def track_to_yaml_entry(cls, track: layout_lib.Track) -> dict:
+        start = cls.point_to_yaml(track.start)
+        end = cls.point_to_yaml(track.end)
+        if isinstance(track, layout_lib.TrackSegment):
+            if (end["x"], end["y"]) < (start["x"], start["y"]):
+                start, end = end, start
+            return {
+                "type": "segment",
+                "net": track.net_name,
+                "layer": track.layer,
+                "width": round(track.width, 6),
+                "start": start,
+                "end": end,
+                "locked": track.locked,
+            }
+        if isinstance(track, layout_lib.TrackArc):
+            return {
+                "type": "arc",
+                "net": track.net_name,
+                "layer": track.layer,
+                "width": round(track.width, 6),
+                "start": start,
+                "mid": cls.point_to_yaml(track.mid),
+                "end": end,
+                "locked": track.locked,
+            }
+        raise TypeError(f"Unsupported track: {type(track)}")
+
+    @classmethod
+    def via_to_yaml_entry(cls, via: layout_lib.ViaConfig) -> dict:
+        return {
+            "net": via.net_name,
+            "position": {
+                "x": round(via.location.x, 6),
+                "y": round(via.location.y, 6),
+            },
+            "diameter": round(via.hole_size, 6),
+            "drill": round(via.drill_size, 6),
+        }
+
+    @classmethod
+    def zone_to_yaml_entry(cls, zone: layout_lib.Zone) -> dict:
+        outline = [cls.point_to_yaml(point) for point in zone.outline]
+        if outline:
+            first = min(
+                range(len(outline)),
+                key=lambda index: (outline[index]["x"], outline[index]["y"]),
+            )
+            outline = outline[first:] + outline[:first]
+        result = {
+            "net": zone.net_name,
+            "layers": list(zone.layers),
+            "outline": outline,
+            "clearance": round(zone.clearance, 6),
+            "min_thickness": round(zone.min_thickness, 6),
+            "priority": zone.priority,
+            "fill": zone.fill,
+            "locked": zone.locked,
+        }
+        if zone.name:
+            result["name"] = zone.name
+        return result
+
+    @classmethod
+    def copper_to_yaml_sections(cls, snapshot) -> dict[str, list[dict]]:
+        tracks = [cls.track_to_yaml_entry(track) for track in snapshot.tracks]
+        vias = [cls.via_to_yaml_entry(via) for via in snapshot.vias]
+        zones = [cls.zone_to_yaml_entry(zone) for zone in snapshot.zones]
+        tracks.sort(key=lambda item: yaml.safe_dump(item, sort_keys=True))
+        vias.sort(key=lambda item: yaml.safe_dump(item, sort_keys=True))
+        zones.sort(key=lambda item: yaml.safe_dump(item, sort_keys=True))
+        return {"tracks": tracks, "vias": vias, "zones": zones}
+
+    @staticmethod
     def write_yaml(yaml_path: pathlib.Path, data: dict):
-        with open(yaml_path, "w") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=yaml_path.parent,
+                prefix=f".{yaml_path.name}.",
+                delete=False,
+            ) as f:
+                temporary_path = pathlib.Path(f.name)
+                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+            os.replace(temporary_path, yaml_path)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
     @staticmethod
     def read_yaml(yaml_path: pathlib.Path) -> dict:
@@ -449,11 +555,13 @@ class PlaceWithKicad:
         if self.design is None:
             raise ValueError("design must be loaded before polling")
 
-        last_positions = {}
-        yaml_data = self.prune_module_child_entries(
-            self.read_yaml(self.yaml_path),
+        last_snapshot = None
+        yaml_data = self.normalize_yaml_document(self.read_yaml(self.yaml_path))
+        yaml_data["placements"] = self.prune_module_child_entries(
+            yaml_data["placements"],
             module_child_refdes=self.module_child_refdes,
         )
+        dirty = False
         print(f"\nPolling KiCad for placement changes (every {self.poll_interval}s)...")
         print(f"YAML output: {self.yaml_path}")
         print("Press Ctrl-C to stop.\n")
@@ -461,7 +569,7 @@ class PlaceWithKicad:
         try:
             while True:
                 try:
-                    current = ipc.get_all_positions()
+                    current = ipc.get_board_snapshot()
                 except Exception as exc:
                     print(f"  IPC error: {exc} — retrying...")
                     time.sleep(self.poll_interval)
@@ -471,10 +579,31 @@ class PlaceWithKicad:
                         pass
                     continue
 
-                if self.positions_changed(last_positions, current):
-                    changed = self.changed_refs(last_positions, current)
+                current_positions = current.positions
+                current_copper = self.copper_to_yaml_sections(current)
+                if last_snapshot is None:
+                    print(
+                        f"  Initial snapshot: {len(current_positions)} footprints, "
+                        f"{len(current.tracks)} tracks, {len(current.zones)} zones"
+                    )
+                    last_snapshot = current
+                    continue
 
-                    if last_positions:
+                last_positions = last_snapshot.positions
+                positions_changed = self.positions_changed(
+                    last_positions, current_positions
+                )
+                last_copper = self.copper_to_yaml_sections(last_snapshot)
+                copper_changed = {
+                    section
+                    for section in ("tracks", "vias", "zones")
+                    if current_copper[section] != last_copper[section]
+                }
+
+                if positions_changed or copper_changed:
+                    changed = self.changed_refs(last_positions, current_positions)
+
+                    if positions_changed:
                         try:
                             preferred_children_by_module = (
                                 self.preferred_children_by_module(
@@ -483,7 +612,7 @@ class PlaceWithKicad:
                                 )
                             )
                             snapshot_data = self.positions_to_yaml_dict(
-                                current,
+                                current_positions,
                                 self.descriptions,
                                 design=self.design,
                                 module_specs=self.module_specs,
@@ -498,32 +627,38 @@ class PlaceWithKicad:
                             changed,
                             child_to_module=self.child_to_module,
                         )
-                        yaml_data = self.merge_yaml_changes(
-                            yaml_data, snapshot_data, changed_keys
+                        yaml_data["placements"] = self.merge_yaml_changes(
+                            yaml_data["placements"], snapshot_data, changed_keys
                         )
-                        yaml_data = self.prune_module_child_entries(
-                            yaml_data,
+                        yaml_data["placements"] = self.prune_module_child_entries(
+                            yaml_data["placements"],
                             module_child_refdes=self.module_child_refdes,
                         )
-                        self.write_yaml(self.yaml_path, yaml_data)
 
                         for ref in changed:
-                            p = current[ref]
+                            p = current_positions[ref]
                             print(
                                 f"  {ref}: ({p.x_mm:.2f}, {p.y_mm:.2f}) "
                                 f"{p.angle_deg:.0f}° {self.layer_name(p.layer)}"
                             )
-                    else:
-                        print(f"  Initial snapshot: {len(current)} footprints")
 
-                    last_positions = current
+                    for section in sorted(copper_changed):
+                        yaml_data[section] = current_copper[section]
+                        print(f"  {section}: {len(current_copper[section])} item(s)")
+
+                    self.write_yaml(self.yaml_path, yaml_data)
+                    dirty = True
+
+                last_snapshot = current
 
                 time.sleep(self.poll_interval)
 
         except KeyboardInterrupt:
-            if yaml_data:
+            if dirty:
                 self.write_yaml(self.yaml_path, yaml_data)
-            print(f"\nSaved final placements to {self.yaml_path}")
+                print(f"\nSaved final layout to {self.yaml_path}")
+            else:
+                print("\nNo layout changes to save")
 
     def run(self):
         design = self.load_design()
@@ -539,42 +674,61 @@ class PlaceWithKicad:
         self.poll_loop(ipc)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Run an earthground design script, open KiCad, and "
-        "write a YAML placement file as you arrange footprints.",
+def configure_place_parser(parser: argparse.ArgumentParser) -> None:
+    """Add interactive KiCad placement arguments to a CLI parser."""
+    parser.description = (
+        "Run an Earthground design script, open KiCad, and write a YAML "
+        "layout file as you arrange footprints and routed copper."
     )
     parser.add_argument(
-        "script",
-        help="Path to a Python script that creates a Design object.",
+        "design_file",
+        help="Python file containing an Earthground Design object.",
     )
     parser.add_argument(
         "--output",
         "-o",
         default=None,
-        help="Output YAML path (default: <script_name>.yaml next to the script).",
+        help="Output YAML path (default: <design_file>.yaml).",
     )
     parser.add_argument(
         "--poll-interval",
         "-p",
         type=float,
         default=1.0,
-        help="Seconds between position polls (default: 1.0).",
+        help="Seconds between board snapshots (default: 1.0).",
     )
     parser.add_argument(
         "--no-open",
         action="store_true",
-        help="Don't open KiCad automatically (assume it's already running).",
+        help="Do not open KiCad automatically (assume it is already running).",
     )
-    args = parser.parse_args()
 
-    PlaceWithKicad(
-        script_path=pathlib.Path(args.script),
-        yaml_path=pathlib.Path(args.output) if args.output else None,
-        poll_interval=args.poll_interval,
-        no_open=args.no_open,
-    ).run()
+
+def run_parsed_args(args) -> int:
+    """Run interactive placement for already-parsed CLI arguments."""
+    try:
+        PlaceWithKicad(
+            script_path=pathlib.Path(args.design_file),
+            yaml_path=pathlib.Path(args.output) if args.output else None,
+            poll_interval=args.poll_interval,
+            no_open=args.no_open,
+        ).run()
+    except Exception as exc:
+        print(f"earthground kicad place: error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def main(argv=None) -> int:
+    """Run the placement command directly for development compatibility."""
+    parser = argparse.ArgumentParser(
+        prog="earthground kicad place",
+        description="Run an earthground design script, open KiCad, and "
+        "write a YAML layout file as you arrange the board.",
+    )
+    configure_place_parser(parser)
+    return run_parsed_args(parser.parse_args(argv))
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

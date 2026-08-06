@@ -264,6 +264,77 @@ def test_add_pour_sets_zone_net_name():
     assert zone.layer == "B.Cu"
 
 
+def test_exporter_adds_tracks_arcs_and_polygonal_zones():
+    design = Design("TEST")
+    design.layout.tracks.extend(
+        [
+            layout_lib.TrackSegment(
+                start=layout_lib.LayoutPoint(1, 2),
+                end=layout_lib.LayoutPoint(3, 4),
+                width=0.25,
+                layer="F.Cu",
+                net_name="GND",
+            ),
+            layout_lib.TrackArc(
+                start=layout_lib.LayoutPoint(3, 4),
+                mid=layout_lib.LayoutPoint(4, 5),
+                end=layout_lib.LayoutPoint(5, 4),
+                width=0.15,
+                layer="B.Cu",
+                net_name="SIG",
+                locked=True,
+            ),
+        ]
+    )
+    design.layout.zones.append(
+        layout_lib.Zone(
+            net_name="GND",
+            layers=("B.Cu",),
+            outline=(
+                layout_lib.LayoutPoint(0, 0),
+                layout_lib.LayoutPoint(10, 0),
+                layout_lib.LayoutPoint(10, 10),
+                layout_lib.LayoutPoint(0, 10),
+            ),
+            name="Ground plane",
+            priority=2,
+            locked=True,
+        )
+    )
+
+    exporter = kicad.KicadExporter(design)
+    exporter.convert_to_kicad(design)
+
+    assert isinstance(exporter.board.track[0], pcb.Segment)
+    assert exporter.board.track[0].net == "GND"
+    assert exporter.board.track[0].width == 0.25
+    assert isinstance(exporter.board.track[1], pcb.Arc)
+    assert exporter.board.track[1].mid == Point(x=4, y=5)
+    assert exporter.board.track[1].locked is True
+    zone = exporter.board.zone[0]
+    assert zone.net == "GND"
+    assert zone.layer == "B.Cu"
+    assert zone.name == "Ground plane"
+    assert zone.priority == 2
+    assert zone.locked is True
+
+
+def test_exporter_rejects_track_on_unavailable_copper_layer():
+    design = Design("TEST")
+    design.layout.tracks.append(
+        layout_lib.TrackSegment(
+            start=layout_lib.LayoutPoint(1, 2),
+            end=layout_lib.LayoutPoint(3, 4),
+            width=0.25,
+            layer="In1.Cu",
+            net_name="GND",
+        )
+    )
+
+    with pytest.raises(ValueError, match="In1.Cu.*not available"):
+        kicad.KicadExporter(design).convert_to_kicad(design)
+
+
 def test_layout_net_references_reject_non_string_names():
     design = Design("TEST")
     component = design.add_component(cmp.Component())

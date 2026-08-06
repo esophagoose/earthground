@@ -10,21 +10,26 @@ Requirements:
     - pip install kicad-python
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from kipy import KiCad
 from kipy.board import Board
 from kipy.board_types import FootprintInstance
 from kipy.geometry import Angle, Vector2
+from kipy.proto.board.board_types_pb2 import ViaType
+from kipy.util.board_layer import canonical_name
+from kipy.util.units import to_mm
 
 import earthground.components as cmp
+import earthground.layout as layout_lib
 import earthground.schematic as sch_lib
 
 
 @dataclass
 class FootprintPosition:
     """Position and orientation of a footprint on the board."""
+
     x_mm: float
     y_mm: float
     angle_deg: float = 0.0
@@ -37,9 +42,18 @@ class FootprintPosition:
 @dataclass
 class PositionUpdate:
     """A recorded position change for a footprint."""
+
     refdes: str
     old: FootprintPosition
     new: FootprintPosition
+
+
+@dataclass(frozen=True)
+class BoardSnapshot:
+    positions: Dict[str, FootprintPosition]
+    tracks: tuple[layout_lib.Track, ...]
+    vias: tuple[layout_lib.ViaConfig, ...]
+    zones: tuple[layout_lib.Zone, ...]
 
 
 class KicadIpc:
@@ -96,10 +110,102 @@ class KicadIpc:
         """Extract a FootprintPosition from a KiCad FootprintInstance."""
         pos = fp.position
         return FootprintPosition(
-            x_mm=pos.x / 1_000_000,  # nanometers to mm
-            y_mm=pos.y / 1_000_000,
+            x_mm=to_mm(pos.x),
+            y_mm=to_mm(pos.y),
             angle_deg=fp.orientation.degrees,
-            layer=str(fp.layer),
+            layer=canonical_name(fp.layer),
+        )
+
+    @staticmethod
+    def _net_name(item, *, owner: str) -> str:
+        net = getattr(item, "net", None)
+        name = getattr(net, "name", None)
+        if not name:
+            raise ValueError(f"{owner} is not assigned to a named net")
+        return cmp.validate_net_name(name, owner=owner)
+
+    @staticmethod
+    def _point(point) -> layout_lib.LayoutPoint:
+        return layout_lib.LayoutPoint(to_mm(point.x), to_mm(point.y))
+
+    @classmethod
+    def _polyline_points(cls, polyline) -> tuple[layout_lib.LayoutPoint, ...]:
+        points = getattr(polyline, "points", None)
+        if points is None:
+            points = []
+            for node in polyline:
+                if hasattr(node, "has_point"):
+                    if not node.has_point:
+                        raise ValueError(
+                            "Zones with curved outline segments cannot be written "
+                            "to layout YAML"
+                        )
+                    points.append(node.point)
+                else:
+                    points.append(node)
+        result = tuple(cls._point(point) for point in points)
+        if len(result) > 1 and result[0] == result[-1]:
+            result = result[:-1]
+        return result
+
+    @classmethod
+    def _track(cls, item) -> layout_lib.Track:
+        common = {
+            "start": cls._point(item.start),
+            "end": cls._point(item.end),
+            "width": to_mm(item.width),
+            "layer": canonical_name(item.layer),
+            "net_name": cls._net_name(item, owner="KiCad track"),
+            "locked": bool(getattr(item, "locked", False)),
+        }
+        if hasattr(item, "mid"):
+            return layout_lib.TrackArc(mid=cls._point(item.mid), **common)
+        return layout_lib.TrackSegment(**common)
+
+    @classmethod
+    def _via(cls, item) -> layout_lib.ViaConfig:
+        via_type = getattr(item, "type", 0)
+        if int(via_type) != ViaType.VT_THROUGH:
+            raise ValueError("Only through vias can be written to layout YAML")
+        return layout_lib.ViaConfig(
+            location=layout_lib.Position(
+                to_mm(item.position.x), to_mm(item.position.y), 0
+            ),
+            net_name=cls._net_name(item, owner="KiCad via"),
+            hole_size=to_mm(item.diameter),
+            drill_size=to_mm(item.drill_diameter),
+        )
+
+    @classmethod
+    def _zone(cls, item) -> layout_lib.Zone:
+        if item.is_rule_area():
+            raise ValueError("Rule-area zones cannot be written to layout YAML")
+        if len(item.layers) != 1:
+            raise ValueError(
+                "Only single-layer copper zones can be written to layout YAML"
+            )
+        outline = item.outline
+        holes = getattr(outline, "holes", ())
+        if holes:
+            raise ValueError(
+                "Zones with polygon holes cannot be written to layout YAML"
+            )
+        outer = getattr(outline, "outline", outline)
+        points = cls._polyline_points(outer)
+        if len(points) < 3:
+            raise ValueError("KiCad zone outline must contain at least three points")
+        return layout_lib.Zone(
+            net_name=cls._net_name(item, owner="KiCad zone"),
+            layers=(canonical_name(item.layers[0]),),
+            outline=points,
+            name=getattr(item, "name", None) or None,
+            clearance=to_mm(item.clearance) if item.clearance is not None else 0.5,
+            min_thickness=(
+                to_mm(item.min_thickness) if item.min_thickness is not None else 0.25
+            ),
+            priority=int(getattr(item, "priority", 0)),
+            fill=bool(getattr(item, "filled", True)),
+            locked=bool(getattr(item, "locked", False)),
         )
 
     # ------------------------------------------------------------------
@@ -129,8 +235,18 @@ class KicadIpc:
             result[ref] = self._fp_position(fp)
         return result
 
-    def move(self, refdes: str, x_mm: float, y_mm: float,
-             angle_deg: Optional[float] = None) -> PositionUpdate:
+    def get_board_snapshot(self) -> BoardSnapshot:
+        """Read editable placement and copper geometry from the open board."""
+        return BoardSnapshot(
+            positions=self.get_all_positions(),
+            tracks=tuple(self._track(item) for item in self._board.get_tracks()),
+            vias=tuple(self._via(item) for item in self._board.get_vias()),
+            zones=tuple(self._zone(item) for item in self._board.get_zones()),
+        )
+
+    def move(
+        self, refdes: str, x_mm: float, y_mm: float, angle_deg: Optional[float] = None
+    ) -> PositionUpdate:
         """Move a footprint to an absolute position and push to KiCad.
 
         Also stores the position on the earthground Component so the source
@@ -166,8 +282,9 @@ class KicadIpc:
         self._history.append(update)
         return update
 
-    def move_delta(self, refdes: str, dx_mm: float, dy_mm: float,
-                   dangle_deg: float = 0.0) -> PositionUpdate:
+    def move_delta(
+        self, refdes: str, dx_mm: float, dy_mm: float, dangle_deg: float = 0.0
+    ) -> PositionUpdate:
         """Move a footprint by a relative offset and push to KiCad.
 
         :param refdes: Reference designator of the footprint to move.

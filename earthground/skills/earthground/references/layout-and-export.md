@@ -22,20 +22,49 @@ Reference-text orientation is an edge (`TOP`, `BOTTOM`, `LEFT`, `RIGHT`, `CENTER
 ## Placement YAML
 
 ```yaml
-U1:
-  description: optional and ignored
-  layer: TOP
-  x: 25.0
-  y: 40.0
-  rotation: 90.0
-R1:
-  layer: BOTTOM
-  x: 12.5
-  y: 15.0
-  rotation: 0
+schema_version: 1
+placements:
+  U1:
+    description: optional and ignored
+    layer: TOP
+    x: 25.0
+    y: 40.0
+    rotation: 90.0
+tracks:
+  - type: segment
+    net: GND
+    layer: F.Cu
+    width: 0.25
+    start: {x: 10.0, y: 12.0}
+    end: {x: 18.0, y: 12.0}
+vias:
+  - net: GND
+    position: {x: 18.0, y: 12.0}
+    diameter: 0.8
+    drill: 0.4
+zones:
+  - net: GND
+    layers: [B.Cu]
+    outline:
+      - {x: 1.0, y: 1.0}
+      - {x: 59.0, y: 1.0}
+      - {x: 59.0, y: 39.0}
+      - {x: 1.0, y: 39.0}
 ```
 
-Load with `design.layout.load_placements_from_yaml(path)`. Required fields are `x`, `y`, and `rotation`; layer defaults to `TOP`, is case-normalized, and must be `TOP` or `BOTTOM`. Extra fields are ignored. YAML loading replaces the entire placement map.
+Load with `design.layout.load_layout_from_yaml(path)` or the compatible
+`load_placements_from_yaml(path)` wrapper. Existing flat placement maps remain
+valid. Required placement fields are `x`, `y`, and `rotation`; layer defaults
+to `TOP`, is case-normalized, and must be `TOP` or `BOTTOM`. Placement extras
+are ignored. YAML loading replaces the entire placement map. Copper sections
+replace the corresponding layout collection only when present; an explicit
+empty list clears it. A structured `zones` section supersedes legacy `pours`.
+
+Tracks support straight `segment` and three-point `arc` geometry. The layout
+sidecar also supports through vias and ordinary single-layer copper zones.
+Rule areas, holes, curved zone boundaries, multilayer zones, and non-through
+vias are rejected during IPC capture rather than silently discarded. Zone fill
+polygons and KiCad UUIDs are generated data and are not stored.
 
 For a module, place its virtual module refdes in the parent and its physical parts inside the child design layout. See the hierarchy reference for transform composition.
 
@@ -44,10 +73,12 @@ For a module, place its virtual module refdes in the parent and its physical par
 - `outline`: `BoundingBox(x1, y1, x2, y2)`; the KiCad exporter emits a rectangular Edge.Cuts item.
 - `layer_count`: defaults to 2; extra layers become internal copper layers.
 - `pours`: `PourLayer(net_name, layer)` uses a one-based layer index into the generated copper-layer map and fills the board rectangle.
+- `tracks`: `TrackSegment` or `TrackArc`, in root-board coordinates.
 - `vias`: `ViaConfig(location, net_name, hole_size, drill_size)`; the net must exist in exported nets.
+- `zones`: polygonal `Zone` objects for ordinary single-layer copper areas.
 - `fab`: `FabLine` or `FabText` items.
 
-Check source and tests before using traces; the layout stores them, but the current KiCad conversion path may not export every stored layout feature.
+`traces` remains as a compatibility alias for `tracks`.
 
 ## KiCad
 
@@ -80,4 +111,7 @@ Do not use or recommend the LTspice exporter for production or analysis. Its imp
 
 ## Interactive KiCad placement
 
-Repository tools include `place_with_kicad` and `get_kicad_layout`. These depend on KiCad/IPC and local application state. Read their current CLI and tests before invocation. Do not launch or modify an interactive KiCad session merely to answer or diagnose unless the user asks for that workflow.
+Repository tools include `earthground kicad place` and `get_kicad_layout`.
+These depend on KiCad/IPC and local application state. Read their current CLI
+and tests before invocation. Do not launch or modify an interactive KiCad
+session merely to answer or diagnose unless the user asks for that workflow.

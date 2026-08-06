@@ -94,6 +94,62 @@ def test_generated_board_round_trips_and_opens_in_kicad_10(tmp_path: Path):
     _assert_kicad_accepts(output, tmp_path)
 
 
+def test_layout_tracks_and_polygonal_zone_round_trip_through_board_file(
+    tmp_path: Path,
+):
+    design = _resistor_design("ROUTED_LAYOUT")
+    design.layout.tracks.extend(
+        [
+            layout_lib.TrackSegment(
+                start=layout_lib.LayoutPoint(5, 5),
+                end=layout_lib.LayoutPoint(10, 5),
+                width=0.25,
+                layer="F.Cu",
+                net_name="GND",
+            ),
+            layout_lib.TrackArc(
+                start=layout_lib.LayoutPoint(10, 5),
+                mid=layout_lib.LayoutPoint(12, 7),
+                end=layout_lib.LayoutPoint(14, 5),
+                width=0.25,
+                layer="F.Cu",
+                net_name="GND",
+                locked=True,
+            ),
+        ]
+    )
+    design.layout.zones.append(
+        layout_lib.Zone(
+            net_name="GND",
+            layers=("B.Cu",),
+            outline=(
+                layout_lib.LayoutPoint(1, 1),
+                layout_lib.LayoutPoint(19, 1),
+                layout_lib.LayoutPoint(19, 9),
+                layout_lib.LayoutPoint(1, 9),
+            ),
+            name="Ground plane",
+            priority=1,
+        )
+    )
+
+    KicadExporter(design).save(tmp_path)
+    output = tmp_path / "ROUTED_LAYOUT.kicad_pcb"
+    board = read_from_file(output).model
+
+    assert isinstance(board.track[0], pcb.Segment)
+    assert isinstance(board.track[1], pcb.Arc)
+    assert board.track[1].locked is True
+    assert board.zone[0].name == "Ground plane"
+    assert board.zone[0].polygon == [
+        Point(x=1, y=1),
+        Point(x=19, y=1),
+        Point(x=19, y=9),
+        Point(x=1, y=9),
+    ]
+    _assert_kicad_accepts(output, tmp_path)
+
+
 def test_imported_footprint_preserves_unnumbered_pad_without_net(tmp_path: Path):
     component = cmp.Component("U")
     component.name = "QFN_WITH_EXPOSED_PAD"

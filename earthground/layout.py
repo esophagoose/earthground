@@ -4,14 +4,18 @@ import logging
 import math
 from collections import namedtuple
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, NamedTuple, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, NamedTuple, Optional, Tuple
 
 import yaml
-from pydantic import ValidationError
 
 import earthground.components as cmp
 from earthground.footprint_types import BoundingBox
-from earthground.models.layout_models import LayoutPlacementMap
+from earthground.models.layout_models import (
+    LayoutFileModel,
+    LayoutTrackArcModel,
+    LayoutTrackSegmentModel,
+    normalize_copper_layer,
+)
 
 if TYPE_CHECKING:
     import earthground.schematic as sch_lib
@@ -92,6 +96,78 @@ class PourLayer(_ValidatedNetTuple, _PourLayerBase):
     __slots__ = ()
     net_name: str
     layer: int
+
+
+@dataclasses.dataclass(frozen=True)
+class LayoutPoint:
+    x: float
+    y: float
+
+
+@dataclasses.dataclass(frozen=True)
+class TrackSegment:
+    start: LayoutPoint
+    end: LayoutPoint
+    width: float
+    layer: str
+    net_name: str
+    locked: bool = False
+
+    def __post_init__(self) -> None:
+        cmp.validate_net_name(self.net_name, owner="TrackSegment()")
+        if self.width <= 0:
+            raise ValueError("TrackSegment width must be greater than 0")
+        object.__setattr__(self, "layer", normalize_copper_layer(self.layer))
+
+
+@dataclasses.dataclass(frozen=True)
+class TrackArc:
+    start: LayoutPoint
+    mid: LayoutPoint
+    end: LayoutPoint
+    width: float
+    layer: str
+    net_name: str
+    locked: bool = False
+
+    def __post_init__(self) -> None:
+        cmp.validate_net_name(self.net_name, owner="TrackArc()")
+        if self.width <= 0:
+            raise ValueError("TrackArc width must be greater than 0")
+        object.__setattr__(self, "layer", normalize_copper_layer(self.layer))
+
+
+Track = TrackSegment | TrackArc
+
+
+@dataclasses.dataclass(frozen=True)
+class Zone:
+    net_name: str
+    layers: tuple[str, ...]
+    outline: tuple[LayoutPoint, ...]
+    name: str | None = None
+    clearance: float = 0.5
+    min_thickness: float = 0.25
+    priority: int = 0
+    fill: bool = True
+    locked: bool = False
+
+    def __post_init__(self) -> None:
+        cmp.validate_net_name(self.net_name, owner="Zone()")
+        if len(self.layers) != 1:
+            raise ValueError("Only single-layer copper zones are supported")
+        if len(self.outline) < 3:
+            raise ValueError("Zone outline must contain at least three points")
+        if self.clearance < 0 or self.min_thickness <= 0 or self.priority < 0:
+            raise ValueError(
+                "Zone clearance and priority must be non-negative and minimum "
+                "thickness must be greater than 0"
+            )
+        object.__setattr__(
+            self,
+            "layers",
+            tuple(normalize_copper_layer(layer) for layer in self.layers),
+        )
 
 
 class Layer(enum.Enum):
@@ -187,11 +263,21 @@ class Layout:
         self.placement: Dict[str, Placement] = {}
         self.outline: BoundingBox = BoundingBox(x1=0, y1=0, x2=0, y2=0)
         self.layer_count: int = 2
-        self.traces: list[Any] = []
+        self.tracks: list[Track] = []
         self.vias: list[ViaConfig] = []
         self.pours: list[PourLayer] = []
+        self.zones: list[Zone] = []
         self.silk: list[SilkLine] = []
         self.fab: list[FabLine | FabText] = []
+
+    @property
+    def traces(self) -> list[Track]:
+        """Compatibility alias for the formerly untyped trace collection."""
+        return self.tracks
+
+    @traces.setter
+    def traces(self, value: list[Track]) -> None:
+        self.tracks = value
 
     def get_placement(
         self, id: str, *, warn_on_fallback: bool = True
@@ -270,10 +356,10 @@ class Layout:
             layer=self.placement[id].layer,
         )
 
-    def load_placements_from_yaml(self, path: str | Path) -> Dict[str, Placement]:
+    def load_layout_from_yaml(self, path: str | Path) -> Dict[str, Placement]:
         with open(path, encoding="utf-8") as f:
-            raw_placements = yaml.safe_load(f) or {}
-        placement_map = LayoutPlacementMap.model_validate(raw_placements)
+            raw_layout = yaml.safe_load(f) or {}
+        layout_file = LayoutFileModel.model_validate(raw_layout)
 
         placements = {
             refdes: Placement(
@@ -285,11 +371,79 @@ class Layout:
                 id=None,
                 layer=Layer[placement.layer],
             )
-            for refdes, placement in placement_map.root.items()
+            for refdes, placement in layout_file.placements.items()
         }
 
+        tracks: list[Track] | None = None
+        if layout_file.tracks is not None:
+            tracks = []
+            for track in layout_file.tracks:
+                common = {
+                    "start": LayoutPoint(track.start.x, track.start.y),
+                    "end": LayoutPoint(track.end.x, track.end.y),
+                    "width": track.width,
+                    "layer": track.layer,
+                    "net_name": track.net,
+                    "locked": track.locked,
+                }
+                if isinstance(track, LayoutTrackSegmentModel):
+                    tracks.append(TrackSegment(**common))
+                elif isinstance(track, LayoutTrackArcModel):
+                    tracks.append(
+                        TrackArc(
+                            **common,
+                            mid=LayoutPoint(track.mid.x, track.mid.y),
+                        )
+                    )
+                else:  # pragma: no cover - protected by the discriminated union
+                    raise TypeError(f"Unsupported track type: {type(track)}")
+
+        vias = None
+        if layout_file.vias is not None:
+            vias = [
+                ViaConfig(
+                    location=Position(via.position.x, via.position.y, 0),
+                    net_name=via.net,
+                    hole_size=via.diameter,
+                    drill_size=via.drill,
+                )
+                for via in layout_file.vias
+            ]
+
+        zones = None
+        if layout_file.zones is not None:
+            zones = [
+                Zone(
+                    net_name=zone.net,
+                    layers=tuple(zone.layers),
+                    outline=tuple(
+                        LayoutPoint(point.x, point.y) for point in zone.outline
+                    ),
+                    name=zone.name,
+                    clearance=zone.clearance,
+                    min_thickness=zone.min_thickness,
+                    priority=zone.priority,
+                    fill=zone.fill,
+                    locked=zone.locked,
+                )
+                for zone in layout_file.zones
+            ]
+
+        # Mutate only after the complete document has validated and converted.
         self.placement = placements
+        if tracks is not None:
+            self.tracks = tracks
+        if vias is not None:
+            self.vias = vias
+        if zones is not None:
+            self.zones = zones
+            # Structured zones supersede legacy full-board pours.
+            self.pours = []
         return placements
+
+    def load_placements_from_yaml(self, path: str | Path) -> Dict[str, Placement]:
+        """Load a legacy placement map or a versioned layout sidecar."""
+        return self.load_layout_from_yaml(path)
 
     def flatten(self) -> Dict[str, Tuple[ComponentLayout, cmp.Component]]:
         """
